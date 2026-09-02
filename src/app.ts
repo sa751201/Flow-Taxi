@@ -48,8 +48,13 @@ app.get('/api/config', (req, res) => {
   res.json({ liffId: env.LIFF_ID || '' });
 });
 
-// 司機資料登記 API
-import { upsertDriver, getDriverById as getDriverProfile } from './db/queries/drivers.js';
+import { upsertDriver, getDriverById as getDriverProfile, clearAllDrivers } from './db/queries/drivers.js';
+
+app.post('/api/driver/reset', async (req, res) => {
+  await clearAllDrivers();
+  console.log('[Driver API] 已清除所有已登記司機資料！');
+  res.json({ success: true, message: '已清除所有司機資料' });
+});
 
 app.get('/api/driver/:userId', async (req, res) => {
   try {
@@ -78,24 +83,39 @@ app.post('/api/driver/register', async (req, res) => {
       status: 'active',
     });
 
-    console.log(`[Driver API] 司機 ${userId} 透過 LIFF 完成登記！`);
+    console.log(`[Driver API] 司機 ${userId} (${displayName}) 透過 LIFF 完成登記！`);
 
-    // 需求 3: 聊天室機器人推播回覆「[user 暱稱] 你的資料已經建立完成」
-    try {
-      const lineClient = getLineClient();
-      if (userId && !userId.startsWith('DEV_')) {
+    // 需求 2: 聊天室機器人推播回覆「[user 暱稱] 你的資料已經建立完成」
+    const notifyText = `✅【${displayName}】你的司機資料已經建立完成！\n\n🚙 車型：${carBrand}\n🔢 車號：${plateNumber}\n🎨 車色：${carColor}\n\n已為您正式開通派單接單權限！若日後需變更資料，隨時輸入「填資料」即可調整。`;
+
+    const lineClient = getLineClient();
+    let pushed = false;
+
+    // 1. 優先推播至司機 1:1 個人聊天室
+    if (userId && !userId.startsWith('DEV_')) {
+      try {
         await lineClient.pushMessage({
           to: userId,
-          messages: [
-            {
-              type: 'text',
-              text: `✅【${displayName}】你的司機資料已經建立完成！\n\n🚙 車牌：${plateNumber}\n🎨 車色：${carColor}\n🏷️ 廠牌：${carBrand}\n\n已為您正式開通派單接單權限！`,
-            },
-          ],
+          messages: [{ type: 'text', text: notifyText }],
         });
+        pushed = true;
+        console.log(`[Driver API] 已成功向司機個人 LINE (${userId}) 推播建立完成通知！`);
+      } catch (pushUserErr: any) {
+        console.warn(`[Driver API] 無法推播給個人 (${userId}):`, pushUserErr.message);
       }
-    } catch (pushErr: any) {
-      console.warn('[Driver API] 推播通知司機失敗 (可能尚未與 Bot 建立 1:1 聊天對話):', pushErr.message);
+    }
+
+    // 2. 若司機尚未加 OA 好友或個人推播受限，同步發送到司機群組通知
+    if (!pushed && env.DRIVER_GROUP_ID) {
+      try {
+        await lineClient.pushMessage({
+          to: env.DRIVER_GROUP_ID,
+          messages: [{ type: 'text', text: notifyText }],
+        });
+        console.log(`[Driver API] 已推播至司機群組 (${env.DRIVER_GROUP_ID}) 通知！`);
+      } catch (pushGroupErr: any) {
+        console.warn('[Driver API] 推播至司機群組亦失敗:', pushGroupErr.message);
+      }
     }
 
     res.json({ success: true, driver });

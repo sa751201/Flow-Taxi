@@ -126,3 +126,14 @@ export async function getDriverById(lineUserId: string): Promise<Driver | null> 
 
   return memoryDrivers.get(lineUserId) || null;
 }
+
+export async function clearAllDrivers(): Promise<void> {
+  memoryDrivers.clear();
+  if (env.DATABASE_URL) {
+    try {
+      await query('DELETE FROM drivers;');
+    } catch {
+      // ignore
+    }
+  }
+}
