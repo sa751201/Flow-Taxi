@@ -43,9 +43,12 @@ app.get(['/driver/register', '/driver/register/driver/register'], (req, res) => 
   res.sendFile('public/driver/register.html', { root: process.cwd() });
 });
 
-// 提供前端 LIFF 設定
+// 提供前端 LIFF 設定與環境診斷
 app.get('/api/config', (req, res) => {
-  res.json({ liffId: env.LIFF_ID || '' });
+  res.json({
+    liffId: env.LIFF_ID || '',
+    driverGroupId: env.DRIVER_GROUP_ID || '',
+  });
 });
 
 import { upsertDriver, getDriverById as getDriverProfile, clearAllDrivers } from './db/queries/drivers.js';
