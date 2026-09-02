@@ -150,12 +150,12 @@ document.getElementById('btn-confirm-bid')?.addEventListener('click', async () =
 
     const result = await res.json();
     if (!res.ok) {
-      throw new Error(result.error || '接單失敗');
+      throw new Error(result.error || `接單失敗 (HTTP ${res.status})`);
     }
 
-    const driverName = currentDriverProfile?.display_name || '司機夥伴';
-    document.getElementById('success-title').textContent = `已收【${driverName}】單，系統派單中！`;
-    document.getElementById('success-desc').textContent = `預計抵達時間：約 ${totalMins} 分鐘。60 秒派單視窗關閉時，系統將自動比對最近司機中單。`;
+    const driverName = result.driverName || currentDriverProfile?.display_name || '司機夥伴';
+    document.getElementById('success-title').textContent = `【${driverName}】已接單！`;
+    document.getElementById('success-desc').textContent = `預估約 ${totalMins} 分鐘抵達現場。系統正在進行派單媒合中，請稍候！即將自動返回聊天室...`;
 
     document.getElementById('bid-card').classList.add('hidden');
     document.getElementById('success-screen').classList.remove('hidden');
@@ -164,6 +164,11 @@ document.getElementById('btn-confirm-bid')?.addEventListener('click', async () =
     setTimeout(() => {
       checkIcon?.setAttribute('data-state', 'in');
     }, 50);
+
+    // 需求 1: 接單後請關閉 LIFF 畫面 (停留 1.5 秒讓司機看見接單成功畫面後自動關閉)
+    setTimeout(() => {
+      closeLiffWindow();
+    }, 1500);
 
   } catch (err) {
     if (confirmBtn) {
@@ -187,11 +192,22 @@ function showError(msg) {
 }
 
 function closeLiffWindow() {
-  if (typeof liff !== 'undefined' && liff.closeWindow) {
-    liff.closeWindow();
-  } else {
-    window.close();
+  try {
+    if (typeof liff !== 'undefined' && liff.isInClient && liff.isInClient()) {
+      liff.closeWindow();
+      return;
+    }
+    if (typeof liff !== 'undefined' && liff.closeWindow) {
+      liff.closeWindow();
+      return;
+    }
+  } catch (e) {
+    console.warn('liff.closeWindow 失敗:', e);
   }
+  window.close();
+  setTimeout(() => {
+    window.location.href = 'https://line.me/R/ti/p/@688muuaw';
+  }, 200);
 }
 window.closeLiffWindow = closeLiffWindow;
 

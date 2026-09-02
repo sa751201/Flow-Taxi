@@ -74,11 +74,19 @@ export class DispatchEngine {
   async submitBid(params: SubmitBidParams) {
     const order = await getOrderById(params.orderId);
     if (!order) {
-      throw new Error(`Order ${params.orderId} does not exist`);
+      throw new Error(`訂單不存在或編號錯誤 (${params.orderId})`);
     }
 
-    if (order.status !== 'dispatching') {
-      throw new Error(`Order ${params.orderId} is not in dispatching state (current: ${order.status})`);
+    if (order.status === 'pending') {
+      // 若尚未轉換狀態，自動切換為 dispatching
+      await markOrderDispatching(params.orderId);
+      order.status = 'dispatching';
+    } else if (order.status === 'no_driver') {
+      throw new Error(`此訂單派單媒合時間已逾時結束，請等待下一筆訂單 (Order is not in dispatching state: no_driver)`);
+    } else if (order.status === 'accepted') {
+      throw new Error(`此訂單已由其他司機中單承接 (Order is not in dispatching state: accepted)`);
+    } else if (order.status !== 'dispatching') {
+      throw new Error(`訂單目前狀態無法接單 (Order is not in dispatching state: ${order.status})`);
     }
 
     return await insertBid(params);
