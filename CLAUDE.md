@@ -21,6 +21,7 @@ P3 下單解析 → P4 兩層揭露/配對 → P5 記點發券 → P6 司機獎�
 - 派單指派 / 記點 / 券核銷 / 獎勵兌換 全部用「檢查影響筆數」的原子操作。
 - 乘客姓氏電話僅中單後對中單司機揭露,永不進群組;log 不落 PII。
 - 兩個 LINE channel(Messaging API + LINE Login)須同一 Provider(userId 一致性)。
+- 介面文案、按鈕、錯誤提示與訊息一律嚴格遵循 `docs/UX_WRITING_GUIDELINES.md` (基於 content-designer/ux-writing-skill：Purposeful, Concise, Conversational, Clear)。
 
 ## 營運參數
 車資、獎勵、發券等數值來自 `config/派單系統參數表.xlsx`(非工程人員維護),
