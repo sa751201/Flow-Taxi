@@ -246,20 +246,7 @@ app.post('/api/dispatch/bid', async (req, res) => {
 
     const lineClient = getLineClient();
 
-    // 1. OA bot 立即向司機 1:1 回覆：「[姓名] 已接單」
-    lineClient.pushMessage({
-      to: driverId,
-      messages: [
-        {
-          type: 'text',
-          text: `【${driverName}】已接單！\n\n預估約 ${etaMinutes} 分鐘抵達現場。系統正在進行 60 秒媒合派單中，請稍候通知！`,
-        },
-      ],
-    }).catch((pushErr: any) => {
-      console.warn('[Dispatch API] 推播司機接單中失敗:', pushErr.message);
-    });
-
-    // 2. 在司機群組也發布即時回覆：「[姓名] 已接單」
+    // 司機群組發布即時動態：「[姓名] 已接單」 (依指示取消司機 1:1 私訊)
     const driverGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
     if (driverGroupId) {
       lineClient.pushMessage({
