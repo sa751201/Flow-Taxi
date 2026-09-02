@@ -133,10 +133,6 @@ async function fetchCalculatedEta() {
   }
 }
 
-document.getElementById('btn-skip-location')?.addEventListener('click', () => {
-  fetchCalculatedEta();
-});
-
 document.getElementById('btn-plus-1')?.addEventListener('click', () => {
   extraMinutes += 1;
   updateEtaDisplay();
