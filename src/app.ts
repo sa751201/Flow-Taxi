@@ -111,12 +111,19 @@ app.use(express.json());
 // 靜態資源服務 (LIFF 頁面、CSS、JS)
 app.use(express.static('public'));
 
-// 路由轉發：/driver/register 與 /driver/bid
-app.get(['/driver/register', '/driver/register/driver/register'], (req, res) => {
+// 路由轉發：/driver/register 與 /driver/bid (相容 LINE LIFF Endpoint URL 各種子路徑拼接)
+app.get([
+  '/driver/register',
+  '/driver/register/driver/register',
+], (req, res) => {
   res.sendFile('public/driver/register.html', { root: process.cwd() });
 });
 
-app.get(['/driver/bid', '/driver/bid/driver/bid'], (req, res) => {
+app.get([
+  '/driver/bid',
+  '/driver/bid/driver/bid',
+  '/driver/register/driver/bid',
+], (req, res) => {
   res.sendFile('public/driver/bid.html', { root: process.cwd() });
 });
 
