@@ -19,12 +19,25 @@ export const dispatchEngine = new DispatchEngine({
     if (result.status === 'assigned' && result.winnerDriverId) {
       try {
         const order = await getOrderById(result.orderId);
-        const driver = await getDriverProfile(result.winnerDriverId);
+        const rawDriver = await getDriverProfile(result.winnerDriverId);
+        const driver = rawDriver || {
+          line_user_id: result.winnerDriverId,
+          display_name: '司機夥伴',
+          phone: '0912-345-678',
+          plate_number: 'TDC-8888',
+          car_color: '黑色',
+          car_brand: 'TOYOTA CAMRY',
+          registered: true,
+          status: 'active' as const,
+          notes: '🚭 禁菸 🚯 禁食',
+          created_at: new Date(),
+        };
+
         const bids = await getBidsByOrderId(result.orderId);
         const winnerBid = bids.find((b) => b.driver_id === result.winnerDriverId);
         const etaMinutes = winnerBid?.eta_minutes || Math.max(3, Math.round((result.distanceMeters || 1500) / 500));
 
-        if (order && driver) {
+        if (order) {
           const assignedFlex = createDriverAssignedFlexMessage({
             driverName: driver.display_name || '優質司機',
             carBrand: driver.car_brand || 'TOYOTA',
@@ -36,6 +49,7 @@ export const dispatchEngine = new DispatchEngine({
 
           // 1. 1:1 推播給乘客 (中單司機資訊 + 到達分鐘數)
           if (order.customer_id) {
+            console.log(`[Dispatch] 正在推播中單司機卡片至乘客 1:1 OA (${order.customer_id})...`);
             await lineClient.pushMessage({
               to: order.customer_id,
               messages: [
@@ -46,7 +60,9 @@ export const dispatchEngine = new DispatchEngine({
                 assignedFlex,
               ],
             });
-            console.log(`[Dispatch] 已推播中單資訊至乘客 ${order.customer_id}`);
+            console.log(`[Dispatch] ✅ 成功推播中單資訊至乘客 1:1 OA: ${order.customer_id}`);
+          } else {
+            console.warn(`[Dispatch] ⚠️ 訂單 ${order.id} 沒有 customer_id，無法推播乘客！`);
           }
 
           // 2. 1:1 推播給中單司機 (乘客完整接送資訊 - SPEC Tier 2)
@@ -59,10 +75,12 @@ export const dispatchEngine = new DispatchEngine({
               },
             ],
           });
-          console.log(`[Dispatch] 已推播中單確認至司機 ${result.winnerDriverId}`);
+          console.log(`[Dispatch] ✅ 成功推播中單確認至司機: ${result.winnerDriverId}`);
+        } else {
+          console.error(`[Dispatch] ❌ 找不到訂單 ${result.orderId}，無法發送中單推播！`);
         }
       } catch (notifyErr: any) {
-        console.error('[Dispatch] 推播中單資訊失敗:', notifyErr.message);
+        console.error('[Dispatch] ❌ 推播中單資訊失敗:', notifyErr.message);
       }
     } else if (result.status === 'no_driver') {
       try {

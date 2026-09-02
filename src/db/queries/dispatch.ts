@@ -47,9 +47,10 @@ export async function findWinnerDriver(orderId: string): Promise<DriverCandidate
       };
     }
     if (res && res.rows && res.rows.length === 0) {
-      // 資料庫已連線且正常查詢，但無資料
+      // 資料庫已連線但查無資料，檢查是否有出價紀錄（例如記憶體出價）
       const bids = await getBidsByOrderId(orderId);
       if (bids.length === 0) return null;
+      // 若有出價紀錄，進入下方備援評選
     }
   } catch (err: any) {
     console.warn('[Dispatch DB] PostgreSQL 評選 Winner 失敗，使用備援評選:', err.message);

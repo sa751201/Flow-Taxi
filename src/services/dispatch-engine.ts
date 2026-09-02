@@ -123,22 +123,38 @@ export class DispatchEngine {
     if (totalBidsCount === 0) {
       const marked = await markOrderNoDriver(orderId);
       console.log(`[DispatchEngine] Order ${orderId} closed with 0 bids. Marked no_driver: ${marked}`);
-      return {
+      const result: DispatchWinnerResult = {
         orderId,
         status: marked ? 'no_driver' : 'conflict_or_cancelled',
         totalBidsCount: 0,
       };
+      if (this.onOrderResolved) {
+        try {
+          await this.onOrderResolved(result);
+        } catch (err: any) {
+          console.error('[DispatchEngine] onOrderResolved 執行失敗:', err.message);
+        }
+      }
+      return result;
     }
 
     // PostGIS 依長單優先權加權 + 距離排序挑選 Winner
     const candidate = await findWinnerDriver(orderId);
     if (!candidate) {
       const marked = await markOrderNoDriver(orderId);
-      return {
+      const result: DispatchWinnerResult = {
         orderId,
         status: marked ? 'no_driver' : 'conflict_or_cancelled',
         totalBidsCount,
       };
+      if (this.onOrderResolved) {
+        try {
+          await this.onOrderResolved(result);
+        } catch (err: any) {
+          console.error('[DispatchEngine] onOrderResolved 執行失敗:', err.message);
+        }
+      }
+      return result;
     }
 
     // 原子指派：UPDATE orders SET status='accepted', driver_id=$1 WHERE id=$2 AND status='dispatching'
@@ -146,11 +162,19 @@ export class DispatchEngine {
 
     if (!assigned) {
       console.warn(`[DispatchEngine] Atomic assignment failed for order ${orderId} (race condition / cancelled)`);
-      return {
+      const result: DispatchWinnerResult = {
         orderId,
         status: 'conflict_or_cancelled',
         totalBidsCount,
       };
+      if (this.onOrderResolved) {
+        try {
+          await this.onOrderResolved(result);
+        } catch (err: any) {
+          console.error('[DispatchEngine] onOrderResolved 執行失敗:', err.message);
+        }
+      }
+      return result;
     }
 
     console.log(
