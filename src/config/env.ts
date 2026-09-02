@@ -8,7 +8,7 @@ const envSchema = z.object({
   LINE_CHANNEL_SECRET: z.string().optional().default(''),
   LINE_CHANNEL_ACCESS_TOKEN: z.string().optional().default(''),
   LIFF_ID: z.string().optional().default(''),
-  DRIVER_GROUP_ID: z.string().optional().default(''),
+  DRIVER_GROUP_ID: z.string().optional().default('C5179346ac8b2f3312cabe051ca818355'),
 
   // Database / Supabase
   DATABASE_URL: z.string().optional(),

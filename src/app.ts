@@ -92,12 +92,15 @@ app.post('/api/driver/register', async (req, res) => {
     res.json({ success: true, driver });
 
     // 非同步直接推播至司機群組 (不阻塞 HTTP 回應，秒速送達)
-    if (env.DRIVER_GROUP_ID) {
+    const targetGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
+    if (targetGroupId) {
       const notifyText = `✅【${displayName}】你的司機資料已經建立完成！\n\n🚙 車型：${carBrand}\n🔢 車號：${plateNumber}\n🎨 車色：${carColor}\n\n已為您正式開通派單接單權限！若日後需變更資料，隨時輸入「填資料」即可調整。`;
       const lineClient = getLineClient();
       lineClient.pushMessage({
-        to: env.DRIVER_GROUP_ID,
+        to: targetGroupId,
         messages: [{ type: 'text', text: notifyText }],
+      }).then(() => {
+        console.log(`[Driver API] 成功推播完成通知至司機群組 (${targetGroupId})`);
       }).catch((pushGroupErr: any) => {
         console.warn('[Driver API] 推播至司機群組失敗:', pushGroupErr.message);
       });
