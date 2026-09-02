@@ -2,6 +2,7 @@ import { messagingApi } from '@line/bot-sdk';
 
 /**
  * 建立「司機資料登記 / 修改」的 Flex Message 卡片
+ * 風格：乾淨現代白底風格，字體以黑灰深色為主，保持清晰高對比與 LINE 生態一致感
  */
 export function createDriverRegisterFlexMessage(registerUrl: string): messagingApi.FlexMessage {
   const container: messagingApi.FlexBubble = {
@@ -10,8 +11,11 @@ export function createDriverRegisterFlexMessage(registerUrl: string): messagingA
     header: {
       type: 'box',
       layout: 'vertical',
-      backgroundColor: '#18181b',
-      paddingAll: '16px',
+      backgroundColor: '#ffffff',
+      paddingTop: '20px',
+      paddingBottom: '12px',
+      paddingStart: '20px',
+      paddingEnd: '20px',
       contents: [
         {
           type: 'box',
@@ -22,7 +26,7 @@ export function createDriverRegisterFlexMessage(registerUrl: string): messagingA
             {
               type: 'text',
               text: 'TAXI DISPATCH',
-              color: '#f59e0b',
+              color: '#d97706',
               size: 'xs',
               weight: 'bold',
             },
@@ -31,8 +35,8 @@ export function createDriverRegisterFlexMessage(registerUrl: string): messagingA
         {
           type: 'text',
           text: '🚕 司機夥伴資料維護',
-          color: '#ffffff',
-          size: 'lg',
+          color: '#111827',
+          size: 'xl',
           weight: 'bold',
           margin: 'sm',
         },
@@ -41,31 +45,35 @@ export function createDriverRegisterFlexMessage(registerUrl: string): messagingA
     body: {
       type: 'box',
       layout: 'vertical',
-      backgroundColor: '#27272a',
-      paddingAll: '16px',
+      backgroundColor: '#ffffff',
+      paddingStart: '20px',
+      paddingEnd: '20px',
+      paddingBottom: '20px',
       spacing: 'md',
       contents: [
         {
           type: 'text',
           text: '為了確保派單資訊精確與乘車辨識順暢，請司機夥伴隨時保持最新車輛資訊（姓名、車牌、車色、廠牌）。',
-          color: '#d4d4d8',
+          color: '#4b5563',
           size: 'sm',
           wrap: true,
+          lineSpacing: '4px',
         },
         {
           type: 'separator',
-          color: '#3f3f46',
+          color: '#f3f4f6',
         },
         {
           type: 'box',
           layout: 'vertical',
-          spacing: 'sm',
+          spacing: 'md',
+          margin: 'md',
           contents: [
             {
               type: 'button',
               style: 'primary',
-              color: '#f59e0b',
-              height: 'sm',
+              color: '#06c755', // LINE 經典品牌綠 / 醒目按鈕
+              height: 'md',
               action: {
                 type: 'uri',
                 label: '📝 填寫登記資料',
@@ -75,8 +83,8 @@ export function createDriverRegisterFlexMessage(registerUrl: string): messagingA
             {
               type: 'button',
               style: 'secondary',
-              color: '#3f3f46',
-              height: 'sm',
+              color: '#f3f4f6',
+              height: 'md',
               action: {
                 type: 'postback',
                 label: '✏️ 修改已登記資料',
@@ -91,13 +99,13 @@ export function createDriverRegisterFlexMessage(registerUrl: string): messagingA
     footer: {
       type: 'box',
       layout: 'vertical',
-      backgroundColor: '#18181b',
-      paddingAll: '12px',
+      backgroundColor: '#fafafa',
+      paddingAll: '14px',
       contents: [
         {
           type: 'text',
           text: '🔒 身分由 LINE 安全驗證，資料僅供派單對接使用',
-          color: '#71717a',
+          color: '#9ca3af',
           size: 'xxs',
           align: 'center',
         },
