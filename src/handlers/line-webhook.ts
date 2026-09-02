@@ -197,7 +197,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
             messages: [
               {
                 type: 'text',
-                text: `✅ 司機資料已成功建檔！\n\n👤 駕駛：${saved.display_name || '未填'}\n🚙 車型：${saved.car_brand || '未填'}\n🔢 車號：${saved.plate_number || '未填'}\n🎨 車色：${saved.car_color || '未填'}\n\n已為您開通派單接單權限！若日後需變更資料，隨時輸入「填資料」即可調整。`,
+                text: `✅【${saved.display_name || '夥伴'}】你的司機資料已經建立完成！\n\n🚙 車型：${saved.car_brand || '未填'}\n🔢 車號：${saved.plate_number || '未填'}\n🎨 車色：${saved.car_color || '未填'}\n\n已為您正式開通派單接單權限！若日後需變更資料，隨時輸入「填資料」即可調整。`,
               },
             ],
           });

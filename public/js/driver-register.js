@@ -1,10 +1,9 @@
 // Driver Registration LIFF Client Logic
 let currentUserId = null;
 let currentIdToken = null;
+let currentLineProfile = null;
 
 async function initLiff() {
-  const lineNameEl = document.getElementById('driver-line-name');
-  const lineIdEl = document.getElementById('driver-line-id');
   const avatarEl = document.getElementById('driver-avatar');
 
   try {
@@ -14,9 +13,7 @@ async function initLiff() {
     const liffId = config.liffId;
 
     if (!liffId) {
-      console.warn('LIFF_ID 未設定，進入本機預覽模式');
-      lineNameEl.textContent = '本機測試司機';
-      lineIdEl.textContent = 'DEV_LOCAL_DRIVER_123';
+      console.warn('LIFF_ID 未設定，進入測試模式');
       currentUserId = 'DEV_LOCAL_DRIVER_123';
       return;
     }
@@ -29,18 +26,17 @@ async function initLiff() {
     }
 
     const profile = await liff.getProfile();
+    currentLineProfile = profile;
     currentUserId = profile.userId;
     currentIdToken = liff.getIDToken();
 
-    lineNameEl.textContent = profile.displayName;
-    lineIdEl.textContent = profile.userId;
-    if (profile.pictureUrl) {
+    if (profile.pictureUrl && avatarEl) {
       avatarEl.src = profile.pictureUrl;
     }
 
     // 預設將司機名稱填為 LINE 顯示名稱
     const nameInput = document.getElementById('displayName');
-    if (!nameInput.value) {
+    if (!nameInput.value && profile.displayName) {
       nameInput.value = profile.displayName;
     }
 
@@ -48,8 +44,6 @@ async function initLiff() {
     checkExistingDriver(currentUserId);
   } catch (err) {
     console.error('LIFF 初始化失敗:', err);
-    lineNameEl.textContent = '司機夥伴 (離線模式)';
-    lineIdEl.textContent = 'ID: 未綁定';
   }
 }
 
@@ -108,7 +102,7 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
   if (hasError) return;
 
   const statusBox = document.getElementById('status-box');
-  statusBox.className = 'mt-4 p-3 rounded-xl text-xs font-medium text-center bg-amber-500/10 text-amber-300 border border-amber-500/20';
+  statusBox.className = 'mt-4 p-3.5 rounded-xl text-xs font-medium text-center bg-amber-50 text-amber-800 border border-amber-200';
   statusBox.textContent = '資料儲存中，請稍候...';
   statusBox.classList.remove('hidden');
 
@@ -132,7 +126,7 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
       throw new Error(result.error || '登記失敗');
     }
 
-    // 成功狀態切換 (Transitions.dev Success Check)
+    // 成功狀態切換 (需求 3: 表格呈現登記項目)
     document.getElementById('form-card').classList.add('hidden');
     const successScreen = document.getElementById('success-screen');
     successScreen.classList.remove('hidden');
@@ -141,6 +135,7 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
     document.getElementById('res-plate').textContent = plateNumber;
     document.getElementById('res-color').textContent = carColor;
     document.getElementById('res-brand').textContent = carBrand;
+    document.getElementById('res-phone').textContent = phone || '未填寫';
 
     const checkIcon = document.getElementById('success-check-icon');
     setTimeout(() => {
@@ -148,10 +143,19 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
     }, 50);
 
   } catch (err) {
-    statusBox.className = 'mt-4 p-3 rounded-xl text-xs font-medium text-center bg-red-500/10 text-red-400 border border-red-500/20';
+    statusBox.className = 'mt-4 p-3.5 rounded-xl text-xs font-medium text-center bg-red-50 text-red-600 border border-red-200';
     statusBox.textContent = `❌ ${err.message}`;
   }
 });
+
+function closeLiffWindow() {
+  if (typeof liff !== 'undefined' && liff.closeWindow) {
+    liff.closeWindow();
+  } else {
+    window.close();
+  }
+}
+window.closeLiffWindow = closeLiffWindow;
 
 // 啟動 LIFF 初始化
 initLiff();

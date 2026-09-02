@@ -3,6 +3,7 @@ import { env } from './config/env.js';
 import { DispatchEngine } from './services/dispatch-engine.js';
 import { getOrderById } from './db/queries/orders.js';
 import { getBidsByOrderId } from './db/queries/bids.js';
+import { getLineClient } from './services/line-client.js';
 
 import { middleware, webhook } from '@line/bot-sdk';
 import { handleLineEvents } from './handlers/line-webhook.js';
@@ -78,6 +79,25 @@ app.post('/api/driver/register', async (req, res) => {
     });
 
     console.log(`[Driver API] 司機 ${userId} 透過 LIFF 完成登記！`);
+
+    // 需求 3: 聊天室機器人推播回覆「[user 暱稱] 你的資料已經建立完成」
+    try {
+      const lineClient = getLineClient();
+      if (userId && !userId.startsWith('DEV_')) {
+        await lineClient.pushMessage({
+          to: userId,
+          messages: [
+            {
+              type: 'text',
+              text: `✅【${displayName}】你的司機資料已經建立完成！\n\n🚙 車牌：${plateNumber}\n🎨 車色：${carColor}\n🏷️ 廠牌：${carBrand}\n\n已為您正式開通派單接單權限！`,
+            },
+          ],
+        });
+      }
+    } catch (pushErr: any) {
+      console.warn('[Driver API] 推播通知司機失敗 (可能尚未與 Bot 建立 1:1 聊天對話):', pushErr.message);
+    }
+
     res.json({ success: true, driver });
   } catch (err: any) {
     console.error('[Driver API Error]', err);
