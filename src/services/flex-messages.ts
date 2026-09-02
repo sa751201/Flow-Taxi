@@ -567,26 +567,26 @@ export function createDriverAssignedFlexMessage(params: {
     size: 'mega',
     styles: {
       body: {
-        backgroundColor: '#525252', // 附圖深灰底色
+        backgroundColor: '#ffffff',
       },
     },
     body: {
       type: 'box',
       layout: 'vertical',
-      backgroundColor: '#525252',
+      backgroundColor: '#ffffff',
       paddingAll: '20px',
       spacing: 'md',
       contents: [
         {
           type: 'text',
           text: 'MG&MD 優質司機',
-          color: '#ffffff',
+          color: '#1e293b',
           size: 'lg',
           weight: 'bold',
         },
         {
           type: 'separator',
-          color: '#a3a3a3',
+          color: '#e2e8f0',
         },
         {
           type: 'box',
@@ -598,47 +598,47 @@ export function createDriverAssignedFlexMessage(params: {
               type: 'box',
               layout: 'horizontal',
               contents: [
-                { type: 'text', text: '駕駛：', color: '#e5e5e5', size: 'md', flex: 3 },
-                { type: 'text', text: params.driverName, color: '#ffffff', size: 'md', weight: 'bold', flex: 7 },
+                { type: 'text', text: '駕駛：', color: '#64748b', size: 'md', flex: 3 },
+                { type: 'text', text: params.driverName, color: '#0f172a', size: 'md', weight: 'bold', flex: 7 },
               ],
             },
             {
               type: 'box',
               layout: 'horizontal',
               contents: [
-                { type: 'text', text: '車型：', color: '#e5e5e5', size: 'md', flex: 3 },
-                { type: 'text', text: params.carBrand, color: '#ffffff', size: 'md', weight: 'bold', flex: 7 },
+                { type: 'text', text: '車型：', color: '#64748b', size: 'md', flex: 3 },
+                { type: 'text', text: params.carBrand, color: '#0f172a', size: 'md', weight: 'bold', flex: 7 },
               ],
             },
             {
               type: 'box',
               layout: 'horizontal',
               contents: [
-                { type: 'text', text: '車號：', color: '#e5e5e5', size: 'md', flex: 3 },
-                { type: 'text', text: params.plateNumber, color: '#ffffff', size: 'md', weight: 'bold', flex: 7 },
+                { type: 'text', text: '車號：', color: '#64748b', size: 'md', flex: 3 },
+                { type: 'text', text: params.plateNumber, color: '#0f172a', size: 'md', weight: 'bold', flex: 7 },
               ],
             },
             {
               type: 'box',
               layout: 'horizontal',
               contents: [
-                { type: 'text', text: '車色：', color: '#e5e5e5', size: 'md', flex: 3 },
-                { type: 'text', text: params.carColor, color: '#ffffff', size: 'md', weight: 'bold', flex: 7 },
+                { type: 'text', text: '車色：', color: '#64748b', size: 'md', flex: 3 },
+                { type: 'text', text: params.carColor, color: '#0f172a', size: 'md', weight: 'bold', flex: 7 },
               ],
             },
             {
               type: 'box',
               layout: 'horizontal',
               contents: [
-                { type: 'text', text: '預計到達：', color: '#fde047', size: 'md', weight: 'bold', flex: 3 },
-                { type: 'text', text: `約 ${params.etaMinutes} 分鐘內抵達`, color: '#fde047', size: 'md', weight: 'bold', flex: 7 },
+                { type: 'text', text: '預計到達：', color: '#d97706', size: 'md', weight: 'bold', flex: 3 },
+                { type: 'text', text: `約 ${params.etaMinutes} 分鐘內抵達`, color: '#d97706', size: 'md', weight: 'bold', flex: 7 },
               ],
             },
           ],
         },
         {
           type: 'separator',
-          color: '#a3a3a3',
+          color: '#e2e8f0',
           margin: 'md',
         },
         {
@@ -649,7 +649,7 @@ export function createDriverAssignedFlexMessage(params: {
             {
               type: 'text',
               text: params.notes?.trim() ? params.notes : '🚭 禁菸 🚯 禁食',
-              color: '#f5f5f5',
+              color: '#475569',
               size: 'sm',
               weight: 'bold',
               wrap: true,
