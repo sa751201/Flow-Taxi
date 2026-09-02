@@ -4,7 +4,7 @@ import { query } from '../db/index.js';
 import { env } from '../config/env.js';
 import { parseDriverRegistrationText } from '../services/driver-parser.js';
 import { upsertDriver, getDriverById } from '../db/queries/drivers.js';
-import { createDriverRegisterFlexMessage, createWelcomeServiceMessage, createCityRidePromptMessage, createGroupDispatchOrderFlexMessage } from '../services/flex-messages.js';
+import { createDriverRegisterFlexMessage, createWelcomeServiceMessage, createCityRidePromptMessage, createAirportRidePromptMessage, createGroupDispatchOrderFlexMessage } from '../services/flex-messages.js';
 import { geocodeAddress } from '../services/google-maps.js';
 import { createOrder } from '../db/queries/orders.js';
 import { dispatchEngine } from '../app.js';
@@ -73,6 +73,14 @@ export async function handleLineEvents(events: WebhookEvent[]) {
           await lineClient.replyMessage({
             replyToken,
             messages: [createCityRidePromptMessage()],
+          });
+          continue;
+        }
+
+        if (data === 'action=service_select&service=airport_ride') {
+          await lineClient.replyMessage({
+            replyToken,
+            messages: [createAirportRidePromptMessage()],
           });
           continue;
         }
@@ -352,8 +360,13 @@ export async function handleLineEvents(events: WebhookEvent[]) {
               replyToken,
               messages: [createCityRidePromptMessage()],
             });
+          } else if (text.includes('機場預約') || text.includes('機場接送') || text.includes('機場')) {
+            // 輸入「機場預約 / 機場接送」時的回覆
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [createAirportRidePromptMessage()],
+            });
           } else if (
-            text.includes('機場接送') ||
             text.includes('酒後代駕') ||
             text.includes('代購代送') ||
             text.includes('包車服務') ||

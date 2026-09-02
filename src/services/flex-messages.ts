@@ -151,6 +151,18 @@ export function createWelcomeServiceMessage(): messagingApi.TextMessage {
 2. 下車地點：
 3. 乘車時間與人數：`;
 
+  const airportFillIn = `送機 /接機 ：
+航班：（接機必填）（出國免填）
+日期：
+時間：
+上車：
+目的：
+姓名：
+電話：
+人數：
+行李及尺吋：
+⚠️備註：`;
+
   const quickReplyItems: messagingApi.QuickReplyItem[] = [
     {
       type: 'action',
@@ -166,9 +178,12 @@ export function createWelcomeServiceMessage(): messagingApi.TextMessage {
     {
       type: 'action',
       action: {
-        type: 'message',
-        label: '機場接送✈️',
-        text: '機場接送✈️',
+        type: 'postback',
+        label: '機場預約✈️',
+        data: 'action=service_select&service=airport_ride',
+        displayText: '機場預約✈️',
+        inputOption: 'openKeyboard',
+        fillInText: airportFillIn,
       },
     },
     {
@@ -236,6 +251,57 @@ export function createCityRidePromptMessage(): messagingApi.TextMessage {
             displayText: '填寫叫車資訊',
             inputOption: 'openKeyboard',
             fillInText: cityRideFillIn,
+          },
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * 產生「機場預約」專屬引導訊息，附帶 Quick Reply 與文字輸入框帶入表格
+ */
+export function createAirportRidePromptMessage(): messagingApi.TextMessage {
+  const airportFillIn = `送機 /接機 ：
+航班：（接機必填）（出國免填）
+日期：
+時間：
+上車：
+目的：
+姓名：
+電話：
+人數：
+行李及尺吋：
+⚠️備註：`;
+
+  const replyText = `🥇🌊福露機場表格🥇🌊
+請詳細填寫以下表格✈️
+送機 /接機 ：
+航班：（接機必填）（出國免填）
+日期：
+時間：
+上車：
+目的：
+姓名：
+電話：
+人數：
+行李及尺吋：
+⚠️備註：`;
+
+  return {
+    type: 'text',
+    text: replyText,
+    quickReply: {
+      items: [
+        {
+          type: 'action',
+          action: {
+            type: 'postback',
+            label: '✈️ 帶入機場表格',
+            data: 'action=service_select&service=airport_ride',
+            displayText: '填寫機場預約',
+            inputOption: 'openKeyboard',
+            fillInText: airportFillIn,
           },
         },
       ],
