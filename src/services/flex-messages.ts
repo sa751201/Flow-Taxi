@@ -145,7 +145,7 @@ export function createWelcomeServiceMessage(): messagingApi.TextMessage {
 🔎以上費率僅限
 北北基、桃園其他縣市另計。
 
-歡迎大家提早預約💎`;
+請點選以下的符合您需求的服務，歡迎大家提早預約💎`;
 
   const services = [
     { label: '市區搭乘🚗', text: '市區搭乘🚗' },
