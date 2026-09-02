@@ -29,6 +29,8 @@ async function initLiff() {
     currentUserId = profile.userId;
     currentIdToken = liff.getIDToken();
 
+    console.log('[LIFF Init] 司機登入成功:', profile.displayName, profile.userId);
+
     if (profile.pictureUrl && avatarEl) {
       avatarEl.src = profile.pictureUrl;
     }
@@ -41,7 +43,6 @@ async function initLiff() {
     checkExistingDriver(currentUserId);
   } catch (err) {
     console.error('LIFF 初始化失敗:', err);
-    // 降級生成唯一的本地測試識別碼，避免重複衝突
     if (!currentUserId) {
       currentUserId = 'DEV_DRIVER_' + Math.random().toString(36).substring(2, 8);
     }
@@ -104,7 +105,6 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
 
   if (hasError) return;
 
-  // 需求 1: 送出時將按鈕設為 disabled，顯示 loading 狀態
   if (submitBtn) {
     submitBtn.disabled = true;
     submitBtn.classList.add('opacity-60', 'cursor-not-allowed');
@@ -129,7 +129,7 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        userId: currentUserId || 'DEV_DRIVER_' + Date.now(),
+        userId: currentUserId || (typeof liff !== 'undefined' && liff.getDecodedIDToken ? liff.getDecodedIDToken()?.sub : null) || 'DEV_DRIVER_' + Date.now(),
         idToken: currentIdToken,
         displayName,
         plateNumber,
@@ -141,7 +141,6 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
 
     const result = await res.json();
     if (!res.ok) {
-      // 需求 2: 清楚顯示後端具體回傳的錯誤原因
       throw new Error(result.error || `伺服器回應異常 (HTTP ${res.status})`);
     }
 
@@ -162,7 +161,6 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
     }, 50);
 
   } catch (err) {
-    // 需求 2: 發生錯誤時恢復按鈕可點擊，並顯示詳細原因
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.classList.remove('opacity-60', 'cursor-not-allowed');
@@ -182,11 +180,24 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
 });
 
 function closeLiffWindow() {
-  if (typeof liff !== 'undefined' && liff.closeWindow) {
-    liff.closeWindow();
-  } else {
-    window.close();
+  try {
+    if (typeof liff !== 'undefined' && liff.isInClient && liff.isInClient()) {
+      liff.closeWindow();
+      return;
+    }
+    if (typeof liff !== 'undefined' && liff.closeWindow) {
+      liff.closeWindow();
+      return;
+    }
+  } catch (e) {
+    console.warn('liff.closeWindow 失敗:', e);
   }
+  // 降級處理
+  window.close();
+  // 若仍無法關閉，導向 LINE 官方帳號聊天室
+  setTimeout(() => {
+    window.location.href = 'https://line.me/R/ti/p/@688muuaw';
+  }, 200);
 }
 window.closeLiffWindow = closeLiffWindow;
 
