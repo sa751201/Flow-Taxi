@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
+    "start": "node dist/app.js",
     "dev": "tsx watch src/app.ts",
     "test": "vitest run"
   },

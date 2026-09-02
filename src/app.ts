@@ -76,6 +76,25 @@ export const dispatchEngine = new DispatchEngine({
             ],
           });
           console.log(`[Dispatch] ✅ 成功推播中單確認至司機: ${result.winnerDriverId}`);
+
+          // 3. 在司機群組通知中單司機前往接送
+          const driverGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
+          if (driverGroupId) {
+            try {
+              await lineClient.pushMessage({
+                to: driverGroupId,
+                messages: [
+                  {
+                    type: 'text',
+                    text: `🚕【派單已結單】\n恭喜 @${driver.display_name || '司機夥伴'} 成功接單！\n請依照約定時間（約 ${etaMinutes} 分鐘內）前往接送乘客，感謝各位司機！`,
+                  },
+                ],
+              });
+              console.log(`[Dispatch] ✅ 成功向司機群組廣播中單司機: ${driver.display_name}`);
+            } catch (groupErr: any) {
+              console.warn('[Dispatch] 司機群組推播結單失敗:', groupErr.message);
+            }
+          }
         } else {
           console.error(`[Dispatch] ❌ 找不到訂單 ${result.orderId}，無法發送中單推播！`);
         }
