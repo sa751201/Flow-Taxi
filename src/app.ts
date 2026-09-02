@@ -34,6 +34,57 @@ app.post('/webhook', middleware(lineConfig), async (req, res) => {
 // 其餘路由使用標準 JSON 解析
 app.use(express.json());
 
+// 靜態資源服務 (LIFF 頁面、CSS、JS)
+app.use(express.static('public'));
+
+// 路由轉發：/driver/register 導向 /driver/register.html
+app.get('/driver/register', (req, res) => {
+  res.sendFile('public/driver/register.html', { root: process.cwd() });
+});
+
+// 提供前端 LIFF 設定
+app.get('/api/config', (req, res) => {
+  res.json({ liffId: env.LIFF_ID || '' });
+});
+
+// 司機資料登記 API
+import { upsertDriver, getDriverById as getDriverProfile } from './db/queries/drivers.js';
+
+app.get('/api/driver/:userId', async (req, res) => {
+  try {
+    const driver = await getDriverProfile(req.params.userId);
+    res.json(driver);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/driver/register', async (req, res) => {
+  try {
+    const { userId, displayName, plateNumber, carColor, carBrand, phone } = req.body;
+    if (!userId || !displayName || !plateNumber || !carColor || !carBrand) {
+      return res.status(400).json({ error: '請填妥所有必要欄位' });
+    }
+
+    const driver = await upsertDriver({
+      line_user_id: userId,
+      display_name: displayName,
+      plate_number: plateNumber,
+      car_color: carColor,
+      car_brand: carBrand,
+      phone: phone || null,
+      registered: true,
+      status: 'active',
+    });
+
+    console.log(`[Driver API] 司機 ${userId} 透過 LIFF 完成登記！`);
+    res.json({ success: true, driver });
+  } catch (err: any) {
+    console.error('[Driver API Error]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 健康檢查
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', time: new Date().toISOString() });

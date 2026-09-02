@@ -1,0 +1,175 @@
+/* Transitions Pro Tokens & CSS for Taxi Dispatch System */
+
+:root {
+  /* Error state shake */
+  --shake-distance: 6px;
+  --shake-overshoot: 4px;
+  --shake-dur-a: 80ms;
+  --shake-dur-b: 60ms;
+  --shake-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --revert-hold: 3000ms;
+  --revert-dur: 280ms;
+
+  /* Success Check */
+  --check-opacity-dur: 500ms;
+  --check-rotate-dur: 500ms;
+  --check-rotate-from: 80deg;
+  --check-bob-dur: 500ms;
+  --check-y-amount: 30px;
+  --check-blur-dur: 500ms;
+  --check-blur-from: 8px;
+  --check-path-dur: 500ms;
+  --check-path-delay: 80ms;
+  --check-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --check-ease-bob: cubic-bezier(0.34, 1.35, 0.64, 1);
+  --check-path-len: 26px;
+
+  /* Pro Gradient Button */
+  --probtn-strength: 0.75;
+  --probtn-core: 55%;
+  --probtn-core-blur: 140%;
+  --probtn-blur: 6px;
+  --probtn-hue-dur: 4000ms;
+  --probtn-drift-dur: 5000ms;
+}
+
+/* =========================================
+   1. Error State Shake Transition
+   ========================================= */
+.t-input-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.t-input {
+  transition: border-color var(--revert-dur) ease, box-shadow var(--revert-dur) ease;
+}
+
+.t-input.is-error {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 1px #ef4444 !important;
+}
+
+.t-input.is-shaking {
+  animation: shake-seq calc(var(--shake-dur-a) * 2 + var(--shake-dur-b) * 2) var(--shake-ease);
+}
+
+@keyframes shake-seq {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(calc(var(--shake-distance) * -1)); }
+  50% { transform: translateX(var(--shake-overshoot)); }
+  75% { transform: translateX(calc(var(--shake-overshoot) * -0.5)); }
+  100% { transform: translateX(0); }
+}
+
+.t-error-msg {
+  display: none;
+  color: #ef4444;
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+  animation: fade-down 200ms ease forwards;
+}
+
+.t-input-wrap.is-error .t-error-msg {
+  display: block;
+}
+
+@keyframes fade-down {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* =========================================
+   2. Success Check Appear Transition
+   ========================================= */
+.t-success-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(var(--check-y-amount)) rotate(var(--check-rotate-from));
+  filter: blur(var(--check-blur-from));
+  transition:
+    opacity var(--check-opacity-dur) var(--check-ease-out),
+    transform var(--check-bob-dur) var(--check-ease-bob),
+    filter var(--check-blur-dur) var(--check-ease-out);
+}
+
+.t-success-check[data-state="in"] {
+  opacity: 1;
+  transform: translateY(0) rotate(0deg);
+  filter: blur(0);
+}
+
+.t-success-check path {
+  stroke-dasharray: var(--check-path-len);
+  stroke-dashoffset: var(--check-path-len);
+  transition: stroke-dashoffset var(--check-path-dur) var(--check-ease-out);
+  transition-delay: var(--check-path-delay);
+}
+
+.t-success-check[data-state="in"] path {
+  stroke-dashoffset: 0;
+}
+
+/* =========================================
+   3. Pro Glowing Button (transitions.dev Pro)
+   ========================================= */
+.t-pro-btn {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  cursor: pointer;
+  background: #18181b;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.t-pro-btn:active {
+  transform: scale(0.98);
+}
+
+.t-pro-btn::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: var(--probtn-strength);
+  filter: blur(var(--probtn-blur)) hue-rotate(0deg);
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(234, 179, 8, 0.9) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(249, 115, 22, 0.9) 0%, transparent 50%),
+    radial-gradient(circle at 70% 80%, rgba(234, 179, 8, 0.8) 0%, transparent 50%),
+    radial-gradient(circle at 10% 80%, rgba(217, 119, 6, 0.8) 0%, transparent 50%);
+  background-size: 150% 150%;
+  animation:
+    probtn-drift var(--probtn-drift-dur) linear infinite,
+    probtn-hue var(--probtn-hue-dur) linear infinite;
+  mask: radial-gradient(ellipse at center, transparent var(--probtn-core), black var(--probtn-core-blur));
+  -webkit-mask: radial-gradient(ellipse at center, transparent var(--probtn-core), black var(--probtn-core-blur));
+}
+
+@keyframes probtn-drift {
+  0% { background-position: 0% 0%; }
+  50% { background-position: 100% 100%; }
+  100% { background-position: 0% 0%; }
+}
+
+@keyframes probtn-hue {
+  0% { filter: blur(var(--probtn-blur)) hue-rotate(0deg); }
+  100% { filter: blur(var(--probtn-blur)) hue-rotate(360deg); }
+}
+
+.t-pro-btn-label {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
