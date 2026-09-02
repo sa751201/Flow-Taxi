@@ -67,19 +67,41 @@ async function initBidLiff() {
     document.getElementById('pickup-addr').textContent = orderData.pickup_address;
     document.getElementById('dropoff-addr').textContent = orderData.dropoff_address || '乘客上車後說明';
 
-    // 取得司機手機 GPS 定位
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        driverLat = pos.coords.latitude;
-        driverLng = pos.coords.longitude;
+    // 取得司機手機 GPS 定位 (加上 2.5 秒超時保護，避免 iOS LINE 內建瀏覽器卡住)
+    let located = false;
+    const fallbackTimer = setTimeout(async () => {
+      if (!located) {
+        located = true;
+        console.warn('GPS 定位逾時，自動切換至市區預設距離估算');
         await fetchCalculatedEta();
-      },
-      async (geoErr) => {
-        console.warn('無法取得精準 GPS，使用市區預設距離估算:', geoErr.message);
-        await fetchCalculatedEta();
-      },
-      { timeout: 5000, enableHighAccuracy: true }
-    );
+      }
+    }, 2500);
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          if (!located) {
+            located = true;
+            clearTimeout(fallbackTimer);
+            driverLat = pos.coords.latitude;
+            driverLng = pos.coords.longitude;
+            await fetchCalculatedEta();
+          }
+        },
+        async (geoErr) => {
+          if (!located) {
+            located = true;
+            clearTimeout(fallbackTimer);
+            console.warn('無法取得精準 GPS，使用市區預設距離估算:', geoErr.message);
+            await fetchCalculatedEta();
+          }
+        },
+        { timeout: 2000, enableHighAccuracy: false, maximumAge: 60000 }
+      );
+    } else {
+      clearTimeout(fallbackTimer);
+      await fetchCalculatedEta();
+    }
 
   } catch (err) {
     showError(err.message);
