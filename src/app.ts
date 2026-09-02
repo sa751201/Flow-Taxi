@@ -162,6 +162,9 @@ app.get('/api/config', (req, res) => {
   res.json({
     liffId: env.LIFF_ID || '',
     driverGroupId: env.DRIVER_GROUP_ID || '',
+    version: '2026-09-03-60s-strict-v1',
+    windowSeconds: (dispatchEngine as any).windowDurationSeconds,
+    timerType: ((dispatchEngine as any).timer?.constructor?.name) || 'Unknown',
   });
 });
 
