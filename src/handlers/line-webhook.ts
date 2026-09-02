@@ -4,7 +4,10 @@ import { query } from '../db/index.js';
 import { env } from '../config/env.js';
 import { parseDriverRegistrationText } from '../services/driver-parser.js';
 import { upsertDriver, getDriverById } from '../db/queries/drivers.js';
-import { createDriverRegisterFlexMessage, createWelcomeServiceMessage, createCityRidePromptMessage } from '../services/flex-messages.js';
+import { createDriverRegisterFlexMessage, createWelcomeServiceMessage, createCityRidePromptMessage, createGroupDispatchOrderFlexMessage } from '../services/flex-messages.js';
+import { geocodeAddress } from '../services/google-maps.js';
+import { createOrder } from '../db/queries/orders.js';
+import { dispatchEngine } from '../app.js';
 
 type WebhookEvent = webhook.Event;
 
@@ -245,6 +248,102 @@ export async function handleLineEvents(events: WebhookEvent[]) {
                 },
               ],
             });
+          } else if (
+            (text.includes('上車地點') || text.includes('1.')) &&
+            (text.includes('下車地點') || text.includes('2.'))
+          ) {
+            // ==========================================
+            // 乘客送出叫車資訊 (3 點格式解析與派單)
+            // ==========================================
+            // 1. 立即回覆乘客：正在聯絡司機中，1 分鐘內將回覆
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: '正在聯絡司機中，1 分鐘內將回覆',
+                },
+              ],
+            });
+
+            // 非同步進行 Geocoding、建單與群組廣播 (不卡住 reply)
+            (async () => {
+              try {
+                // 簡易萃取上車地點、下車地點、人數/時間
+                let pickupAddr = '';
+                let dropoffAddr = '';
+                let timeAndCount = '';
+
+                const lines = text.split('\n');
+                for (const line of lines) {
+                  const cleaned = line.trim();
+                  if (cleaned.includes('上車地點')) {
+                    pickupAddr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[上車地點]+[\s：:]*/, '').trim();
+                  } else if (cleaned.includes('下車地點')) {
+                    dropoffAddr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[下車地點]+[\s：:]*/, '').trim();
+                  } else if (cleaned.includes('乘車時間') || cleaned.includes('人數') || cleaned.includes('3.')) {
+                    timeAndCount = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[乘車時間與人數]+[\s：:]*/, '').trim();
+                  }
+                }
+
+                if (!pickupAddr) pickupAddr = '台北市區 (指定上車點)';
+
+                // 確保 customer 存在 (避免外鍵約束失敗)
+                const customerId = userSource.userId;
+                try {
+                  await query(
+                    `INSERT INTO customers (line_user_id, display_name) VALUES ($1, 'LINE 乘客') ON CONFLICT (line_user_id) DO NOTHING;`,
+                    [customerId]
+                  );
+                } catch (cErr: any) {
+                  console.warn('[Line Webhook] Customer upsert warning:', cErr.message);
+                }
+
+                // 呼叫 Google Geocoding 取得經緯度
+                const geo = await geocodeAddress(pickupAddr);
+
+                // 建立訂單 (status: pending)
+                const newOrder = await createOrder({
+                  customer_id: customerId || 'UNKNOWN_CUSTOMER',
+                  service_type: 'city',
+                  pickup_address: pickupAddr,
+                  pickup_lat: geo.lat,
+                  pickup_lng: geo.lng,
+                  dropoff_address: dropoffAddr || undefined,
+                  note: timeAndCount || undefined,
+                });
+
+                console.log(`[Line Webhook] 訂單 ${newOrder.id} 建立成功！`);
+
+                // 啟動派單收集視窗 (60 秒)
+                await dispatchEngine.startDispatch(newOrder.id, 60);
+
+                // 司機接單 LIFF 網址
+                const bidUrl = env.LIFF_ID
+                  ? `https://liff.line.me/${env.LIFF_ID}/driver/bid?orderId=${newOrder.id}`
+                  : `https://flow-taxi-production.up.railway.app/driver/bid?orderId=${newOrder.id}`;
+
+                // 群組廣播 Flex Message
+                const targetGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
+                if (targetGroupId) {
+                  const dispatchFlex = createGroupDispatchOrderFlexMessage({
+                    orderId: newOrder.id,
+                    pickupAddress: pickupAddr,
+                    dropoffAddress: dropoffAddr || undefined,
+                    scheduledTimeText: timeAndCount || '即刻出發',
+                    bidUrl,
+                  });
+
+                  await lineClient.pushMessage({
+                    to: targetGroupId,
+                    messages: [dispatchFlex],
+                  });
+                  console.log(`[Line Webhook] 成功向司機群組 ${targetGroupId} 廣播派單卡片！`);
+                }
+              } catch (dispatchErr: any) {
+                console.error('[Line Webhook] 派單建立廣播失敗:', dispatchErr);
+              }
+            })();
           } else if (text.includes('市區搭乘')) {
             // 輸入「市區搭乘」時的回覆
             await lineClient.replyMessage({

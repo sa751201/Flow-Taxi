@@ -242,3 +242,279 @@ export function createCityRidePromptMessage(): messagingApi.TextMessage {
     },
   };
 }
+
+/**
+ * 建立司機群組派單廣播卡片 (Tier 1: 僅顯示乘客人數、上車點、下車點，不揭露電話姓氏)
+ */
+export function createGroupDispatchOrderFlexMessage(params: {
+  orderId: string;
+  pickupAddress: string;
+  dropoffAddress?: string | null;
+  passengerCount?: number;
+  scheduledTimeText?: string;
+  bidUrl: string;
+}): messagingApi.FlexMessage {
+  const container: messagingApi.FlexBubble = {
+    type: 'bubble',
+    size: 'mega',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#1e293b', // 深藍色沉穩高級
+      paddingAll: '16px',
+      contents: [
+        {
+          type: 'box',
+          layout: 'horizontal',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          contents: [
+            {
+              type: 'text',
+              text: '⚡ 新派單廣播 (市區搭乘)',
+              color: '#38bdf8',
+              weight: 'bold',
+              size: 'sm',
+            },
+            {
+              type: 'text',
+              text: '60秒搶單中',
+              color: '#facc15',
+              size: 'xs',
+              weight: 'bold',
+            },
+          ],
+        },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#ffffff',
+      paddingAll: '18px',
+      spacing: 'md',
+      contents: [
+        {
+          type: 'box',
+          layout: 'horizontal',
+          spacing: 'sm',
+          contents: [
+            {
+              type: 'text',
+              text: '🟢 上車地點：',
+              color: '#64748b',
+              size: 'sm',
+              flex: 3,
+            },
+            {
+              type: 'text',
+              text: params.pickupAddress,
+              color: '#0f172a',
+              weight: 'bold',
+              size: 'sm',
+              wrap: true,
+              flex: 7,
+            },
+          ],
+        },
+        {
+          type: 'box',
+          layout: 'horizontal',
+          spacing: 'sm',
+          contents: [
+            {
+              type: 'text',
+              text: '🔴 下車地點：',
+              color: '#64748b',
+              size: 'sm',
+              flex: 3,
+            },
+            {
+              type: 'text',
+              text: params.dropoffAddress || '抵達後告知或跳表',
+              color: '#0f172a',
+              weight: 'bold',
+              size: 'sm',
+              wrap: true,
+              flex: 7,
+            },
+          ],
+        },
+        {
+          type: 'box',
+          layout: 'horizontal',
+          spacing: 'sm',
+          contents: [
+            {
+              type: 'text',
+              text: '👥 人數時間：',
+              color: '#64748b',
+              size: 'sm',
+              flex: 3,
+            },
+            {
+              type: 'text',
+              text: `${params.passengerCount || 1} 人 | ${params.scheduledTimeText || '即刻出發'}`,
+              color: '#0284c7',
+              weight: 'bold',
+              size: 'sm',
+              wrap: true,
+              flex: 7,
+            },
+          ],
+        },
+        {
+          type: 'separator',
+          color: '#f1f5f9',
+          margin: 'md',
+        },
+        {
+          type: 'button',
+          style: 'primary',
+          color: '#06c755',
+          height: 'md',
+          action: {
+            type: 'uri',
+            label: '⚡ 立刻接單 (測算時間)',
+            uri: params.bidUrl,
+          },
+        },
+      ],
+    },
+    footer: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#f8fafc',
+      paddingAll: '10px',
+      contents: [
+        {
+          type: 'text',
+          text: '點擊開啟定位並計算到達時間，系統將自動比對最近司機中單',
+          color: '#94a3b8',
+          size: 'xxs',
+          align: 'center',
+        },
+      ],
+    },
+  };
+
+  return {
+    type: 'flex',
+    altText: `⚡ 新派單需求：${params.pickupAddress}`,
+    contents: container,
+  };
+}
+
+/**
+ * 建立指派成功卡片 (比照附圖的深灰底 MG&MD 優質司機卡片樣式)
+ * 包含：駕駛、車型、車號、車色、禁菸禁食、預計到達分鐘數
+ */
+export function createDriverAssignedFlexMessage(params: {
+  driverName: string;
+  carBrand: string;
+  plateNumber: string;
+  carColor: string;
+  etaMinutes: number;
+}): messagingApi.FlexMessage {
+  const container: messagingApi.FlexBubble = {
+    type: 'bubble',
+    size: 'mega',
+    styles: {
+      body: {
+        backgroundColor: '#525252', // 附圖深灰底色
+      },
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      paddingAll: '20px',
+      spacing: 'md',
+      contents: [
+        {
+          type: 'text',
+          text: 'MG&MD 優質司機',
+          color: '#ffffff',
+          size: 'lg',
+          weight: 'bold',
+        },
+        {
+          type: 'separator',
+          color: '#a3a3a3',
+        },
+        {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'sm',
+          margin: 'md',
+          contents: [
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '駕駛：', color: '#e5e5e5', size: 'md', flex: 3 },
+                { type: 'text', text: params.driverName, color: '#ffffff', size: 'md', weight: 'bold', flex: 7 },
+              ],
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '車型：', color: '#e5e5e5', size: 'md', flex: 3 },
+                { type: 'text', text: params.carBrand, color: '#ffffff', size: 'md', weight: 'bold', flex: 7 },
+              ],
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '車號：', color: '#e5e5e5', size: 'md', flex: 3 },
+                { type: 'text', text: params.plateNumber, color: '#ffffff', size: 'md', weight: 'bold', flex: 7 },
+              ],
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '車色：', color: '#e5e5e5', size: 'md', flex: 3 },
+                { type: 'text', text: params.carColor, color: '#ffffff', size: 'md', weight: 'bold', flex: 7 },
+              ],
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              contents: [
+                { type: 'text', text: '預計到達：', color: '#fde047', size: 'md', weight: 'bold', flex: 3 },
+                { type: 'text', text: `約 ${params.etaMinutes} 分鐘內抵達`, color: '#fde047', size: 'md', weight: 'bold', flex: 7 },
+              ],
+            },
+          ],
+        },
+        {
+          type: 'separator',
+          color: '#a3a3a3',
+          margin: 'md',
+        },
+        {
+          type: 'box',
+          layout: 'horizontal',
+          margin: 'sm',
+          contents: [
+            {
+              type: 'text',
+              text: '🚭 禁菸 🚯 禁食',
+              color: '#f5f5f5',
+              size: 'sm',
+              weight: 'bold',
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  return {
+    type: 'flex',
+    altText: `🚕 已指派司機：${params.driverName}（約 ${params.etaMinutes} 分鐘抵達）`,
+    contents: container,
+  };
+}

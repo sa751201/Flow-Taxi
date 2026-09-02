@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>司機接單出價 — 派單系統</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <!-- LINE Seed TW Font -->
+  <link rel="stylesheet" href="https://seed.line.me/src/css/line-seed-tw.css">
+  <!-- LIFF SDK -->
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <!-- Transitions.dev Custom Tokens -->
+  <link rel="stylesheet" href="/css/transitions.css">
+  <style>
+    body, button, input, select, textarea {
+      font-family: 'LINE Seed TW', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+    .card-shadow {
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4 selection:bg-emerald-500 selection:text-white">
+
+  <!-- Main Container -->
+  <div class="w-full max-w-md my-auto">
+    
+    <!-- Top Header -->
+    <div class="text-center mb-5">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold mb-2.5 tracking-wider uppercase">
+        <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+        60秒撮合派單中
+      </div>
+      <h1 class="text-2xl font-bold tracking-tight text-slate-900">
+        即時接單出價
+      </h1>
+      <p class="text-xs text-slate-500 mt-1">
+        以您目前手機定位計算路程，支援微調到達時間
+      </p>
+    </div>
+
+    <!-- Main Card -->
+    <div id="bid-card" class="bg-white rounded-2xl p-6 card-shadow border border-slate-200/80 relative">
+      
+      <!-- Loading State -->
+      <div id="locating-state" class="py-10 text-center space-y-3">
+        <svg class="animate-spin w-8 h-8 mx-auto text-emerald-600" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        <p class="text-sm font-semibold text-slate-700">正在取得手機定位並測算車程...</p>
+        <p class="text-xs text-slate-400">請允許瀏覽器存取您的位置資訊</p>
+      </div>
+
+      <!-- Order & ETA Details (Shown after located) -->
+      <div id="bid-content" class="hidden space-y-5">
+        
+        <!-- 乘客行程概要 -->
+        <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+          <div class="flex items-start gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 mt-1 shrink-0"></span>
+            <div>
+              <p class="text-slate-400 font-medium">上車地點</p>
+              <p id="pickup-addr" class="font-bold text-slate-900 text-sm mt-0.5">載入中...</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-2 pt-2 border-t border-slate-200/60">
+            <span class="w-2 h-2 rounded-full bg-red-500 mt-1 shrink-0"></span>
+            <div>
+              <p class="text-slate-400 font-medium">下車地點</p>
+              <p id="dropoff-addr" class="font-bold text-slate-900 text-sm mt-0.5">載入中...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 預估到達時間顯示 (Google Distance Matrix 計算) -->
+        <div class="text-center p-5 rounded-xl bg-emerald-50 border border-emerald-200">
+          <p class="text-xs font-semibold text-emerald-800 uppercase tracking-wider">預估車程時間</p>
+          <div class="flex items-baseline justify-center gap-1 my-1">
+            <span id="eta-mins" class="text-4xl font-extrabold text-emerald-600">--</span>
+            <span class="text-base font-bold text-emerald-800">分鐘</span>
+          </div>
+          <p class="text-xs text-emerald-700">
+            預計抵達時刻：<strong id="eta-clock" class="text-emerald-900">--:--</strong>
+          </p>
+        </div>
+
+        <!-- 司機手動微調按鈕 (+1 分鐘 / +5 分鐘) -->
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-2">手動調整預估車程 (遇紅燈或塞車)：</label>
+          <div class="grid grid-cols-2 gap-3">
+            <button type="button" id="btn-plus-1" class="py-2.5 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100 font-bold text-xs text-slate-800 transition flex items-center justify-center gap-1 shadow-sm">
+              <span>⏱️</span> +1 分鐘
+            </button>
+            <button type="button" id="btn-plus-5" class="py-2.5 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100 font-bold text-xs text-slate-800 transition flex items-center justify-center gap-1 shadow-sm">
+              <span>⏱️</span> +5 分鐘
+            </button>
+          </div>
+        </div>
+
+        <!-- 確認按鈕 (Transitions.dev Pro Glow) -->
+        <div class="pt-2">
+          <button type="button" id="btn-confirm-bid" class="t-pro-btn w-full py-3.5 px-6">
+            <span class="t-pro-btn-label text-white font-bold flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+              </svg>
+              確認到達時間並接單
+            </span>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Status Toast / Alert -->
+      <div id="status-box" class="hidden mt-4 p-3.5 rounded-xl text-xs font-medium text-center"></div>
+
+    </div>
+
+    <!-- Success Screen (需求: 顯示已收[姓名]單，系統派單中，下方關閉按鈕) -->
+    <div id="success-screen" class="hidden bg-white rounded-2xl p-7 text-center card-shadow border border-slate-200">
+      <div class="flex justify-center mb-3">
+        <span class="t-success-check w-14 h-14 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center" data-state="out" id="success-check-icon">
+          <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 13l4 4L19 7" />
+          </svg>
+        </span>
+      </div>
+      <h2 id="success-title" class="text-xl font-bold text-slate-900 mb-1.5">已收到接單意願！</h2>
+      <p id="success-desc" class="text-xs text-slate-500 mb-6">系統 60 秒派單中，若您是距離最適合的司機，系統將立即指派並回傳乘車人資訊。</p>
+
+      <button type="button" onclick="closeLiffWindow();" class="w-full py-3.5 px-6 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm transition shadow-sm">
+        關閉視窗 (返回群組等候結果)
+      </button>
+    </div>
+
+  </div>
+
+  <script src="/js/driver-bid.js"></script>
+</body>
+</html>

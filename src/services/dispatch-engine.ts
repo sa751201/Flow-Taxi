@@ -14,14 +14,17 @@ import { DispatchWinnerResult } from '../types/dispatch.js';
 export interface DispatchEngineOptions {
   timer?: DispatchTimer;
   windowDurationSeconds?: number;
+  onOrderResolved?: (result: DispatchWinnerResult) => Promise<void>;
 }
 
 export class DispatchEngine {
   private timer: DispatchTimer;
   private windowDurationSeconds: number;
+  private onOrderResolved?: (result: DispatchWinnerResult) => Promise<void>;
 
   constructor(options?: DispatchEngineOptions) {
     this.windowDurationSeconds = options?.windowDurationSeconds ?? env.DISPATCH_WINDOW_SECONDS;
+    this.onOrderResolved = options?.onOrderResolved;
 
     if (options?.timer) {
       this.timer = options.timer;
@@ -127,7 +130,7 @@ export class DispatchEngine {
       `[DispatchEngine] Order ${orderId} successfully assigned to driver ${candidate.driver_id} (Distance: ${candidate.distance_meters.toFixed(1)}m, Priority: ${candidate.has_long_ride_priority})`
     );
 
-    return {
+    const result: DispatchWinnerResult = {
       orderId,
       status: 'assigned',
       winnerDriverId: candidate.driver_id,
@@ -135,6 +138,16 @@ export class DispatchEngine {
       hasPriority: candidate.has_long_ride_priority,
       totalBidsCount,
     };
+
+    if (this.onOrderResolved) {
+      try {
+        await this.onOrderResolved(result);
+      } catch (err: any) {
+        console.error('[DispatchEngine] onOrderResolved 執行失敗:', err.message);
+      }
+    }
+
+    return result;
   }
 
   /**

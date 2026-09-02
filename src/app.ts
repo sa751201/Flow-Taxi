@@ -10,7 +10,79 @@ import { handleLineEvents } from './handlers/line-webhook.js';
 
 const app = express();
 
-export const dispatchEngine = new DispatchEngine();
+export const dispatchEngine = new DispatchEngine({
+  windowDurationSeconds: 60,
+  onOrderResolved: async (result) => {
+    console.log(`[DispatchEngine Callback] 訂單 ${result.orderId} 結單狀態: ${result.status}`);
+    const lineClient = getLineClient();
+
+    if (result.status === 'assigned' && result.winnerDriverId) {
+      try {
+        const order = await getOrderById(result.orderId);
+        const driver = await getDriverProfile(result.winnerDriverId);
+        const bids = await getBidsByOrderId(result.orderId);
+        const winnerBid = bids.find((b) => b.driver_id === result.winnerDriverId);
+        const etaMinutes = winnerBid?.eta_minutes || Math.max(3, Math.round((result.distanceMeters || 1500) / 500));
+
+        if (order && driver) {
+          const assignedFlex = createDriverAssignedFlexMessage({
+            driverName: driver.display_name || '優質司機',
+            carBrand: driver.car_brand || 'TOYOTA',
+            plateNumber: driver.plate_number || '---',
+            carColor: driver.car_color || '黑色',
+            etaMinutes,
+          });
+
+          // 1. 1:1 推播給乘客 (中單司機資訊 + 到達分鐘數)
+          if (order.customer_id) {
+            await lineClient.pushMessage({
+              to: order.customer_id,
+              messages: [
+                {
+                  type: 'text',
+                  text: '🎉 已為您成功媒合到最適合的優質司機！司機正前往接送您：',
+                },
+                assignedFlex,
+              ],
+            });
+            console.log(`[Dispatch] 已推播中單資訊至乘客 ${order.customer_id}`);
+          }
+
+          // 2. 1:1 推播給中單司機 (乘客完整接送資訊 - SPEC Tier 2)
+          await lineClient.pushMessage({
+            to: result.winnerDriverId,
+            messages: [
+              {
+                type: 'text',
+                text: `🏆 恭喜您成功中單！\n\n【乘客接送資訊】\n🟢 上車地點：${order.pickup_address}\n🔴 下車地點：${order.dropoff_address || '乘客上車後說明'}\n👥 乘車人數：${order.passenger_count || 1} 人\n⏱️ 您預估車程：約 ${etaMinutes} 分鐘抵達\n\n請立即前往上車地點接送乘客！`,
+              },
+            ],
+          });
+          console.log(`[Dispatch] 已推播中單確認至司機 ${result.winnerDriverId}`);
+        }
+      } catch (notifyErr: any) {
+        console.error('[Dispatch] 推播中單資訊失敗:', notifyErr.message);
+      }
+    } else if (result.status === 'no_driver') {
+      try {
+        const order = await getOrderById(result.orderId);
+        if (order?.customer_id) {
+          await lineClient.pushMessage({
+            to: order.customer_id,
+            messages: [
+              {
+                type: 'text',
+                text: '抱歉，目前附近司機皆在行程中，暫時無人接單。建議您稍後再試或調整乘車時間！',
+              },
+            ],
+          });
+        }
+      } catch (err: any) {
+        console.error('[Dispatch] 推播無司機失敗:', err.message);
+      }
+    }
+  },
+});
 
 // 1. LINE Webhook 專用端點 (必須在 express.json() 之前，因為 line middleware 需要 raw body 進行驗簽)
 const lineConfig = {
@@ -38,9 +110,13 @@ app.use(express.json());
 // 靜態資源服務 (LIFF 頁面、CSS、JS)
 app.use(express.static('public'));
 
-// 路由轉發：/driver/register 導向 /driver/register.html (同時相容 LINE 拼接路徑)
+// 路由轉發：/driver/register 與 /driver/bid
 app.get(['/driver/register', '/driver/register/driver/register'], (req, res) => {
   res.sendFile('public/driver/register.html', { root: process.cwd() });
+});
+
+app.get(['/driver/bid', '/driver/bid/driver/bid'], (req, res) => {
+  res.sendFile('public/driver/bid.html', { root: process.cwd() });
 });
 
 // 提供前端 LIFF 設定與環境診斷
@@ -52,11 +128,92 @@ app.get('/api/config', (req, res) => {
 });
 
 import { upsertDriver, getDriverById as getDriverProfile, clearAllDrivers } from './db/queries/drivers.js';
+import { calculateDrivingEta } from './services/google-maps.js';
+import { createDriverAssignedFlexMessage } from './services/flex-messages.js';
 
 app.post('/api/driver/reset', async (req, res) => {
   await clearAllDrivers();
   console.log('[Driver API] 已清除所有已登記司機資料！');
   res.json({ success: true, message: '已清除所有司機資料' });
+});
+
+app.get('/api/orders/:orderId', async (req, res) => {
+  try {
+    const order = await getOrderById(req.params.orderId);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    res.json(order);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 計算司機定位與上車點之車程 (Google Distance Matrix API)
+app.post('/api/dispatch/calculate-eta', async (req, res) => {
+  try {
+    const { orderId, driverLat, driverLng } = req.body;
+    const order = await getOrderById(orderId);
+    if (!order) {
+      return res.status(404).json({ error: '訂單不存在' });
+    }
+
+    // 取得訂單上車經緯度
+    const pickupLat = (order as any).pickup_lat || 25.0478;
+    const pickupLng = (order as any).pickup_lng || 121.5170;
+
+    const etaResult = await calculateDrivingEta(driverLat, driverLng, pickupLat, pickupLng);
+    res.json(etaResult);
+  } catch (err: any) {
+    console.error('[ETA API Error]', err);
+    res.status(500).json({ error: err.message, durationMinutes: 5 });
+  }
+});
+
+// 司機提交出價並接單
+app.post('/api/dispatch/bid', async (req, res) => {
+  try {
+    const { orderId, driverId, driverLat, driverLng, etaMinutes } = req.body;
+    if (!orderId || !driverId || driverLat === undefined || driverLng === undefined) {
+      return res.status(400).json({ error: '參數不完整' });
+    }
+
+    // 檢查司機註冊 gate
+    const driver = await getDriverProfile(driverId);
+    if (!driver || !driver.registered) {
+      return res.status(403).json({ error: '您尚未完成司機資料登記，請先登記後再接單' });
+    }
+
+    // 寫入出價
+    const bid = await dispatchEngine.submitBid({
+      orderId,
+      driverId,
+      lat: Number(driverLat),
+      lng: Number(driverLng),
+      etaMinutes: Number(etaMinutes) || 5,
+    });
+
+    console.log(`[Dispatch API] 司機 ${driverId} 出價成功！預估車程: ${etaMinutes} 分鐘`);
+
+    // 立即向司機 1:1 推播「接單中」
+    const lineClient = getLineClient();
+    lineClient.pushMessage({
+      to: driverId,
+      messages: [
+        {
+          type: 'text',
+          text: `🚕 系統已收到您的接單意願！\n\n您預計約 ${etaMinutes} 分鐘抵達。60 秒派單視窗結束時，系統將自動評估並回報是否中單。請稍候！`,
+        },
+      ],
+    }).catch((pushErr: any) => {
+      console.warn('[Dispatch API] 推播司機接單中失敗:', pushErr.message);
+    });
+
+    res.json({ success: true, bid });
+  } catch (err: any) {
+    console.error('[Dispatch Bid Error]', err);
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.get('/api/driver/:userId', async (req, res) => {
