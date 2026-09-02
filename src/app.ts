@@ -65,32 +65,25 @@ export const dispatchEngine = new DispatchEngine({
             console.warn(`[Dispatch] ⚠️ 訂單 ${order.id} 沒有 customer_id，無法推播乘客！`);
           }
 
-          // 2. 1:1 推播給中單司機 (乘客完整接送資訊 - SPEC Tier 2)
-          await lineClient.pushMessage({
-            to: result.winnerDriverId,
-            messages: [
-              {
-                type: 'text',
-                text: `🏆 恭喜您成功中單！\n\n【乘客接送資訊】\n🟢 上車地點：${order.pickup_address}\n🔴 下車地點：${order.dropoff_address || '乘客上車後說明'}\n👥 乘車人數：${order.passenger_count || 1} 人\n⏱️ 您預估車程：約 ${etaMinutes} 分鐘抵達\n\n請立即前往上車地點接送乘客！`,
-              },
-            ],
-          });
-          console.log(`[Dispatch] ✅ 成功推播中單確認至司機: ${result.winnerDriverId}`);
-
-          // 3. 在司機群組通知中單司機前往接送
+          // 2. 在司機群組通知中單司機前往接送 (附目的地 Google Maps 導航連結)
           const driverGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
           if (driverGroupId) {
             try {
+              const groupAssignedFlex = createGroupOrderAssignedFlexMessage({
+                driverName: driver.display_name || '司機夥伴',
+                orderId: order.id,
+                pickupAddress: order.pickup_address,
+                dropoffAddress: order.dropoff_address,
+                passengerCount: order.passenger_count || 1,
+                etaMinutes,
+                scheduledTimeText: order.note?.replace('預約時間: ', ''),
+              });
+
               await lineClient.pushMessage({
                 to: driverGroupId,
-                messages: [
-                  {
-                    type: 'text',
-                    text: `🚕【派單已結單】\n恭喜 @${driver.display_name || '司機夥伴'} 成功接單！\n請依照約定時間（約 ${etaMinutes} 分鐘內）前往接送乘客，感謝各位司機！`,
-                  },
-                ],
+                messages: [groupAssignedFlex],
               });
-              console.log(`[Dispatch] ✅ 成功向司機群組廣播中單司機: ${driver.display_name}`);
+              console.log(`[Dispatch] ✅ 成功向司機群組廣播中單司機卡片與地圖導航: ${driver.display_name}`);
             } catch (groupErr: any) {
               console.warn('[Dispatch] 司機群組推播結單失敗:', groupErr.message);
             }
@@ -174,7 +167,7 @@ app.get('/api/config', (req, res) => {
 
 import { upsertDriver, getDriverById as getDriverProfile, clearAllDrivers } from './db/queries/drivers.js';
 import { calculateDrivingEta } from './services/google-maps.js';
-import { createDriverAssignedFlexMessage } from './services/flex-messages.js';
+import { createDriverAssignedFlexMessage, createGroupOrderAssignedFlexMessage } from './services/flex-messages.js';
 
 app.post('/api/driver/reset', async (req, res) => {
   await clearAllDrivers();

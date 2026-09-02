@@ -666,3 +666,137 @@ export function createDriverAssignedFlexMessage(params: {
     contents: container,
   };
 }
+
+/**
+ * 司機群組派單結單廣播卡片（附目的地 Google Maps 連結）
+ */
+export function createGroupOrderAssignedFlexMessage(params: {
+  driverName: string;
+  orderId: string;
+  pickupAddress: string;
+  dropoffAddress?: string | null;
+  passengerCount: number;
+  etaMinutes: number;
+  scheduledTimeText?: string;
+}): messagingApi.FlexMessage {
+  const destination = params.dropoffAddress || params.pickupAddress;
+  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`;
+  const pickupMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(params.pickupAddress)}`;
+
+  const container: messagingApi.FlexBubble = {
+    type: 'bubble',
+    size: 'mega',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#0f172a',
+      paddingAll: '16px',
+      contents: [
+        {
+          type: 'text',
+          text: '🚕【派單已結單】',
+          color: '#38bdf8',
+          weight: 'bold',
+          size: 'md',
+        },
+        {
+          type: 'text',
+          text: `恭喜 @${params.driverName} 成功接單！`,
+          color: '#facc15',
+          weight: 'bold',
+          size: 'sm',
+          margin: 'sm',
+        },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#ffffff',
+      paddingAll: '18px',
+      spacing: 'md',
+      contents: [
+        {
+          type: 'box',
+          layout: 'horizontal',
+          contents: [
+            { type: 'text', text: '🟢 上車地點：', color: '#64748b', size: 'sm', flex: 3 },
+            { type: 'text', text: params.pickupAddress, color: '#0f172a', size: 'sm', weight: 'bold', flex: 7, wrap: true },
+          ],
+        },
+        {
+          type: 'box',
+          layout: 'horizontal',
+          contents: [
+            { type: 'text', text: '🔴 下車目的地：', color: '#64748b', size: 'sm', flex: 3 },
+            { type: 'text', text: params.dropoffAddress || '乘客上車後說明', color: '#0f172a', size: 'sm', weight: 'bold', flex: 7, wrap: true },
+          ],
+        },
+        {
+          type: 'box',
+          layout: 'horizontal',
+          contents: [
+            { type: 'text', text: '👥 乘車人數：', color: '#64748b', size: 'sm', flex: 3 },
+            { type: 'text', text: `${params.passengerCount} 人`, color: '#0284c7', size: 'sm', weight: 'bold', flex: 7 },
+          ],
+        },
+        {
+          type: 'box',
+          layout: 'horizontal',
+          contents: [
+            { type: 'text', text: '⏱️ 約定到達：', color: '#64748b', size: 'sm', flex: 3 },
+            { type: 'text', text: `約 ${params.etaMinutes} 分鐘內抵達`, color: '#16a34a', size: 'sm', weight: 'bold', flex: 7 },
+          ],
+        },
+        ...(params.scheduledTimeText ? [
+          {
+            type: 'box',
+            layout: 'horizontal',
+            contents: [
+              { type: 'text', text: '⏰ 預約時間：', color: '#64748b', size: 'sm', flex: 3 },
+              { type: 'text', text: params.scheduledTimeText, color: '#0284c7', size: 'sm', weight: 'bold', flex: 7 },
+            ],
+          } as messagingApi.FlexComponent,
+        ] : []),
+        {
+          type: 'separator',
+          color: '#f1f5f9',
+          margin: 'md',
+        },
+        {
+          type: 'button',
+          style: 'primary',
+          color: '#2563eb',
+          height: 'md',
+          action: {
+            type: 'uri',
+            label: '📍 開啟 Google Maps 導航',
+            uri: mapUrl,
+          },
+        },
+      ],
+    },
+    footer: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#f8fafc',
+      paddingAll: '10px',
+      contents: [
+        {
+          type: 'text',
+          text: '請接單司機盡速前往接送，祝行車平安！感謝各位司機配合。',
+          color: '#94a3b8',
+          size: 'xxs',
+          align: 'center',
+        },
+      ],
+    },
+  };
+
+  return {
+    type: 'flex',
+    altText: `🚕【派單已結單】恭喜 @${params.driverName} 成功接單！`,
+    contents: container,
+  };
+}
+
