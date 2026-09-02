@@ -573,6 +573,7 @@ export function createDriverAssignedFlexMessage(params: {
     body: {
       type: 'box',
       layout: 'vertical',
+      backgroundColor: '#525252',
       paddingAll: '20px',
       spacing: 'md',
       contents: [

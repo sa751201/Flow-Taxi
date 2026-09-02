@@ -80,7 +80,7 @@ export const dispatchEngine = new DispatchEngine({
           console.error(`[Dispatch] ❌ 找不到訂單 ${result.orderId}，無法發送中單推播！`);
         }
       } catch (notifyErr: any) {
-        console.error('[Dispatch] ❌ 推播中單資訊失敗:', notifyErr.message);
+        console.error('[Dispatch] ❌ 推播中單資訊失敗:', notifyErr.message, notifyErr.originalError?.response?.data || notifyErr);
       }
     } else if (result.status === 'no_driver') {
       try {
