@@ -144,21 +144,6 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
       throw new Error(result.error || `伺服器回應異常 (HTTP ${res.status})`);
     }
 
-    // 需求 2: 優先使用 liff.sendMessages 發送回目前開啟的聊天室 (群組或個人對話皆有效)
-    try {
-      if (typeof liff !== 'undefined' && liff.isInClient && liff.isInClient()) {
-        await liff.sendMessages([
-          {
-            type: 'text',
-            text: `✅【${displayName}】你的司機資料已經建立完成！\n\n🚙 車型：${carBrand}\n🔢 車號：${plateNumber}\n🎨 車色：${carColor}\n\n已為您正式開通派單接單權限！若日後需變更資料，隨時輸入「填資料」即可調整。`,
-          },
-        ]);
-        console.log('[LIFF] 成功透過 sendMessages 發送到當前聊天室！');
-      }
-    } catch (liffMsgErr) {
-      console.warn('[LIFF] sendMessages 無法發送 (可能權限未開或由後端 pushMessage 處理):', liffMsgErr);
-    }
-
     // 成功狀態切換 (表格呈現)
     document.getElementById('form-card').classList.add('hidden');
     const successScreen = document.getElementById('success-screen');

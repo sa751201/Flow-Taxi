@@ -85,40 +85,20 @@ app.post('/api/driver/register', async (req, res) => {
 
     console.log(`[Driver API] 司機 ${userId} (${displayName}) 透過 LIFF 完成登記！`);
 
-    // 需求 2: 聊天室機器人推播回覆「[user 暱稱] 你的資料已經建立完成」
-    const notifyText = `✅【${displayName}】你的司機資料已經建立完成！\n\n🚙 車型：${carBrand}\n🔢 車號：${plateNumber}\n🎨 車色：${carColor}\n\n已為您正式開通派單接單權限！若日後需變更資料，隨時輸入「填資料」即可調整。`;
-
-    const lineClient = getLineClient();
-    let pushed = false;
-
-    // 1. 優先推播至司機 1:1 個人聊天室
-    if (userId && !userId.startsWith('DEV_')) {
-      try {
-        await lineClient.pushMessage({
-          to: userId,
-          messages: [{ type: 'text', text: notifyText }],
-        });
-        pushed = true;
-        console.log(`[Driver API] 已成功向司機個人 LINE (${userId}) 推播建立完成通知！`);
-      } catch (pushUserErr: any) {
-        console.warn(`[Driver API] 無法推播給個人 (${userId}):`, pushUserErr.message);
-      }
-    }
-
-    // 2. 若司機尚未加 OA 好友或個人推播受限，同步發送到司機群組通知
-    if (!pushed && env.DRIVER_GROUP_ID) {
-      try {
-        await lineClient.pushMessage({
-          to: env.DRIVER_GROUP_ID,
-          messages: [{ type: 'text', text: notifyText }],
-        });
-        console.log(`[Driver API] 已推播至司機群組 (${env.DRIVER_GROUP_ID}) 通知！`);
-      } catch (pushGroupErr: any) {
-        console.warn('[Driver API] 推播至司機群組亦失敗:', pushGroupErr.message);
-      }
-    }
-
+    // 立即回應前端，不等待 LINE API 推播延遲
     res.json({ success: true, driver });
+
+    // 非同步直接推播至司機群組 (不阻塞 HTTP 回應，秒速送達)
+    if (env.DRIVER_GROUP_ID) {
+      const notifyText = `✅【${displayName}】你的司機資料已經建立完成！\n\n🚙 車型：${carBrand}\n🔢 車號：${plateNumber}\n🎨 車色：${carColor}\n\n已為您正式開通派單接單權限！若日後需變更資料，隨時輸入「填資料」即可調整。`;
+      const lineClient = getLineClient();
+      lineClient.pushMessage({
+        to: env.DRIVER_GROUP_ID,
+        messages: [{ type: 'text', text: notifyText }],
+      }).catch((pushGroupErr: any) => {
+        console.warn('[Driver API] 推播至司機群組失敗:', pushGroupErr.message);
+      });
+    }
   } catch (err: any) {
     console.error('[Driver API Error]', err);
     res.status(500).json({ error: err.message });
