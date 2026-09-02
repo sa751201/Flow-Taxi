@@ -1,7 +1,6 @@
 import { env } from '../config/env.js';
 import { DispatchTimer } from './timer/timer-interface.js';
 import { MemoryDispatchTimer } from './timer/memory-timer.js';
-import { BullMQDispatchTimer } from './timer/bullmq-timer.js';
 import { getOrderById, markOrderDispatching } from '../db/queries/orders.js';
 import { insertBid, getBidsByOrderId, SubmitBidParams } from '../db/queries/bids.js';
 import {
@@ -10,6 +9,9 @@ import {
   markOrderNoDriver,
 } from '../db/queries/dispatch.js';
 import { DispatchWinnerResult } from '../types/dispatch.js';
+
+// 派單視窗硬上限：60 秒（防止任何環境變數或參數覆蓋）
+const MAX_DISPATCH_WINDOW_SECONDS = 60;
 
 export interface DispatchEngineOptions {
   timer?: DispatchTimer;
@@ -23,16 +25,20 @@ export class DispatchEngine {
   private onOrderResolved?: (result: DispatchWinnerResult) => Promise<void>;
 
   constructor(options?: DispatchEngineOptions) {
-    this.windowDurationSeconds = options?.windowDurationSeconds ?? env.DISPATCH_WINDOW_SECONDS;
+    // 強制上限 60 秒，無論 env 或傳入值設為多少
+    const rawDuration = options?.windowDurationSeconds ?? env.DISPATCH_WINDOW_SECONDS;
+    this.windowDurationSeconds = Math.min(rawDuration, MAX_DISPATCH_WINDOW_SECONDS);
     this.onOrderResolved = options?.onOrderResolved;
 
+    // 所有環境一律使用 MemoryDispatchTimer（Node.js setTimeout）
+    // BullMQ delayed job 在遠端 Redis 上有 Worker 輪詢延遲，不適合短秒數精確定時
     if (options?.timer) {
       this.timer = options.timer;
-    } else if (env.REDIS_URL && env.NODE_ENV === 'production') {
-      this.timer = new BullMQDispatchTimer(env.REDIS_URL);
     } else {
       this.timer = new MemoryDispatchTimer();
     }
+
+    console.log(`[DispatchEngine] 初始化完成 | 計時器: MemoryDispatchTimer | 派單視窗: ${this.windowDurationSeconds}s`);
   }
 
   /**
@@ -56,31 +62,28 @@ export class DispatchEngine {
       return { success: false, message: 'Failed to update order status to dispatching (race condition)' };
     }
 
-    const duration = customDurationSeconds ?? this.windowDurationSeconds;
+    // 強制上限 60 秒，防止任何來源傳入超過 60 秒的值
+    const duration = Math.min(
+      customDurationSeconds ?? this.windowDurationSeconds,
+      MAX_DISPATCH_WINDOW_SECONDS
+    );
 
-    // 啟動視窗計時 (雙保險：主計時器 + 本地 Node.js setTimeout 備援，確保 100% 在 60 秒到期時觸發結單)
-    let hasResolved = false;
-    const triggerExpiry = async (expiredOrderId: string, source: string) => {
-      if (hasResolved) return;
-      hasResolved = true;
-      console.log(`[DispatchEngine] Window expired (${source}) for order: ${expiredOrderId}. Resolving winner...`);
-      await this.closeDispatchWindow(expiredOrderId);
-    };
-
+    // 使用 MemoryDispatchTimer 精準的 Node.js setTimeout 計時
     try {
       await this.timer.startWindow(orderId, duration, async (expiredOrderId) => {
-        await triggerExpiry(expiredOrderId, 'Primary Timer');
+        console.log(`[DispatchEngine] 視窗到期 (${duration}s) for order: ${expiredOrderId}. 開始結單...`);
+        await this.closeDispatchWindow(expiredOrderId);
       });
     } catch (tErr: any) {
-      console.warn('[DispatchEngine] 主計時器啟動異常，依賴本地備援計時器:', tErr.message);
+      console.error('[DispatchEngine] 計時器啟動失敗:', tErr.message);
+      // 緊急備援：直接用原生 setTimeout
+      setTimeout(async () => {
+        console.log(`[DispatchEngine] 緊急備援計時器到期 for order: ${orderId}`);
+        await this.closeDispatchWindow(orderId);
+      }, duration * 1000);
     }
 
-    // 本地雙保險計時器（多加 500ms 緩衝）
-    setTimeout(async () => {
-      await triggerExpiry(orderId, 'Local Fallback Timeout');
-    }, (duration * 1000) + 500);
-
-    console.log(`[DispatchEngine] Order ${orderId} is now dispatching. Window open for ${duration}s.`);
+    console.log(`[DispatchEngine] Order ${orderId} 已開始派單。視窗 ${duration} 秒。`);
     return { success: true };
   }
 
