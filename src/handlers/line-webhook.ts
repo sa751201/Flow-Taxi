@@ -4,7 +4,7 @@ import { query } from '../db/index.js';
 import { env } from '../config/env.js';
 import { parseDriverRegistrationText } from '../services/driver-parser.js';
 import { upsertDriver, getDriverById } from '../db/queries/drivers.js';
-import { createDriverRegisterFlexMessage } from '../services/flex-messages.js';
+import { createDriverRegisterFlexMessage, createWelcomeServiceMessage } from '../services/flex-messages.js';
 
 type WebhookEvent = webhook.Event;
 
@@ -68,7 +68,22 @@ export async function handleLineEvents(events: WebhookEvent[]) {
       }
 
       // ==========================================
-      // B. 處理新成員加入群組事件 (memberJoined)
+      // B. 處理加好友 / 追蹤事件 (follow) ➔ 發送歡迎詞與 6 大服務 Quick Reply
+      // ==========================================
+      if (event.type === 'follow') {
+        const replyToken = 'replyToken' in event ? event.replyToken : undefined;
+        if (!replyToken) continue;
+        console.log(`🎉 [LINE Follow] 有新使用者加入官方帳號好友！userId: ${event.source?.userId}`);
+
+        await lineClient.replyMessage({
+          replyToken,
+          messages: [createWelcomeServiceMessage()],
+        });
+        continue;
+      }
+
+      // ==========================================
+      // C. 處理新成員加入群組事件 (memberJoined)
       // ==========================================
       if (event.type === 'memberJoined' && event.source && event.source.type === 'group') {
         const groupSource = event.source as webhook.GroupSource;
@@ -204,7 +219,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
           continue;
         }
 
-        // 4. 個人 1:1 聊天室指令 (Ping / 查 ID)
+        // 4. 個人 1:1 聊天室指令 (Ping / 查 ID / 6大服務點擊 / 預設回覆)
         if (event.source.type === 'user') {
           const userSource = event.source as webhook.UserSource;
           if (text.toLowerCase() === 'ping') {
@@ -222,15 +237,29 @@ export async function handleLineEvents(events: WebhookEvent[]) {
                 },
               ],
             });
-          } else {
+          } else if (
+            text.includes('市區搭乘') ||
+            text.includes('機場接送') ||
+            text.includes('酒後代駕') ||
+            text.includes('代購代送') ||
+            text.includes('包車服務') ||
+            text.includes('搬運服務')
+          ) {
+            // 點擊 6 大服務按鈕時的引導回覆
             await lineClient.replyMessage({
               replyToken,
               messages: [
                 {
                   type: 'text',
-                  text: `🚕 您好！我是叫車派單機器人。\n輸入「填資料」可開啟司機資料登記與修改卡片，或輸入「ping」測試連線。`,
+                  text: `您選擇了【${text}】服務 🚕\n\n請直接輸入您的：\n1. 上車地點\n2. 下車地點\n3. 乘車時間與人數\n\n派單專員將立即為您安排優質司機！`,
                 },
               ],
+            });
+          } else {
+            // 1:1 聊天室預設回覆：發送完整歡迎詞與 6 大服務 Quick Reply 按鈕
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [createWelcomeServiceMessage()],
             });
           }
         } else if (event.source.type === 'group') {

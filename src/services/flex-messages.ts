@@ -53,7 +53,7 @@ export function createDriverRegisterFlexMessage(registerUrl: string): messagingA
       contents: [
         {
           type: 'text',
-          text: '為了確保派單資訊精確與乘車辨識順暢，請司機夥伴隨時保持最新車輛資訊（姓名、車牌、車色、廠牌）。',
+          text: '為了確保派單資訊精確與乘車辨識順暢，請司機夥伴隨時保持最新車輛資訊（姓名、車牌、車型、車色）。',
           color: '#4b5563',
           size: 'sm',
           wrap: true,
@@ -117,5 +117,59 @@ export function createDriverRegisterFlexMessage(registerUrl: string): messagingA
     type: 'flex',
     altText: '🚕 司機夥伴資料維護與登記',
     contents: container,
+  };
+}
+
+/**
+ * 建立 1:1 乘客歡迎訊息與 6 大服務 Quick Reply 按鈕
+ * 符合深藍色圓角膠囊按鈕樣式
+ */
+export function createWelcomeServiceMessage(): messagingApi.TextMessage {
+  const welcomeText = `您好
+歡迎您加入福露叫車平台🥇🌊
+
+歡迎使用「預約叫車」
+提早為您的行程 做好準備🌸
+➖➖➖服務項目➖➖➖
+🌊市區搭乘
+收費方式如下👇🏻
+基本費$6️⃣0️⃣元∙每公里$2️⃣0️⃣元
+3️⃣公里以內1️⃣2️⃣0️⃣元。
+🔺上山+1️⃣0️⃣0️⃣
+
+🌊酒後代駕服務
+收費方式如下
+基本1️⃣0️⃣公里內7️⃣0️⃣0️⃣
+超過公里數以1️⃣公里5️⃣0️⃣元計費
+
+🔎以上費率僅限
+北北基、桃園其他縣市另計。
+
+歡迎大家提早預約💎`;
+
+  const services = [
+    { label: '市區搭乘🚗', text: '市區搭乘🚗' },
+    { label: '機場接送✈️', text: '機場接送✈️' },
+    { label: '酒後代駕🍺', text: '酒後代駕🍺' },
+    { label: '代購代送🛍️', text: '代購代送🛍️' },
+    { label: '包車服務🚙', text: '包車服務🚙' },
+    { label: '搬運服務🧳', text: '搬運服務🧳' },
+  ];
+
+  const quickReplyItems: messagingApi.QuickReplyItem[] = services.map((s) => ({
+    type: 'action',
+    action: {
+      type: 'message',
+      label: s.label,
+      text: s.text,
+    },
+  }));
+
+  return {
+    type: 'text',
+    text: welcomeText,
+    quickReply: {
+      items: quickReplyItems,
+    },
   };
 }
