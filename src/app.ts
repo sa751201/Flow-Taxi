@@ -38,8 +38,8 @@ app.use(express.json());
 // 靜態資源服務 (LIFF 頁面、CSS、JS)
 app.use(express.static('public'));
 
-// 路由轉發：/driver/register 導向 /driver/register.html
-app.get('/driver/register', (req, res) => {
+// 路由轉發：/driver/register 導向 /driver/register.html (同時相容 LINE 拼接路徑)
+app.get(['/driver/register', '/driver/register/driver/register'], (req, res) => {
   res.sendFile('public/driver/register.html', { root: process.cwd() });
 });
 
