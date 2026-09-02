@@ -101,28 +101,28 @@
           <p class="t-error-msg">請輸入完整車牌號碼</p>
         </div>
 
-        <!-- 3. 車輛顏色 -->
-        <div class="t-input-wrap" id="wrap-color">
-          <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5" for="carColor">
-            3. 車輛顏色
-          </label>
-          <div class="t-input custom-input-box">
-            <input type="text" id="carColor" placeholder="例如：藍灰、純白、黑" required
-                   class="w-full bg-transparent px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none rounded-xl">
-          </div>
-          <p class="t-error-msg">請輸入車輛顏色（供乘客上車辨識）</p>
-        </div>
-
-        <!-- 4. 車輛廠牌/型號 -->
+        <!-- 3. 車輛廠牌/型號 -->
         <div class="t-input-wrap" id="wrap-brand">
           <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5" for="carBrand">
-            4. 車輛廠牌 / 型號
+            3. 車輛廠牌 / 型號
           </label>
           <div class="t-input custom-input-box">
             <input type="text" id="carBrand" placeholder="例如：Toyota CC、RAV4、Camry" required
                    class="w-full bg-transparent px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none rounded-xl">
           </div>
           <p class="t-error-msg">請輸入車型廠牌</p>
+        </div>
+
+        <!-- 4. 車輛顏色 -->
+        <div class="t-input-wrap" id="wrap-color">
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5" for="carColor">
+            4. 車輛顏色
+          </label>
+          <div class="t-input custom-input-box">
+            <input type="text" id="carColor" placeholder="例如：藍灰、純白、黑" required
+                   class="w-full bg-transparent px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none rounded-xl">
+          </div>
+          <p class="t-error-msg">請輸入車輛顏色（供乘客上車辨識）</p>
         </div>
 
         <!-- 5. 聯絡電話 (選填) -->
@@ -186,12 +186,12 @@
               <td id="res-plate" class="py-2.5 px-4 font-mono font-bold text-emerald-600 tracking-wider"></td>
             </tr>
             <tr>
-              <td class="py-2.5 px-4 font-medium text-slate-500">車輛顏色</td>
-              <td id="res-color" class="py-2.5 px-4 font-medium"></td>
-            </tr>
-            <tr class="bg-slate-50/50">
               <td class="py-2.5 px-4 font-medium text-slate-500">車輛廠牌/型號</td>
               <td id="res-brand" class="py-2.5 px-4 font-medium"></td>
+            </tr>
+            <tr class="bg-slate-50/50">
+              <td class="py-2.5 px-4 font-medium text-slate-500">車輛顏色</td>
+              <td id="res-color" class="py-2.5 px-4 font-medium"></td>
             </tr>
             <tr>
               <td class="py-2.5 px-4 font-medium text-slate-500">聯絡電話</td>
