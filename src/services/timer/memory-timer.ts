@@ -8,7 +8,12 @@ export class MemoryDispatchTimer implements DispatchTimer {
     this.cancelWindow(orderId);
 
     this.activeWindows.add(orderId);
+    const startTime = Date.now();
+    console.log(`[Timer] ⏰ 訂單 ${orderId} 倒數計時開始: ${durationSeconds} 秒 (起始時間: ${new Date().toLocaleTimeString()})`);
+
     const timeout = setTimeout(async () => {
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      console.log(`[Timer] 🔔 訂單 ${orderId} 倒數時間到！實際經過: ${elapsed} 秒 (到期時間: ${new Date().toLocaleTimeString()})`);
       this.timers.delete(orderId);
       this.activeWindows.delete(orderId);
       try {
