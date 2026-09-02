@@ -3,7 +3,8 @@ import { getLineClient } from '../services/line-client.js';
 import { query } from '../db/index.js';
 import { env } from '../config/env.js';
 import { parseDriverRegistrationText } from '../services/driver-parser.js';
-import { upsertDriver } from '../db/queries/drivers.js';
+import { upsertDriver, getDriverById } from '../db/queries/drivers.js';
+import { createDriverRegisterFlexMessage } from '../services/flex-messages.js';
 
 type WebhookEvent = webhook.Event;
 
@@ -14,7 +15,61 @@ export async function handleLineEvents(events: WebhookEvent[]) {
     try {
       console.log(`[LINE Webhook] Event Type: ${event.type}`);
 
-      // A. 處理新成員加入群組事件 (memberJoined)
+      // 取得註冊 LIFF 網址
+      const registerUrl = env.LIFF_ID
+        ? `https://liff.line.me/${env.LIFF_ID}/driver/register`
+        : 'https://flow-taxi-production.up.railway.app/driver/register';
+
+      // ==========================================
+      // A. 處理 Postback 事件 (例如點擊「修改已登記資料」)
+      // ==========================================
+      if (event.type === 'postback') {
+        const replyToken = 'replyToken' in event ? event.replyToken : undefined;
+        if (!replyToken) continue;
+        const data = event.postback.data;
+        const senderUserId = event.source?.userId;
+
+        if (data === 'action=check_or_edit_driver') {
+          if (!senderUserId) {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [{ type: 'text', text: '⚠️ 無法取得您的 LINE User ID，請確認是否已加官方帳號為好友或直接點擊「填寫登記資料」。' }],
+            });
+            continue;
+          }
+
+          // 查詢資料庫中是否有該司機
+          const driver = await getDriverById(senderUserId);
+
+          if (!driver || !driver.registered) {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: `⚠️ 系統查無您的司機登記紀錄。\n\n請您先點擊下方連結完成初次登記：\n${registerUrl}`,
+                },
+              ],
+            });
+          } else {
+            // 已有資料，提示目前登記內容並提供修改頁面
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: `📋 您目前登記的資料如下：\n\n👤 駕駛姓名：${driver.display_name || '未填'}\n🔢 車牌號碼：${driver.plate_number || '未填'}\n🎨 車輛顏色：${driver.car_color || '未填'}\n🚙 車輛廠牌：${driver.car_brand || '未填'}\n📞 聯絡電話：${driver.phone || '未填'}\n\n若需修改，請點擊下方專屬頁面直接更新：\n${registerUrl}`,
+                },
+              ],
+            });
+          }
+          continue;
+        }
+      }
+
+      // ==========================================
+      // B. 處理新成員加入群組事件 (memberJoined)
+      // ==========================================
       if (event.type === 'memberJoined' && event.source && event.source.type === 'group') {
         const groupSource = event.source as webhook.GroupSource;
         const replyToken = 'replyToken' in event ? event.replyToken : undefined;
@@ -23,24 +78,18 @@ export async function handleLineEvents(events: WebhookEvent[]) {
         const joinedMembers = event.joined.members || [];
         console.log(`👋 [LINE Member Joined] 有 ${joinedMembers.length} 位新成員加入群組: ${groupSource.groupId}`);
 
-        // 產生 LIFF 註冊連結
-        const liffRegisterUrl = env.LIFF_ID
-          ? `https://liff.line.me/${env.LIFF_ID}/driver/register`
-          : '/driver/register.html';
-
         await lineClient.replyMessage({
           replyToken,
           messages: [
-            {
-              type: 'text',
-              text: `🚕 歡迎新夥伴加入司機派單群！\n\n為了保障接單權限與乘車資訊正確，請您撥空完成資料登記。\n\n📝【登記方式一：直接於此回覆】\n\n駕駛：\n車型：\n車號：\n車色：\n\n📲【登記方式二：手機表單登記】\n您也可以點擊下方專屬頁面快速填妥：\n${liffRegisterUrl}`,
-            },
+            createDriverRegisterFlexMessage(registerUrl),
           ],
         });
         continue;
       }
 
-      // B. 處理 OA 本身被加入群組事件 (join)
+      // ==========================================
+      // C. 處理 OA 本身被加入群組事件 (join)
+      // ==========================================
       if (event.type === 'join' && event.source && event.source.type === 'group') {
         const groupSource = event.source as webhook.GroupSource;
         const groupId = groupSource.groupId;
@@ -63,7 +112,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
             messages: [
               {
                 type: 'text',
-                text: `🚕 叫車派單系統已連線！\n本群組 ID:\n${groupId}\n\n所有新加入群組的司機夥伴，請回覆車輛資料以開通接單資格。`,
+                text: `🚕 叫車派單系統已連線！\n本群組 ID:\n${groupId}\n\n所有新加入群組的司機夥伴，請回覆車輛資料以開通接單資格。輸入「填資料」可隨時呼叫登記卡片。`,
               },
             ],
           });
@@ -71,7 +120,9 @@ export async function handleLineEvents(events: WebhookEvent[]) {
         continue;
       }
 
-      // C. 處理文字訊息 (包含司機文字登記辨識)
+      // ==========================================
+      // D. 處理文字訊息
+      // ==========================================
       if (event.type === 'message' && event.message.type === 'text' && event.source) {
         const text = event.message.text.trim();
         const replyToken = 'replyToken' in event ? event.replyToken : undefined;
@@ -79,12 +130,57 @@ export async function handleLineEvents(events: WebhookEvent[]) {
 
         const senderUserId = event.source.userId;
 
-        // 1. 嘗試比對是否符合「司機車輛資料登記範本」
+        // 1. 群組或個人中輸入「填資料」或「登記」➔ 彈出 Flex Message
+        if (text === '填資料' || text === '登記' || text === '司機登記') {
+          await lineClient.replyMessage({
+            replyToken,
+            messages: [
+              createDriverRegisterFlexMessage(registerUrl),
+            ],
+          });
+          continue;
+        }
+
+        // 2. 使用者直接輸入「修改資料」文字指令
+        if (text === '修改資料') {
+          if (!senderUserId) {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [{ type: 'text', text: '⚠️ 無法取得您的 LINE User ID，請先加官方帳號為好友或直接開啟登記頁面。' }],
+            });
+            continue;
+          }
+
+          const driver = await getDriverById(senderUserId);
+          if (!driver || !driver.registered) {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: `⚠️ 系統查無您的司機登記紀錄。\n\n請您先點擊下方連結完成初次登記：\n${registerUrl}`,
+                },
+              ],
+            });
+          } else {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: `📋 您目前登記的資料如下：\n\n👤 駕駛姓名：${driver.display_name || '未填'}\n🔢 車牌號碼：${driver.plate_number || '未填'}\n🎨 車輛顏色：${driver.car_color || '未填'}\n🚙 車輛廠牌：${driver.car_brand || '未填'}\n📞 聯絡電話：${driver.phone || '未填'}\n\n若需修改，請點擊下方專屬頁面直接更新：\n${registerUrl}`,
+                },
+              ],
+            });
+          }
+          continue;
+        }
+
+        // 3. 嘗試比對是否符合「司機車輛資料登記範本 (文字直填)」
         const parsedDriver = parseDriverRegistrationText(text);
         if (parsedDriver && senderUserId) {
           console.log(`🚗 [司機文字登記成功] 司機 ${senderUserId} 登記資料:`, parsedDriver);
 
-          // 寫入 Supabase 資料庫
           const saved = await upsertDriver({
             line_user_id: senderUserId,
             display_name: parsedDriver.displayName,
@@ -101,14 +197,14 @@ export async function handleLineEvents(events: WebhookEvent[]) {
             messages: [
               {
                 type: 'text',
-                text: `✅ 司機資料已成功建檔！\n\n👤 駕駛：${saved.display_name || '未填'}\n🚙 車型：${saved.car_brand || '未填'}\n🔢 車號：${saved.plate_number || '未填'}\n🎨 車色：${saved.car_color || '未填'}\n\n已為您開通派單接單權限！`,
+                text: `✅ 司機資料已成功建檔！\n\n👤 駕駛：${saved.display_name || '未填'}\n🚙 車型：${saved.car_brand || '未填'}\n🔢 車號：${saved.plate_number || '未填'}\n🎨 車色：${saved.car_color || '未填'}\n\n已為您開通派單接單權限！若日後需變更資料，隨時輸入「填資料」即可調整。`,
               },
             ],
           });
           continue;
         }
 
-        // 2. 個人 1:1 聊天室指令
+        // 4. 個人 1:1 聊天室指令 (Ping / 查 ID)
         if (event.source.type === 'user') {
           const userSource = event.source as webhook.UserSource;
           if (text.toLowerCase() === 'ping') {
@@ -126,26 +222,13 @@ export async function handleLineEvents(events: WebhookEvent[]) {
                 },
               ],
             });
-          } else if (text === '司機登記' || text === '登記') {
-            const liffRegisterUrl = env.LIFF_ID
-              ? `https://liff.line.me/${env.LIFF_ID}/driver/register`
-              : '/driver/register.html';
-            await lineClient.replyMessage({
-              replyToken,
-              messages: [
-                {
-                  type: 'text',
-                  text: `🚕 司機夥伴資料登記：\n請點擊下方連結開啟專屬登記頁面：\n${liffRegisterUrl}`,
-                },
-              ],
-            });
           } else {
             await lineClient.replyMessage({
               replyToken,
               messages: [
                 {
                   type: 'text',
-                  text: `🚕 您好！我是叫車派單機器人。\n輸入「司機登記」可開通接單資格，或輸入「ping」測試系統。`,
+                  text: `🚕 您好！我是叫車派單機器人。\n輸入「填資料」可開啟司機資料登記與修改卡片，或輸入「ping」測試連線。`,
                 },
               ],
             });
