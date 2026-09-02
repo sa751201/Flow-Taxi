@@ -9,12 +9,14 @@ export class BullMQDispatchTimer implements DispatchTimer {
   private expiryHandler: WindowExpiryCallback | null = null;
   private queueName = 'dispatch-windows';
 
+  private redisUrl: string;
+
   constructor(redisUrl: string) {
-    // ioredis client
+    this.redisUrl = redisUrl;
     const Redis = (IORedis as any).default || IORedis;
     this.connection = new Redis(redisUrl, {
       maxRetriesPerRequest: null,
-      lazyConnect: true,
+      lazyConnect: false,
     });
 
     this.queue = new Queue(this.queueName, {
@@ -23,24 +25,29 @@ export class BullMQDispatchTimer implements DispatchTimer {
   }
 
   private ensureWorker(onExpiry: WindowExpiryCallback) {
+    this.expiryHandler = onExpiry;
     if (!this.worker) {
-      this.expiryHandler = onExpiry;
+      const Redis = (IORedis as any).default || IORedis;
+      const workerConnection = new Redis(this.redisUrl, {
+        maxRetriesPerRequest: null,
+        lazyConnect: false,
+      });
+
       this.worker = new Worker(
         this.queueName,
         async (job: Job) => {
           const { orderId } = job.data;
+          console.log(`[BullMQ] Delayed job triggered for order: ${orderId}`);
           if (this.expiryHandler) {
             await this.expiryHandler(orderId);
           }
         },
-        { connection: this.connection }
+        { connection: workerConnection }
       );
 
       this.worker.on('failed', (job, err) => {
-        console.error(`BullMQ job failed for order ${job?.data?.orderId}:`, err);
+        console.error(`[BullMQ] Job failed for order ${job?.data?.orderId}:`, err);
       });
-    } else {
-      this.expiryHandler = onExpiry;
     }
   }
 

@@ -58,11 +58,27 @@ export class DispatchEngine {
 
     const duration = customDurationSeconds ?? this.windowDurationSeconds;
 
-    // 啟動視窗計時
-    await this.timer.startWindow(orderId, duration, async (expiredOrderId) => {
-      console.log(`[DispatchEngine] Window expired for order: ${expiredOrderId}. Resolving winner...`);
+    // 啟動視窗計時 (雙保險：主計時器 + 本地 Node.js setTimeout 備援，確保 100% 在 60 秒到期時觸發結單)
+    let hasResolved = false;
+    const triggerExpiry = async (expiredOrderId: string, source: string) => {
+      if (hasResolved) return;
+      hasResolved = true;
+      console.log(`[DispatchEngine] Window expired (${source}) for order: ${expiredOrderId}. Resolving winner...`);
       await this.closeDispatchWindow(expiredOrderId);
-    });
+    };
+
+    try {
+      await this.timer.startWindow(orderId, duration, async (expiredOrderId) => {
+        await triggerExpiry(expiredOrderId, 'Primary Timer');
+      });
+    } catch (tErr: any) {
+      console.warn('[DispatchEngine] 主計時器啟動異常，依賴本地備援計時器:', tErr.message);
+    }
+
+    // 本地雙保險計時器（多加 500ms 緩衝）
+    setTimeout(async () => {
+      await triggerExpiry(orderId, 'Local Fallback Timeout');
+    }, (duration * 1000) + 500);
 
     console.log(`[DispatchEngine] Order ${orderId} is now dispatching. Window open for ${duration}s.`);
     return { success: true };
