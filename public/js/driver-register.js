@@ -7,7 +7,6 @@ async function initLiff() {
   const avatarEl = document.getElementById('driver-avatar');
 
   try {
-    // 取得後端配置的 LIFF_ID 或預設值
     const configRes = await fetch('/api/config');
     const config = await configRes.json();
     const liffId = config.liffId;
@@ -34,16 +33,18 @@ async function initLiff() {
       avatarEl.src = profile.pictureUrl;
     }
 
-    // 預設將司機名稱填為 LINE 顯示名稱
     const nameInput = document.getElementById('displayName');
     if (!nameInput.value && profile.displayName) {
       nameInput.value = profile.displayName;
     }
 
-    // 檢查司機是否已經有資料，若有則回填
     checkExistingDriver(currentUserId);
   } catch (err) {
     console.error('LIFF 初始化失敗:', err);
+    // 降級生成唯一的本地測試識別碼，避免重複衝突
+    if (!currentUserId) {
+      currentUserId = 'DEV_DRIVER_' + Math.random().toString(36).substring(2, 8);
+    }
   }
 }
 
@@ -65,7 +66,6 @@ async function checkExistingDriver(userId) {
   }
 }
 
-// 觸發 Transitions.dev Error State Shake
 function triggerShake(wrapId) {
   const wrap = document.getElementById(wrapId);
   if (!wrap) return;
@@ -74,7 +74,7 @@ function triggerShake(wrapId) {
   wrap.classList.add('is-error');
   if (inputContainer) {
     inputContainer.classList.remove('is-shaking');
-    void inputContainer.offsetWidth; // force reflow
+    void inputContainer.offsetWidth;
     inputContainer.classList.add('is-shaking', 'is-error');
   }
 
@@ -87,6 +87,9 @@ function triggerShake(wrapId) {
 }
 
 document.getElementById('submit-btn')?.addEventListener('click', async () => {
+  const submitBtn = document.getElementById('submit-btn');
+  const btnLabel = submitBtn?.querySelector('.t-pro-btn-label');
+
   const displayName = document.getElementById('displayName').value.trim();
   const plateNumber = document.getElementById('plateNumber').value.trim();
   const carColor = document.getElementById('carColor').value.trim();
@@ -101,6 +104,21 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
 
   if (hasError) return;
 
+  // 需求 1: 送出時將按鈕設為 disabled，顯示 loading 狀態
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.classList.add('opacity-60', 'cursor-not-allowed');
+    if (btnLabel) {
+      btnLabel.innerHTML = `
+        <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        資料儲存中...
+      `;
+    }
+  }
+
   const statusBox = document.getElementById('status-box');
   statusBox.className = 'mt-4 p-3.5 rounded-xl text-xs font-medium text-center bg-amber-50 text-amber-800 border border-amber-200';
   statusBox.textContent = '資料儲存中，請稍候...';
@@ -111,7 +129,7 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        userId: currentUserId,
+        userId: currentUserId || 'DEV_DRIVER_' + Date.now(),
         idToken: currentIdToken,
         displayName,
         plateNumber,
@@ -123,10 +141,11 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
 
     const result = await res.json();
     if (!res.ok) {
-      throw new Error(result.error || '登記失敗');
+      // 需求 2: 清楚顯示後端具體回傳的錯誤原因
+      throw new Error(result.error || `伺服器回應異常 (HTTP ${res.status})`);
     }
 
-    // 成功狀態切換 (需求 3: 表格呈現登記項目)
+    // 成功狀態切換 (表格呈現)
     document.getElementById('form-card').classList.add('hidden');
     const successScreen = document.getElementById('success-screen');
     successScreen.classList.remove('hidden');
@@ -139,12 +158,26 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
 
     const checkIcon = document.getElementById('success-check-icon');
     setTimeout(() => {
-      checkIcon.setAttribute('data-state', 'in');
+      checkIcon?.setAttribute('data-state', 'in');
     }, 50);
 
   } catch (err) {
+    // 需求 2: 發生錯誤時恢復按鈕可點擊，並顯示詳細原因
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove('opacity-60', 'cursor-not-allowed');
+      if (btnLabel) {
+        btnLabel.innerHTML = `
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+          </svg>
+          重新確認送出
+        `;
+      }
+    }
+
     statusBox.className = 'mt-4 p-3.5 rounded-xl text-xs font-medium text-center bg-red-50 text-red-600 border border-red-200';
-    statusBox.textContent = `❌ ${err.message}`;
+    statusBox.innerHTML = `<strong>❌ 登記失敗</strong><br><span class="text-[11px] opacity-90">${err.message}</span>`;
   }
 });
 
