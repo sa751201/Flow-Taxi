@@ -190,7 +190,7 @@ app.get('/api/config', (req, res) => {
   res.json({
     liffId: env.LIFF_ID || '',
     driverGroupId: env.DRIVER_GROUP_ID || '',
-    version: '2026-09-03-first-bidder-v2',
+    version: '2026-09-03-fast-1min-v3',
     windowSeconds: (dispatchEngine as any).windowDurationSeconds,
     timerType: ((dispatchEngine as any).timer?.constructor?.name) || 'Unknown',
   });
