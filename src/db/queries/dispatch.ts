@@ -87,15 +87,22 @@ export async function atomicallyAssignDriver(
     `;
 
     const res = await query(sql, [winnerDriverId, orderId]);
-    if (res && typeof res.rowCount === 'number') {
-      return res.rowCount === 1;
+    if (res && typeof res.rowCount === 'number' && res.rowCount === 1) {
+      const cached = await getOrderById(orderId);
+      if (cached) {
+        cached.status = 'accepted';
+        cached.driver_id = winnerDriverId;
+        cached.accepted_at = new Date();
+      }
+      return true;
     }
   } catch (err: any) {
     console.warn('[Dispatch DB] 原子指派資料庫執行失敗，切換記憶體模式:', err.message);
   }
 
+  // 若資料庫受影響行數為 0 或連線失敗，檢查記憶體備援訂單
   const order = await getOrderById(orderId);
-  if (order && order.status === 'dispatching') {
+  if (order && (order.status === 'dispatching' || order.status === 'pending')) {
     order.status = 'accepted';
     order.driver_id = winnerDriverId;
     order.accepted_at = new Date();

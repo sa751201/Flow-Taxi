@@ -54,7 +54,7 @@ export async function insertBid(params: SubmitBidParams): Promise<DispatchBid> {
       ];
 
       const res = await query<DispatchBid>(sql, values);
-      if (res.rows.length > 0) {
+      if (res && res.rows && res.rows.length > 0) {
         const bid = res.rows[0];
         const existing = memoryBids.get(params.orderId) || [];
         memoryBids.set(params.orderId, [...existing.filter(b => b.driver_id !== params.driverId), bid]);
@@ -65,7 +65,7 @@ export async function insertBid(params: SubmitBidParams): Promise<DispatchBid> {
     }
   }
 
-  // 備援儲存
+  // 備援儲存 (無論如何都在記憶體建立該出價紀錄，保障結單與指派)
   const newBid: DispatchBid = {
     id: 'bid-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
     order_id: params.orderId,
@@ -92,7 +92,13 @@ export async function getBidsByOrderId(orderId: string): Promise<DispatchBid[]> 
         ORDER BY distance_to_pickup_km ASC;
       `;
       const res = await query<DispatchBid>(sql, [orderId]);
-      if (res.rows.length > 0) return res.rows;
+      if (res && res.rows && res.rows.length > 0) {
+        // 合併 memoryBids 確保完整
+        const memBids = memoryBids.get(orderId) || [];
+        const dbDriverIds = new Set(res.rows.map(r => r.driver_id));
+        const extraMemBids = memBids.filter(b => !dbDriverIds.has(b.driver_id));
+        return [...res.rows, ...extraMemBids];
+      }
     } catch {
       // fallback
     }
