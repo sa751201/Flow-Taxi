@@ -4,7 +4,7 @@ import { query } from '../db/index.js';
 import { env } from '../config/env.js';
 import { parseDriverRegistrationText } from '../services/driver-parser.js';
 import { upsertDriver, getDriverById } from '../db/queries/drivers.js';
-import { createDriverRegisterFlexMessage, createWelcomeServiceMessage } from '../services/flex-messages.js';
+import { createDriverRegisterFlexMessage, createWelcomeServiceMessage, createCityRidePromptMessage } from '../services/flex-messages.js';
 
 type WebhookEvent = webhook.Event;
 
@@ -63,6 +63,14 @@ export async function handleLineEvents(events: WebhookEvent[]) {
               ],
             });
           }
+          continue;
+        }
+
+        if (data === 'action=service_select&service=city_ride') {
+          await lineClient.replyMessage({
+            replyToken,
+            messages: [createCityRidePromptMessage()],
+          });
           continue;
         }
       }
@@ -237,15 +245,20 @@ export async function handleLineEvents(events: WebhookEvent[]) {
                 },
               ],
             });
+          } else if (text.includes('市區搭乘')) {
+            // 輸入「市區搭乘」時的回覆
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [createCityRidePromptMessage()],
+            });
           } else if (
-            text.includes('市區搭乘') ||
             text.includes('機場接送') ||
             text.includes('酒後代駕') ||
             text.includes('代購代送') ||
             text.includes('包車服務') ||
             text.includes('搬運服務')
           ) {
-            // 點擊 6 大服務按鈕時的引導回覆
+            // 點擊其他服務按鈕時的引導回覆
             await lineClient.replyMessage({
               replyToken,
               messages: [

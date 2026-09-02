@@ -122,7 +122,7 @@ export function createDriverRegisterFlexMessage(registerUrl: string): messagingA
 
 /**
  * 建立 1:1 乘客歡迎訊息與 6 大服務 Quick Reply 按鈕
- * 符合深藍色圓角膠囊按鈕樣式
+ * 「市區搭乘🚗」採用 postback + fillInText + openKeyboard，點選時直接將範本帶入使用者輸入框並彈出鍵盤
  */
 export function createWelcomeServiceMessage(): messagingApi.TextMessage {
   const welcomeText = `您好
@@ -147,29 +147,98 @@ export function createWelcomeServiceMessage(): messagingApi.TextMessage {
 
 請點選以下的符合您需求的服務，歡迎大家提早預約💎`;
 
-  const services = [
-    { label: '市區搭乘🚗', text: '市區搭乘🚗' },
-    { label: '機場接送✈️', text: '機場接送✈️' },
-    { label: '酒後代駕🍺', text: '酒後代駕🍺' },
-    { label: '代購代送🛍️', text: '代購代送🛍️' },
-    { label: '包車服務🚙', text: '包車服務🚙' },
-    { label: '搬運服務🧳', text: '搬運服務🧳' },
-  ];
+  const cityRideFillIn = `1. 上車地點：
+2. 下車地點：
+3. 乘車時間與人數：`;
 
-  const quickReplyItems: messagingApi.QuickReplyItem[] = services.map((s) => ({
-    type: 'action',
-    action: {
-      type: 'message',
-      label: s.label,
-      text: s.text,
+  const quickReplyItems: messagingApi.QuickReplyItem[] = [
+    {
+      type: 'action',
+      action: {
+        type: 'postback',
+        label: '市區搭乘🚗',
+        data: 'action=service_select&service=city_ride',
+        displayText: '市區搭乘🚗',
+        inputOption: 'openKeyboard',
+        fillInText: cityRideFillIn,
+      },
     },
-  }));
+    {
+      type: 'action',
+      action: {
+        type: 'message',
+        label: '機場接送✈️',
+        text: '機場接送✈️',
+      },
+    },
+    {
+      type: 'action',
+      action: {
+        type: 'message',
+        label: '酒後代駕🍺',
+        text: '酒後代駕🍺',
+      },
+    },
+    {
+      type: 'action',
+      action: {
+        type: 'message',
+        label: '代購代送🛍️',
+        text: '代購代送🛍️',
+      },
+    },
+    {
+      type: 'action',
+      action: {
+        type: 'message',
+        label: '包車服務🚙',
+        text: '包車服務🚙',
+      },
+    },
+    {
+      type: 'action',
+      action: {
+        type: 'message',
+        label: '搬運服務🧳',
+        text: '搬運服務🧳',
+      },
+    },
+  ];
 
   return {
     type: 'text',
     text: welcomeText,
     quickReply: {
       items: quickReplyItems,
+    },
+  };
+}
+
+/**
+ * 產生「市區搭乘」專屬引導訊息，附帶 Quick Reply（若需重新帶入範本）
+ */
+export function createCityRidePromptMessage(): messagingApi.TextMessage {
+  const cityRideFillIn = `1. 上車地點：
+2. 下車地點：
+3. 乘車時間與人數：`;
+
+  return {
+    type: 'text',
+    text: '您選擇了【市區搭乘🚗】服務 🚕，請直接輸入您的：1. 上車地點 2. 下車地點 3. 乘車時間與人數，派單專員將立即為您安排優質司機！',
+    quickReply: {
+      items: [
+        {
+          type: 'action',
+          action: {
+            type: 'postback',
+            label: '📝 帶入叫車格式',
+            data: 'action=service_select&service=city_ride',
+            displayText: '填寫叫車資訊',
+            inputOption: 'openKeyboard',
+            fillInText: cityRideFillIn,
+          },
+        },
+      ],
     },
   };
 }
