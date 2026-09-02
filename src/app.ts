@@ -5,7 +5,7 @@ import { getOrderById } from './db/queries/orders.js';
 import { getBidsByOrderId } from './db/queries/bids.js';
 import { getLineClient } from './services/line-client.js';
 
-import { middleware, webhook } from '@line/bot-sdk';
+import { middleware, webhook, messagingApi } from '@line/bot-sdk';
 import { handleLineEvents } from './handlers/line-webhook.js';
 
 const app = express();
@@ -100,11 +100,17 @@ export const dispatchEngine = new DispatchEngine({
                 scheduledTimeText: order.note?.replace('預約時間: ', ''),
               });
 
+              const driverName = driver.display_name || '司機夥伴';
+              const textMessage: messagingApi.TextMessage = {
+                type: 'text',
+                text: `恭喜 @${driverName} 成功接單！請盡速前往接送。`,
+              };
+
               await lineClient.pushMessage({
                 to: driverGroupId,
-                messages: [groupAssignedFlex],
+                messages: [textMessage, groupAssignedFlex],
               });
-              console.log(`[Dispatch] ✅ 成功向司機群組廣播中單司機卡片與地圖導航: ${driver.display_name}`);
+              console.log(`[Dispatch] ✅ 成功向司機群組發送文字@通知與中單卡片: ${driverName}`);
             } catch (groupErr: any) {
               console.warn('[Dispatch] 司機群組推播結單失敗:', groupErr.message);
             }
