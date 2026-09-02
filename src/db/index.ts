@@ -7,12 +7,14 @@ let pool: pg.Pool | null = null;
 
 export function getDbPool(): pg.Pool {
   if (!pool) {
-    const connectionString = env.DATABASE_URL || (env.SUPABASE_URL ? `${env.SUPABASE_URL}` : undefined);
+    const connectionString = env.DATABASE_URL;
     pool = new Pool({
       connectionString,
       ssl: connectionString && !connectionString.includes('localhost') ? { rejectUnauthorized: false } : false,
       max: 10,
-      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 3000,
+      idleTimeoutMillis: 10000,
+      statement_timeout: 3000,
     });
 
     pool.on('error', (err) => {
