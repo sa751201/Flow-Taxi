@@ -277,10 +277,11 @@ export async function handleLineEvents(events: WebhookEvent[]) {
             // 非同步進行 Geocoding、建單與群組廣播 (不卡住 reply)
             (async () => {
               try {
-                // 萃取上車地點、下車地點、人數/時間
+                // 萃取上車地點、下車地點、人數、乘車時間
                 let pickupAddr = '';
                 let dropoffAddr = '';
-                let timeAndCount = '';
+                let passengerCount: number | undefined = undefined;
+                let scheduledTimeText: string | undefined = undefined;
 
                 const lines = text.split('\n');
                 for (const line of lines) {
@@ -289,12 +290,29 @@ export async function handleLineEvents(events: WebhookEvent[]) {
                     pickupAddr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[上車地點]+[\s：:]*/, '').trim();
                   } else if (cleaned.includes('下車地點') || cleaned.includes('下車：') || cleaned.includes('下車:')) {
                     dropoffAddr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[下車地點]+[\s：:]*/, '').trim();
-                  } else if (cleaned.includes('乘車時間') || cleaned.includes('人數') || cleaned.includes('3.')) {
-                    timeAndCount = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[乘車時間與人數]+[\s：:]*/, '').trim();
+                  } else if (cleaned.includes('人數') && !cleaned.includes('乘車時間')) {
+                    const countStr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[人數]+[\s：:]*/, '').trim();
+                    const match = countStr.match(/\d+/);
+                    if (match) passengerCount = parseInt(match[0], 10);
+                  } else if (cleaned.includes('乘車時間')) {
+                    const timeStr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[乘車時間]+[\s：:]*/, '').trim();
+                    // 若有填且不是預設的「現在要車免填」，才視為有預約時間
+                    if (timeStr && !timeStr.includes('現在要車免填') && timeStr !== '免填') {
+                      scheduledTimeText = timeStr;
+                    }
+                  } else if (cleaned.includes('乘車時間與人數')) {
+                    // 相容舊格式
+                    const oldStr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[乘車時間與人數]+[\s：:]*/, '').trim();
+                    const match = oldStr.match(/\d+/);
+                    if (match) passengerCount = parseInt(match[0], 10);
+                    if (oldStr.includes('分') || oldStr.includes('點') || oldStr.includes(':')) {
+                      scheduledTimeText = oldStr;
+                    }
                   }
                 }
 
                 if (!pickupAddr) pickupAddr = '台北市信義區信義路五段7號 (台北101)';
+                if (!dropoffAddr) dropoffAddr = '台北車站東門';
 
                 // 確保 customer 存在
                 const customerId = userSource.userId;
@@ -320,7 +338,8 @@ export async function handleLineEvents(events: WebhookEvent[]) {
                   pickup_lat: geo.lat,
                   pickup_lng: geo.lng,
                   dropoff_address: dropoffAddr || undefined,
-                  note: timeAndCount || undefined,
+                  passenger_count: passengerCount || 1,
+                  note: scheduledTimeText ? `預約時間: ${scheduledTimeText}` : undefined,
                 });
 
                 console.log(`[Line Webhook] 訂單 ${newOrder.id} 建立成功！`);
@@ -337,7 +356,8 @@ export async function handleLineEvents(events: WebhookEvent[]) {
                     orderId: newOrder.id,
                     pickupAddress: pickupAddr,
                     dropoffAddress: dropoffAddr || undefined,
-                    scheduledTimeText: timeAndCount || '即刻出發',
+                    passengerCount: passengerCount || 1,
+                    scheduledTimeText: scheduledTimeText,
                     bidUrl,
                   });
 

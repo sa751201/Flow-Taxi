@@ -148,8 +148,9 @@ export function createWelcomeServiceMessage(): messagingApi.TextMessage {
 請點選以下的符合您需求的服務，歡迎大家提早預約💎`;
 
   const cityRideFillIn = `1. 上車地點：
-2. 下車地點：
-3. 乘車時間與人數：`;
+2. 下車地點：台北車站東門
+3. 人數：
+4. 乘車時間：現在要車免填🌊`;
 
   const airportFillIn = `送機 /接機 ：
 航班：（接機必填）（出國免填）
@@ -234,12 +235,13 @@ export function createWelcomeServiceMessage(): messagingApi.TextMessage {
  */
 export function createCityRidePromptMessage(): messagingApi.TextMessage {
   const cityRideFillIn = `1. 上車地點：
-2. 下車地點：
-3. 乘車時間與人數：`;
+2. 下車地點：台北車站東門
+3. 人數：
+4. 乘車時間：現在要車免填🌊`;
 
   return {
     type: 'text',
-    text: '您選擇了【市區搭乘🚗】服務 🚕，請直接輸入您的：1. 上車地點 2. 下車地點 3. 乘車時間與人數，派單專員將立即為您安排優質司機！',
+    text: '您選擇了【市區搭乘🚗】服務 🚕，請直接輸入您的：1. 上車地點 2. 下車地點 3. 人數 4. 乘車時間（現在要車免填），派單專員將立即為您安排優質司機！',
     quickReply: {
       items: [
         {
@@ -320,6 +322,123 @@ export function createGroupDispatchOrderFlexMessage(params: {
   scheduledTimeText?: string;
   bidUrl: string;
 }): messagingApi.FlexMessage {
+  const bodyContents: messagingApi.FlexComponent[] = [
+    {
+      type: 'box',
+      layout: 'horizontal',
+      spacing: 'sm',
+      contents: [
+        {
+          type: 'text',
+          text: '🟢 上車地點：',
+          color: '#64748b',
+          size: 'sm',
+          flex: 3,
+        },
+        {
+          type: 'text',
+          text: params.pickupAddress,
+          color: '#0f172a',
+          weight: 'bold',
+          size: 'sm',
+          wrap: true,
+          flex: 7,
+        },
+      ],
+    },
+    {
+      type: 'box',
+      layout: 'horizontal',
+      spacing: 'sm',
+      contents: [
+        {
+          type: 'text',
+          text: '🔴 下車地點：',
+          color: '#64748b',
+          size: 'sm',
+          flex: 3,
+        },
+        {
+          type: 'text',
+          text: params.dropoffAddress || '抵達後告知或跳表',
+          color: '#0f172a',
+          weight: 'bold',
+          size: 'sm',
+          wrap: true,
+          flex: 7,
+        },
+      ],
+    },
+    {
+      type: 'box',
+      layout: 'horizontal',
+      spacing: 'sm',
+      contents: [
+        {
+          type: 'text',
+          text: '👥 人數：',
+          color: '#64748b',
+          size: 'sm',
+          flex: 3,
+        },
+        {
+          type: 'text',
+          text: `${params.passengerCount || 1} 人`,
+          color: '#0284c7',
+          weight: 'bold',
+          size: 'sm',
+          wrap: true,
+          flex: 7,
+        },
+      ],
+    },
+  ];
+
+  if (params.scheduledTimeText) {
+    bodyContents.push({
+      type: 'box',
+      layout: 'horizontal',
+      spacing: 'sm',
+      contents: [
+        {
+          type: 'text',
+          text: '⏰ 乘車時間：',
+          color: '#64748b',
+          size: 'sm',
+          flex: 3,
+        },
+        {
+          type: 'text',
+          text: params.scheduledTimeText,
+          color: '#0284c7',
+          weight: 'bold',
+          size: 'sm',
+          wrap: true,
+          flex: 7,
+        },
+      ],
+    });
+  }
+
+  bodyContents.push(
+    {
+      type: 'separator',
+      color: '#f1f5f9',
+      margin: 'md',
+    },
+    {
+      type: 'button',
+      style: 'primary',
+      color: '#06c755',
+      height: 'md',
+      action: {
+        type: 'uri',
+        label: '⚡ 立刻接單 (測算時間)',
+        uri: params.bidUrl,
+      },
+    }
+  );
+
   const container: messagingApi.FlexBubble = {
     type: 'bubble',
     size: 'mega',
@@ -359,93 +478,7 @@ export function createGroupDispatchOrderFlexMessage(params: {
       backgroundColor: '#ffffff',
       paddingAll: '18px',
       spacing: 'md',
-      contents: [
-        {
-          type: 'box',
-          layout: 'horizontal',
-          spacing: 'sm',
-          contents: [
-            {
-              type: 'text',
-              text: '🟢 上車地點：',
-              color: '#64748b',
-              size: 'sm',
-              flex: 3,
-            },
-            {
-              type: 'text',
-              text: params.pickupAddress,
-              color: '#0f172a',
-              weight: 'bold',
-              size: 'sm',
-              wrap: true,
-              flex: 7,
-            },
-          ],
-        },
-        {
-          type: 'box',
-          layout: 'horizontal',
-          spacing: 'sm',
-          contents: [
-            {
-              type: 'text',
-              text: '🔴 下車地點：',
-              color: '#64748b',
-              size: 'sm',
-              flex: 3,
-            },
-            {
-              type: 'text',
-              text: params.dropoffAddress || '抵達後告知或跳表',
-              color: '#0f172a',
-              weight: 'bold',
-              size: 'sm',
-              wrap: true,
-              flex: 7,
-            },
-          ],
-        },
-        {
-          type: 'box',
-          layout: 'horizontal',
-          spacing: 'sm',
-          contents: [
-            {
-              type: 'text',
-              text: '👥 人數時間：',
-              color: '#64748b',
-              size: 'sm',
-              flex: 3,
-            },
-            {
-              type: 'text',
-              text: `${params.passengerCount || 1} 人 | ${params.scheduledTimeText || '即刻出發'}`,
-              color: '#0284c7',
-              weight: 'bold',
-              size: 'sm',
-              wrap: true,
-              flex: 7,
-            },
-          ],
-        },
-        {
-          type: 'separator',
-          color: '#f1f5f9',
-          margin: 'md',
-        },
-        {
-          type: 'button',
-          style: 'primary',
-          color: '#06c755',
-          height: 'md',
-          action: {
-            type: 'uri',
-            label: '⚡ 立刻接單 (測算時間)',
-            uri: params.bidUrl,
-          },
-        },
-      ],
+      contents: bodyContents,
     },
     footer: {
       type: 'box',
