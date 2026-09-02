@@ -31,6 +31,7 @@ export const dispatchEngine = new DispatchEngine({
             plateNumber: driver.plate_number || '---',
             carColor: driver.car_color || '黑色',
             etaMinutes,
+            notes: driver.notes || '🚭 禁菸 🚯 禁食',
           });
 
           // 1. 1:1 推播給乘客 (中單司機資訊 + 到達分鐘數)
@@ -227,7 +228,7 @@ app.get('/api/driver/:userId', async (req, res) => {
 
 app.post('/api/driver/register', async (req, res) => {
   try {
-    const { userId, displayName, plateNumber, carColor, carBrand, phone } = req.body;
+    const { userId, displayName, plateNumber, carColor, carBrand, phone, notes } = req.body;
     if (!userId || !displayName || !plateNumber || !carColor || !carBrand) {
       return res.status(400).json({ error: '請填妥所有必要欄位' });
     }
@@ -239,6 +240,7 @@ app.post('/api/driver/register', async (req, res) => {
       car_color: carColor,
       car_brand: carBrand,
       phone: phone || null,
+      notes: notes || '🚭 禁菸 🚯 禁食',
       registered: true,
       status: 'active',
     });

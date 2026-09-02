@@ -415,6 +415,7 @@ export function createDriverAssignedFlexMessage(params: {
   plateNumber: string;
   carColor: string;
   etaMinutes: number;
+  notes?: string | null;
 }): messagingApi.FlexMessage {
   const container: messagingApi.FlexBubble = {
     type: 'bubble',
@@ -501,10 +502,11 @@ export function createDriverAssignedFlexMessage(params: {
           contents: [
             {
               type: 'text',
-              text: '🚭 禁菸 🚯 禁食',
+              text: params.notes?.trim() ? params.notes : '🚭 禁菸 🚯 禁食',
               color: '#f5f5f5',
               size: 'sm',
               weight: 'bold',
+              wrap: true,
             },
           ],
         },

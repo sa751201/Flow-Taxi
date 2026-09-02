@@ -8,6 +8,7 @@ export interface Driver {
   plate_number: string | null;
   car_color: string | null;
   car_brand: string | null;
+  notes?: string | null;
   status: 'inactive' | 'active' | 'online';
   registered: boolean;
   created_at: Date;
@@ -20,6 +21,7 @@ export interface UpsertDriverParams {
   plate_number?: string | null;
   car_color?: string | null;
   car_brand?: string | null;
+  notes?: string | null;
   status?: 'inactive' | 'active' | 'online';
   registered?: boolean;
 }
@@ -85,6 +87,7 @@ export async function upsertDriver(params: UpsertDriverParams): Promise<Driver> 
     plate_number: params.plate_number ?? existing?.plate_number ?? null,
     car_color: params.car_color ?? existing?.car_color ?? null,
     car_brand: params.car_brand ?? existing?.car_brand ?? null,
+    notes: params.notes ?? existing?.notes ?? '🚭 禁菸 🚯 禁食',
     status: (params.status || existing?.status || 'active') as any,
     registered: true,
     created_at: existing?.created_at || new Date(),

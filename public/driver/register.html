@@ -136,6 +136,32 @@
           </div>
         </div>
 
+        <!-- 6. 車內備註 / 乘車提醒事項 (選填，可自訂或快速點選) -->
+        <div class="t-input-wrap" id="wrap-notes">
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-700" for="driverNotes">
+              6. 車內備註 / 提醒事項 (選填)
+            </label>
+            <span class="text-[11px] text-slate-400">乘客中單後可見</span>
+          </div>
+          <div class="t-input custom-input-box">
+            <input type="text" id="driverNotes" value="🚭 禁菸 🚯 禁食" placeholder="例如：🚭 禁菸 🚯 禁食、可載小型寵物"
+                   class="w-full bg-transparent px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none rounded-xl">
+          </div>
+          <!-- 快捷標籤 -->
+          <div class="flex flex-wrap gap-1.5 mt-2">
+            <button type="button" onclick="setQuickNote('🚭 禁菸 🚯 禁食')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition">
+              🚭 禁菸 🚯 禁食
+            </button>
+            <button type="button" onclick="setQuickNote('🚭 全車禁菸')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition">
+              🚭 全車禁菸
+            </button>
+            <button type="button" onclick="setQuickNote('🐾 寵物友善車 (需籠推車)')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition">
+              🐾 寵物友善
+            </button>
+          </div>
+        </div>
+
         <!-- Submit Button with Transitions.dev Pro Glow -->
         <div class="pt-2">
           <button type="button" id="submit-btn" class="t-pro-btn w-full py-3.5 px-6">
@@ -196,6 +222,10 @@
             <tr>
               <td class="py-2.5 px-4 font-medium text-slate-500">聯絡電話</td>
               <td id="res-phone" class="py-2.5 px-4 font-medium text-slate-600"></td>
+            </tr>
+            <tr class="bg-slate-50/50">
+              <td class="py-2.5 px-4 font-medium text-slate-500">車內提醒</td>
+              <td id="res-notes" class="py-2.5 px-4 font-medium text-slate-800"></td>
             </tr>
           </tbody>
         </table>

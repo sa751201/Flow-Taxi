@@ -60,12 +60,21 @@ async function checkExistingDriver(userId) {
         if (driver.car_color) document.getElementById('carColor').value = driver.car_color;
         if (driver.car_brand) document.getElementById('carBrand').value = driver.car_brand;
         if (driver.phone) document.getElementById('phone').value = driver.phone;
+        if (driver.notes) document.getElementById('driverNotes').value = driver.notes;
       }
     }
   } catch {
     // ignore
   }
 }
+
+function setQuickNote(text) {
+  const noteInput = document.getElementById('driverNotes');
+  if (noteInput) {
+    noteInput.value = text;
+  }
+}
+window.setQuickNote = setQuickNote;
 
 function triggerShake(wrapId) {
   const wrap = document.getElementById(wrapId);
@@ -96,6 +105,7 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
   const carColor = document.getElementById('carColor').value.trim();
   const carBrand = document.getElementById('carBrand').value.trim();
   const phone = document.getElementById('phone').value.trim();
+  const notes = document.getElementById('driverNotes').value.trim() || '🚭 禁菸 🚯 禁食';
 
   let hasError = false;
   if (!displayName) { triggerShake('wrap-name'); hasError = true; }
@@ -136,6 +146,7 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
         carColor,
         carBrand,
         phone,
+        notes,
       }),
     });
 
@@ -154,6 +165,8 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
     document.getElementById('res-color').textContent = carColor;
     document.getElementById('res-brand').textContent = carBrand;
     document.getElementById('res-phone').textContent = phone || '未填寫';
+    const resNotesEl = document.getElementById('res-notes');
+    if (resNotesEl) resNotesEl.textContent = notes;
 
     const checkIcon = document.getElementById('success-check-icon');
     setTimeout(() => {
