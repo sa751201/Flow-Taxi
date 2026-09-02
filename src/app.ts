@@ -12,6 +12,27 @@ const app = express();
 
 export const dispatchEngine = new DispatchEngine({
   windowDurationSeconds: 60,
+  onFirstBidder: async (orderId, driverId) => {
+    try {
+      console.log(`[Dispatch] 收到第一位司機接單 (訂單: ${orderId}, 司機: ${driverId})，立即通知乘客 1:1 OA...`);
+      const order = await getOrderById(orderId);
+      if (order && order.customer_id) {
+        const lineClient = getLineClient();
+        await lineClient.pushMessage({
+          to: order.customer_id,
+          messages: [
+            {
+              type: 'text',
+              text: '🚕 已有司機接單，正在派單媒合中，請稍候約 1 分鐘確認司機資訊！',
+            },
+          ],
+        });
+        console.log(`[Dispatch] ✅ 成功向乘客 1:1 OA (${order.customer_id}) 發送首位司機接單通知`);
+      }
+    } catch (fbErr: any) {
+      console.warn(`[Dispatch] 發送首位司機接單通知至乘客失敗:`, fbErr.message);
+    }
+  },
   onOrderResolved: async (result) => {
     console.log(`[DispatchEngine Callback] 訂單 ${result.orderId} 結單狀態: ${result.status}`);
     const lineClient = getLineClient();
@@ -162,7 +183,7 @@ app.get('/api/config', (req, res) => {
   res.json({
     liffId: env.LIFF_ID || '',
     driverGroupId: env.DRIVER_GROUP_ID || '',
-    version: '2026-09-03-60s-strict-v1',
+    version: '2026-09-03-first-bidder-v2',
     windowSeconds: (dispatchEngine as any).windowDurationSeconds,
     timerType: ((dispatchEngine as any).timer?.constructor?.name) || 'Unknown',
   });

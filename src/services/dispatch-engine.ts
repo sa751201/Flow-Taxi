@@ -17,18 +17,22 @@ export interface DispatchEngineOptions {
   timer?: DispatchTimer;
   windowDurationSeconds?: number;
   onOrderResolved?: (result: DispatchWinnerResult) => Promise<void>;
+  onFirstBidder?: (orderId: string, driverId: string) => Promise<void>;
 }
 
 export class DispatchEngine {
   private timer: DispatchTimer;
   private windowDurationSeconds: number;
   private onOrderResolved?: (result: DispatchWinnerResult) => Promise<void>;
+  private onFirstBidder?: (orderId: string, driverId: string) => Promise<void>;
+  private notifiedFirstBidderOrders = new Set<string>();
 
   constructor(options?: DispatchEngineOptions) {
     // 強制上限 60 秒，無論 env 或傳入值設為多少
     const rawDuration = options?.windowDurationSeconds ?? env.DISPATCH_WINDOW_SECONDS;
     this.windowDurationSeconds = Math.min(rawDuration, MAX_DISPATCH_WINDOW_SECONDS);
     this.onOrderResolved = options?.onOrderResolved;
+    this.onFirstBidder = options?.onFirstBidder;
 
     // 所有環境一律使用 MemoryDispatchTimer（Node.js setTimeout）
     // BullMQ delayed job 在遠端 Redis 上有 Worker 輪詢延遲，不適合短秒數精確定時
@@ -108,7 +112,19 @@ export class DispatchEngine {
       throw new Error(`訂單目前狀態無法接單 (Order is not in dispatching state: ${order.status})`);
     }
 
-    return await insertBid(params);
+    const bid = await insertBid(params);
+
+    // 當有第一位司機出價接單時，觸發 onFirstBidder (保證每張訂單僅觸發一次)
+    if (this.onFirstBidder && !this.notifiedFirstBidderOrders.has(params.orderId)) {
+      this.notifiedFirstBidderOrders.add(params.orderId);
+      try {
+        await this.onFirstBidder(params.orderId, params.driverId);
+      } catch (fbErr: any) {
+        console.warn(`[DispatchEngine] onFirstBidder 回調執行失敗:`, fbErr.message);
+      }
+    }
+
+    return bid;
   }
 
   /**
@@ -123,38 +139,22 @@ export class DispatchEngine {
     if (totalBidsCount === 0) {
       const marked = await markOrderNoDriver(orderId);
       console.log(`[DispatchEngine] Order ${orderId} closed with 0 bids. Marked no_driver: ${marked}`);
-      const result: DispatchWinnerResult = {
+      return {
         orderId,
         status: marked ? 'no_driver' : 'conflict_or_cancelled',
         totalBidsCount: 0,
       };
-      if (this.onOrderResolved) {
-        try {
-          await this.onOrderResolved(result);
-        } catch (err: any) {
-          console.error('[DispatchEngine] onOrderResolved 執行失敗:', err.message);
-        }
-      }
-      return result;
     }
 
     // PostGIS 依長單優先權加權 + 距離排序挑選 Winner
     const candidate = await findWinnerDriver(orderId);
     if (!candidate) {
       const marked = await markOrderNoDriver(orderId);
-      const result: DispatchWinnerResult = {
+      return {
         orderId,
         status: marked ? 'no_driver' : 'conflict_or_cancelled',
         totalBidsCount,
       };
-      if (this.onOrderResolved) {
-        try {
-          await this.onOrderResolved(result);
-        } catch (err: any) {
-          console.error('[DispatchEngine] onOrderResolved 執行失敗:', err.message);
-        }
-      }
-      return result;
     }
 
     // 原子指派：UPDATE orders SET status='accepted', driver_id=$1 WHERE id=$2 AND status='dispatching'
@@ -162,19 +162,11 @@ export class DispatchEngine {
 
     if (!assigned) {
       console.warn(`[DispatchEngine] Atomic assignment failed for order ${orderId} (race condition / cancelled)`);
-      const result: DispatchWinnerResult = {
+      return {
         orderId,
         status: 'conflict_or_cancelled',
         totalBidsCount,
       };
-      if (this.onOrderResolved) {
-        try {
-          await this.onOrderResolved(result);
-        } catch (err: any) {
-          console.error('[DispatchEngine] onOrderResolved 執行失敗:', err.message);
-        }
-      }
-      return result;
     }
 
     console.log(
