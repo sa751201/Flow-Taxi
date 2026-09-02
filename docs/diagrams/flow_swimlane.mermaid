@@ -1,0 +1,32 @@
+flowchart TD
+    subgraph CUST["📱 官方帳號管道 — 客戶端"]
+        direction TB
+        A[乘客傳訊息<br/>可能不照格式·分多則] --> B[LLM 解析<br/>意圖分類 + 抽欄位]
+        B --> C[確認 Flex<br/>✅ 正確就叫車]
+        C -- 客人確認 --> D[geocoding + 車資<br/>建單 status=pending]
+        R1[收到司機資訊<br/>車色·車號·品牌 + ETA]
+        R2[收到記點 / 發券通知]
+        R3[評價邀請 LIFF<br/>不限時,有空再評]
+    end
+
+    subgraph DRV["🚕 群組已加入 OA 的司機端"]
+        direction TB
+        E[群組廣播 Flex<br/>只顯示 人數·上車·目的地] --> F[司機點接單 → 開 LIFF]
+        F --> G[驗身分 + 註冊 gate<br/>抓 Geolocation]
+        G --> H[收集視窗 60s<br/>PostGIS 選最近·優先權加權]
+        H --> I[原子指派給中單司機]
+        I --> J[群組 @ 中單司機<br/>此時才看客人姓氏·電話]
+        J --> K[回報乘客上車 → 行程完成]
+        K --> L[寫 ride_records<br/>短程達標 → 發司機獎勵]
+    end
+
+    %% ---------- 跨管道交接 ----------
+    D ==>|① 建單廣播到群組| E
+    I ==>|② 指派確定·回傳客戶| R1
+    K ==>|③ 完成觸發| R2
+    K ==>|③ 完成觸發| R3
+
+    classDef cust fill:#e3f2fd,stroke:#1976d2,color:#0d47a1;
+    classDef drv  fill:#fff3e0,stroke:#e65100,color:#bf360c;
+    class A,B,C,D,R1,R2,R3 cust;
+    class E,F,G,H,I,J,K,L drv;

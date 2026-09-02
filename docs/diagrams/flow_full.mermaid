@@ -1,0 +1,42 @@
+flowchart TD
+    %% ---------- 階段一:乘客下單 + LLM 解析 ----------
+    A[乘客在 OA 傳訊息<br/>可能不照格式·分多則] --> B[草稿累積 + debounce<br/>draft_orders]
+    B --> C[Claude API 解析<br/>意圖分類 + 欄位抽取 JSON]
+    C --> D{意圖?}
+    D -- 取消/改單/付款/選單 --> D2[對應處理<br/>MVP 可先人工]
+    D -- 新叫車 --> E[抽出 上車·下車·人數<br/>缺核心欄位則追問]
+    E --> F[回填確認 Flex<br/>✅ 正確就叫車]:::gate
+    F -- 客人確認 --> G[geocoding 上車/下車<br/>Google Geocoding]
+    G --> H[算距離 + 車資<br/>fare_config 公式]
+    H --> I[建立訂單 status=pending]
+
+    %% ---------- 階段二:派單 ----------
+    I --> J{{群組廣播 Flex<br/>只顯示 人數·上車·目的地}}:::tier1
+    J --> K[司機點 接單 → 開 LIFF]
+    K --> L[LIFF ID token<br/>後端驗身分]:::gate
+    L --> M{drivers 已註冊?}:::gate
+    M -- 是 --> O[抓 Geolocation<br/>寫 dispatch_bids]
+    M -- 否 --> N[導向註冊表單<br/>車號·車色·品牌]
+    N --> O
+    O --> P[[收集視窗 60 秒<br/>收集所有出價司機]]
+    P --> Q[視窗關閉<br/>PostGIS 選最近<br/>有效長單優先權者加權]
+    Q --> R[原子指派 status=accepted<br/>driver_id 鎖定]:::gate
+    R --> S[群組 @ 中單司機<br/>僅通知]
+    R --> T{{僅中單司機可見<br/>客人姓氏·電話}}:::tier2
+    R --> U[非中單司機開 LIFF<br/>後端回 已指派他人]:::gate
+    T --> V[推播乘客<br/>車色車號品牌 + 一次性 ETA]:::tier2
+
+    %% ---------- 階段三:完成 + 記點 + 獎勵 + 評價 ----------
+    V --> W[司機回報 乘客已上車<br/>status=picked_up]
+    W --> X[司機按 行程完成<br/>status=done · 唯一轉換]
+    X --> Y[寫 ride_records<br/>distance_km · is_short]
+    Y --> Z1[會員記點 冪等<br/>completed_rides +1]
+    Y --> Z2{短程達標?<br/>vs reward_rules}
+    Z2 -- 是 --> Z3[原子兌換未用短程<br/>發 driver_rewards<br/>減費 / 長單優先]:::gate
+    Z1 --> Z4{命中發券規則?}
+    Z4 -- 是 --> Z5[發 customer_coupons<br/>1:1 推播通知]:::tier2
+    X --> Z6[推評價 LIFF<br/>不限時·評完寫 ratings]
+
+    classDef tier1 fill:#e3f2fd,stroke:#1976d2,color:#0d47a1;
+    classDef tier2 fill:#fff3e0,stroke:#e65100,color:#bf360c;
+    classDef gate  fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c;

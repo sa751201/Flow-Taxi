@@ -1,0 +1,27 @@
+flowchart TD
+    A[乘客在 OA 送出叫車<br/>姓氏·電話·上車·目的地] --> B[後端 geocoding<br/>算距離 + 車資公式]
+    B --> C[建立訂單 status = pending]
+    C --> D{{群組廣播 Flex<br/>只顯示：人數 · 上車地點 · 目的地}}:::tier1
+
+    D --> E[司機點「接單」→ 開 LIFF]
+    E --> F[LIFF 取得 ID token<br/>後端驗證司機身分]:::gate
+    F --> G{drivers 表<br/>填過基本資料了嗎？}:::gate
+
+    G -- 沒填 --> H[導向註冊表單<br/>車號 · 車色 · 品牌]
+    H --> I[存入後端]
+    G -- 填過 --> J[抓 Geolocation<br/>回傳 orderId · driverId · lat · lng]
+    I --> J
+
+    J --> K[[進入收集視窗 60 秒<br/>收集所有接單司機]]
+    K --> L[視窗關閉<br/>PostGIS 選最近者]
+    L --> M[訂單指派給中單司機<br/>status = accepted]
+
+    M --> N[群組內 OA @ 中單司機<br/>僅通知，非權限控制]
+    M --> O{{僅中單司機可見<br/>顯示：客人姓氏 · 電話}}:::tier2
+    M --> P[非中單司機開 LIFF<br/>後端回：已指派他人]:::gate
+
+    O --> Q[推播給乘客<br/>司機車色 · 車號 · 品牌 + 一次性 ETA]:::tier2
+
+    classDef tier1 fill:#e3f2fd,stroke:#1976d2,color:#0d47a1;
+    classDef tier2 fill:#fff3e0,stroke:#e65100,color:#bf360c;
+    classDef gate fill:#f3e5f5,stroke:#7b1fa2,color:#4a148c;
