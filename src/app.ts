@@ -185,15 +185,45 @@ app.get([
   res.sendFile('public/driver/bid.html', { root: process.cwd() });
 });
 
+// 記憶體 Log 緩衝區 (供除錯查看即時計時器秒數與事件)
+const recentLogs: string[] = [];
+const originalLog = console.log;
+const originalWarn = console.warn;
+const originalError = console.error;
+
+console.log = (...args: any[]) => {
+  const line = `[${new Date().toISOString()}] [LOG] ` + args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+  recentLogs.push(line);
+  if (recentLogs.length > 100) recentLogs.shift();
+  originalLog.apply(console, args);
+};
+console.warn = (...args: any[]) => {
+  const line = `[${new Date().toISOString()}] [WARN] ` + args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+  recentLogs.push(line);
+  if (recentLogs.length > 100) recentLogs.shift();
+  originalWarn.apply(console, args);
+};
+console.error = (...args: any[]) => {
+  const line = `[${new Date().toISOString()}] [ERROR] ` + args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+  recentLogs.push(line);
+  if (recentLogs.length > 100) recentLogs.shift();
+  originalError.apply(console, args);
+};
+
 // 提供前端 LIFF 設定與環境診斷
 app.get('/api/config', (req, res) => {
   res.json({
     liffId: env.LIFF_ID || '',
     driverGroupId: env.DRIVER_GROUP_ID || '',
-    version: '2026-09-03-fast-1min-v3',
+    version: '2026-09-03-fast-1min-v4',
     windowSeconds: (dispatchEngine as any).windowDurationSeconds,
     timerType: ((dispatchEngine as any).timer?.constructor?.name) || 'Unknown',
   });
+});
+
+app.get('/api/logs', (req, res) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.send(recentLogs.join('\n'));
 });
 
 import { upsertDriver, getDriverById as getDriverProfile, clearAllDrivers } from './db/queries/drivers.js';
