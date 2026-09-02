@@ -320,6 +320,9 @@ export function createGroupDispatchOrderFlexMessage(params: {
   dropoffAddress?: string | null;
   passengerCount?: number;
   scheduledTimeText?: string;
+  estimatedFare?: number | null;
+  fareBreakdown?: string;
+  distanceKm?: number;
   bidUrl: string;
 }): messagingApi.FlexMessage {
   const bodyContents: messagingApi.FlexComponent[] = [
@@ -418,6 +421,49 @@ export function createGroupDispatchOrderFlexMessage(params: {
         },
       ],
     });
+  }
+
+  // 預估車資欄位（醒目金色高亮）
+  if (params.estimatedFare !== undefined) {
+    const fareText = params.estimatedFare !== null
+      ? `$${params.estimatedFare}`
+      : (params.fareBreakdown || '專人報價');
+    const detailText = params.estimatedFare !== null && params.fareBreakdown
+      ? `（${params.fareBreakdown}）`
+      : '';
+
+    bodyContents.push(
+      {
+        type: 'separator',
+        color: '#f1f5f9',
+        margin: 'md',
+      } as messagingApi.FlexSeparator,
+      {
+        type: 'box',
+        layout: 'horizontal',
+        spacing: 'sm',
+        margin: 'md',
+        contents: [
+          {
+            type: 'text',
+            text: '💰 預估車資：',
+            color: '#b45309',
+            size: 'sm',
+            weight: 'bold',
+            flex: 3,
+          },
+          {
+            type: 'text',
+            text: `${fareText}${detailText}`,
+            color: '#b45309',
+            weight: 'bold',
+            size: 'sm',
+            wrap: true,
+            flex: 7,
+          },
+        ],
+      }
+    );
   }
 
   bodyContents.push(

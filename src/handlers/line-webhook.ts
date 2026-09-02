@@ -8,6 +8,7 @@ import { createDriverRegisterFlexMessage, createWelcomeServiceMessage, createCit
 import { geocodeAddress } from '../services/google-maps.js';
 import { createOrder } from '../db/queries/orders.js';
 import { dispatchEngine } from '../app.js';
+import { calculateFare } from '../services/fare-calculator.js';
 
 type WebhookEvent = webhook.Event;
 
@@ -327,16 +328,27 @@ export async function handleLineEvents(events: WebhookEvent[]) {
                   console.warn('[Line Webhook] Customer upsert warning:', cErr.message);
                 }
 
-                // 呼叫 Google Geocoding 取得經緯度
-                const geo = await geocodeAddress(pickupAddr);
+                // 呼叫 Google Geocoding 取得上車點經緯度
+                const pickupGeo = await geocodeAddress(pickupAddr);
+
+                // 同時對下車地點做 Geocoding（用於計算距離與車資）
+                const dropoffGeo = await geocodeAddress(dropoffAddr);
+
+                // 計算預估車資
+                const fareResult = calculateFare(
+                  'city',
+                  pickupGeo.lat, pickupGeo.lng,
+                  dropoffGeo.lat, dropoffGeo.lng
+                );
+                console.log(`[Line Webhook] 預估車資: $${fareResult.estimatedFare} (${fareResult.distanceKm}km, ${fareResult.fareBreakdown})`);
 
                 // 建立訂單 (status: pending)
                 const newOrder = await createOrder({
                   customer_id: customerId || 'UNKNOWN_CUSTOMER',
                   service_type: 'city',
                   pickup_address: pickupAddr,
-                  pickup_lat: geo.lat,
-                  pickup_lng: geo.lng,
+                  pickup_lat: pickupGeo.lat,
+                  pickup_lng: pickupGeo.lng,
                   dropoff_address: dropoffAddr || undefined,
                   passenger_count: passengerCount || 1,
                   note: scheduledTimeText ? `預約時間: ${scheduledTimeText}` : undefined,
@@ -349,7 +361,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
                   ? `https://liff.line.me/${env.LIFF_ID}/driver/bid?orderId=${newOrder.id}`
                   : `https://flow-taxi-production.up.railway.app/driver/bid?orderId=${newOrder.id}`;
 
-                // 1. 先向司機群組廣播 Flex Message (確保留痕與秒出)
+                // 1. 先向司機群組廣播 Flex Message（含預估車資）
                 const targetGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
                 if (targetGroupId) {
                   const dispatchFlex = createGroupDispatchOrderFlexMessage({
@@ -358,6 +370,9 @@ export async function handleLineEvents(events: WebhookEvent[]) {
                     dropoffAddress: dropoffAddr || undefined,
                     passengerCount: passengerCount || 1,
                     scheduledTimeText: scheduledTimeText,
+                    estimatedFare: fareResult.estimatedFare,
+                    fareBreakdown: fareResult.fareBreakdown,
+                    distanceKm: fareResult.distanceKm,
                     bidUrl,
                   });
 
