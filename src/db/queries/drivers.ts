@@ -1,3 +1,4 @@
+import IORedis from 'ioredis';
 import { env } from '../../config/env.js';
 import { query } from '../index.js';
 
@@ -26,8 +27,24 @@ export interface UpsertDriverParams {
   registered?: boolean;
 }
 
-// 記憶體備援快取 (當 DATABASE_URL 未設定或 DB 連線異常時使用，保障原型與展示不中斷)
+// 記憶體快取
 const memoryDrivers = new Map<string, Driver>();
+
+// Redis 持久化儲存 (確保部署與重啟時司機資料永不遺失)
+let redisClient: any = null;
+function getRedisClient() {
+  if (!redisClient && env.REDIS_URL) {
+    const Redis = (IORedis as any).default || IORedis;
+    redisClient = new Redis(env.REDIS_URL, {
+      maxRetriesPerRequest: null,
+      lazyConnect: false,
+    });
+    redisClient.on('error', (err: any) => {
+      console.warn('[Drivers Redis] Redis 連線異常:', err.message);
+    });
+  }
+  return redisClient;
+}
 
 export async function upsertDriver(params: UpsertDriverParams): Promise<Driver> {
   // 1. 若有設定 DATABASE_URL 嘗試寫入 PostgreSQL
@@ -95,7 +112,18 @@ export async function upsertDriver(params: UpsertDriverParams): Promise<Driver> 
 
   memoryDrivers.set(params.line_user_id, updatedDriver);
 
-  // 嘗試透過 Supabase REST API 寫入 (若已在 Supabase 執行 schema.sql)
+  // 3. 持久化存入 Redis (即使每次部署或重啟，司機資料永遠存在)
+  try {
+    const redis = getRedisClient();
+    if (redis) {
+      await redis.set(`driver:${params.line_user_id}`, JSON.stringify(updatedDriver));
+      console.log(`[Drivers] 司機 ${params.line_user_id} (${updatedDriver.display_name}) 資料已成功持久化至 Redis`);
+    }
+  } catch (rErr: any) {
+    console.warn('[Drivers] Redis 寫入司機資料失敗:', rErr.message);
+  }
+
+  // 4. 嘗試透過 Supabase REST API 寫入 (若已在 Supabase 執行 schema.sql)
   if (env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY) {
     try {
       await fetch(`${env.SUPABASE_URL}/rest/v1/drivers`, {
@@ -117,21 +145,56 @@ export async function upsertDriver(params: UpsertDriverParams): Promise<Driver> 
 }
 
 export async function getDriverById(lineUserId: string): Promise<Driver | null> {
+  // 1. 先查記憶體快取
+  const mem = memoryDrivers.get(lineUserId);
+  if (mem) return mem;
+
+  // 2. 查 Redis 持久化資料庫
+  try {
+    const redis = getRedisClient();
+    if (redis) {
+      const data = await redis.get(`driver:${lineUserId}`);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (parsed.created_at) parsed.created_at = new Date(parsed.created_at);
+        memoryDrivers.set(lineUserId, parsed);
+        return parsed;
+      }
+    }
+  } catch (rErr: any) {
+    console.warn('[Drivers] Redis 讀取司機資料失敗:', rErr.message);
+  }
+
+  // 3. 若有 PostgreSQL 查 PostgreSQL
   if (env.DATABASE_URL) {
     try {
       const sql = 'SELECT * FROM drivers WHERE line_user_id = $1';
       const res = await query<Driver>(sql, [lineUserId]);
-      if (res.rows[0]) return res.rows[0];
+      if (res.rows[0]) {
+        memoryDrivers.set(lineUserId, res.rows[0]);
+        return res.rows[0];
+      }
     } catch {
-      // fallback to memory
+      // fallback
     }
   }
 
-  return memoryDrivers.get(lineUserId) || null;
+  return null;
 }
 
 export async function clearAllDrivers(): Promise<void> {
   memoryDrivers.clear();
+  try {
+    const redis = getRedisClient();
+    if (redis) {
+      const keys = await redis.keys('driver:*');
+      if (keys.length > 0) {
+        await redis.del(...keys);
+      }
+    }
+  } catch {
+    // ignore
+  }
   if (env.DATABASE_URL) {
     try {
       await query('DELETE FROM drivers;');
