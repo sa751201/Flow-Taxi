@@ -56,6 +56,7 @@ export const dispatchEngine = new DispatchEngine({
 
         const bids = await getBidsByOrderId(result.orderId);
         const winnerBid = bids.find((b) => b.driver_id === result.winnerDriverId);
+        const driverName = driver.display_name || (winnerBid as any)?.driverName || '優質司機';
         const etaMinutes = winnerBid?.eta_minutes || Math.max(3, Math.round((result.distanceMeters || 1500) / 500));
 
         if (order) {
