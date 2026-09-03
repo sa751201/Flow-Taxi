@@ -6,7 +6,7 @@ import { parseDriverRegistrationText } from '../services/driver-parser.js';
 import { upsertDriver, getDriverById } from '../db/queries/drivers.js';
 import { createDriverRegisterFlexMessage, createWelcomeServiceMessage, createCityRidePromptMessage, createAirportRidePromptMessage, createGroupDispatchOrderFlexMessage } from '../services/flex-messages.js';
 import { geocodeAddress } from '../services/google-maps.js';
-import { createOrder, getActiveOrderByDriverId } from '../db/queries/orders.js';
+import { createOrder, getActiveOrderByDriverId, getActiveOrderByCustomerId } from '../db/queries/orders.js';
 import { dispatchEngine } from '../app.js';
 import { calculateFare } from '../services/fare-calculator.js';
 import { isGroupAllowed } from '../services/group-whitelist.js';
@@ -348,13 +348,25 @@ export async function handleLineEvents(events: WebhookEvent[]) {
             }
           }
 
-          // 回覆群組確認訊息
+          // 回覆群組確認訊息，下方附帶 Quick Reply 按鈕「客上」
           await lineClient.replyMessage({
             replyToken,
             messages: [
               {
                 type: 'text',
                 text: '✅ 已收到到點回報！系統已透過 1:1 OA 通知乘客「司機已抵達」，請耐心等候乘客上車。',
+                quickReply: {
+                  items: [
+                    {
+                      type: 'action',
+                      action: {
+                        type: 'message',
+                        label: '🚕 客上',
+                        text: '客上',
+                      },
+                    },
+                  ],
+                },
               },
             ],
           });
@@ -439,6 +451,51 @@ https://lin.ee/AOp42u7`;
                 },
               ],
             });
+          } else if (
+            text.includes('準時') ||
+            text.includes('晚1-5分鐘') ||
+            text.includes('晚 1-5 分鐘') ||
+            text.includes('正在前往上車點') ||
+            text.includes('稍微耽擱')
+          ) {
+            // ==========================================
+            // 需求 1: 乘客按下到點 Quick Reply 按鈕後的簡易回覆 (不觸發預設選單)
+            // ==========================================
+            console.log(`[Passenger Reply] 乘客 ${userSource.userId} 回覆: "${text}"`);
+
+            // 1. 1:1 OA 立即回覆乘客：「好的，已幫您通知司機，請小心慢行！」
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: '好的，已幫您通知司機，請小心慢行！🚖',
+                },
+              ],
+            });
+
+            // 2. 同步將乘客的動態轉發至司機群組或司機 1:1
+            try {
+              const activeOrder = userSource.userId ? await getActiveOrderByCustomerId(userSource.userId) : null;
+              const targetGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
+              if (targetGroupId) {
+                const driverMention = activeOrder?.driver_id ? `已接單司機夥伴` : '接單司機';
+                const replyBrief = text.includes('準時') ? '【準時前來】正在前往上車點！' : '【稍候片刻】約晚 1-5 分鐘抵達！';
+                await lineClient.pushMessage({
+                  to: targetGroupId,
+                  messages: [
+                    {
+                      type: 'text',
+                      text: `📢 乘客回覆：${replyBrief}\n（請 ${driverMention} 稍候乘客）`,
+                    },
+                  ],
+                });
+                console.log(`[Passenger Reply] ✅ 已將乘客回覆同步至司機群組`);
+              }
+            } catch (fwdErr: any) {
+              console.warn('[Passenger Reply] 轉發司機群組失敗:', fwdErr.message);
+            }
+            continue;
           } else if (
             (text.includes('上車') || text.includes('1.')) &&
             (text.includes('下車') || text.includes('2.'))

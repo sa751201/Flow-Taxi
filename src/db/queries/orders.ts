@@ -235,3 +235,35 @@ export async function getActiveOrderByDriverId(driverId: string): Promise<Order 
 
   return null;
 }
+
+/**
+ * 查詢乘客目前正在進行中的活躍訂單 (pending / dispatching / accepted / in_progress)
+ */
+export async function getActiveOrderByCustomerId(customerId: string): Promise<Order | null> {
+  if (env.DATABASE_URL) {
+    try {
+      const sql = `
+        SELECT * FROM orders 
+        WHERE customer_id = $1 AND status IN ('pending', 'dispatching', 'accepted', 'in_progress')
+        ORDER BY created_at DESC 
+        LIMIT 1;
+      `;
+      const res = await query<Order>(sql, [customerId]);
+      if (res.rows[0]) return res.rows[0];
+    } catch {
+      // fallback
+    }
+  }
+
+  // 記憶體備援查詢
+  for (const order of memoryOrders.values()) {
+    if (
+      order.customer_id === customerId &&
+      (order.status === 'pending' || order.status === 'dispatching' || order.status === 'accepted' || (order as any).status === 'in_progress')
+    ) {
+      return order;
+    }
+  }
+
+  return null;
+}
