@@ -242,7 +242,13 @@ app.get('/api/orders/:orderId', async (req, res) => {
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    res.json(order);
+    const bids = await getBidsByOrderId(req.params.orderId);
+    res.json({
+      ...order,
+      bidsCount: bids.length,
+      hasBids: bids.length > 0,
+      bids: bids.map(b => ({ driverId: b.driver_id, etaMinutes: b.eta_minutes })),
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

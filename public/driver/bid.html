@@ -35,10 +35,10 @@
         60秒撮合派單中
       </div>
       <h1 class="text-2xl font-bold tracking-tight text-slate-900">
-        即時接單出價
+        即時接單
       </h1>
       <p class="text-xs text-slate-500 mt-1">
-        以您目前手機定位計算路程，支援微調到達時間
+        以您目前手機定位計算距離，支援微調到達時間
       </p>
     </div>
 
@@ -76,51 +76,102 @@
           </div>
         </div>
 
-        <!-- 預估到達時間顯示 (左右雙方塊，標題字級對齊一致) -->
-        <div class="grid grid-cols-2 gap-3">
-          <!-- 左方塊：預估車程 -->
-          <div class="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-center flex flex-col justify-center">
-            <p class="text-xs font-bold text-emerald-800 tracking-wider">預估車程</p>
-            <div class="flex items-baseline justify-center gap-1 my-1">
-              <span id="eta-mins" class="text-3xl font-extrabold text-emerald-600">--</span>
-              <span class="text-xs font-bold text-emerald-800">分鐘</span>
+        <!-- 需求 7: 若已有司機接單，顯示此提示區塊（不再顯示時間估算與接單按鈕） -->
+        <div id="already-bid-notice" class="hidden p-4 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 space-y-1.5 text-center">
+          <div class="flex items-center justify-center gap-1.5 font-bold text-sm text-amber-800">
+            <span>🚕</span> 已有司機接單媒合中
+          </div>
+          <p class="text-xs text-amber-700/90 leading-relaxed">
+            此訂單目前已有司機承接並進入 60 秒媒合評選階段。本頁面僅供瀏覽行程，暫無法出價搶單。
+          </p>
+        </div>
+
+        <!-- 可接單狀態下的時間估算與操作區 (需求 7: 已有人接單時將隱藏此區塊) -->
+        <div id="bidding-action-section" class="space-y-4">
+          <!-- 需求 2 & 3: 刪除抵達時間，改為「距離上車地點」單一跨欄 fit 內框 -->
+          <div class="w-full p-4 rounded-xl bg-emerald-50/80 border border-emerald-200 text-center flex flex-col justify-center">
+            <p class="text-xs font-bold text-emerald-800 tracking-wider">距離上車地點</p>
+            <div class="flex items-baseline justify-center gap-1.5 my-1.5">
+              <span id="eta-mins" class="text-4xl font-extrabold text-emerald-600">--</span>
+              <span class="text-sm font-bold text-emerald-800">分鐘</span>
+              <span id="eta-distance-badge" class="ml-2 text-xs font-semibold px-2 py-0.5 bg-emerald-100/80 text-emerald-800 rounded-full">約 1.5 km</span>
             </div>
-            <p class="text-[11px] text-emerald-600/80">依路況動態估算</p>
+            <p class="text-[11px] text-emerald-600/90">由司機即時定位測算導航時間</p>
           </div>
 
-          <!-- 右方塊：抵達時間 -->
-          <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center flex flex-col justify-center">
-            <p class="text-xs font-bold text-slate-700 tracking-wider">抵達時間</p>
-            <div class="flex items-baseline justify-center gap-1 my-1">
-              <span id="eta-clock" class="text-3xl font-extrabold text-slate-900">--:--</span>
+          <!-- 司機手動微調按鈕 (+1 分鐘 / +5 分鐘) -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <label class="block text-xs font-bold text-slate-600">手動調整到達時間 (遇紅燈或塞車)：</label>
+              <!-- 需求 4: 按加後出現重設按鈕，ghost button 樣式 -->
+              <button type="button" id="btn-reset-eta" class="hidden text-xs font-semibold text-slate-400 hover:text-slate-700 active:text-slate-900 transition flex items-center gap-1 px-2 py-0.5 rounded-lg hover:bg-slate-100">
+                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                重設
+              </button>
             </div>
-            <p class="text-[11px] text-slate-500">預計到達現場</p>
+            <div class="grid grid-cols-2 gap-3">
+              <button type="button" id="btn-plus-1" class="py-3 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100 font-bold text-sm text-slate-800 transition flex items-center justify-center gap-1 shadow-sm">
+                <span>⏱️</span> +1 分鐘
+              </button>
+              <button type="button" id="btn-plus-5" class="py-3 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100 font-bold text-sm text-slate-800 transition flex items-center justify-center gap-1 shadow-sm">
+                <span>⏱️</span> +5 分鐘
+              </button>
+            </div>
+          </div>
+
+          <!-- 確認按鈕 (Transitions.dev Pro Glow) -->
+          <div class="pt-1">
+            <button type="button" id="btn-confirm-bid" class="t-pro-btn w-full py-3.5 px-6">
+              <span class="t-pro-btn-label text-white font-bold flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                </svg>
+                確認到達時間並接單
+              </span>
+            </button>
           </div>
         </div>
 
-        <!-- 司機手動微調按鈕 (+1 分鐘 / +5 分鐘) -->
-        <div>
-          <label class="block text-xs font-bold text-slate-600 mb-2">手動調整預估車程 (遇紅燈或塞車)：</label>
-          <div class="grid grid-cols-2 gap-3">
-            <button type="button" id="btn-plus-1" class="py-3.5 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100 font-bold text-base text-slate-800 transition flex items-center justify-center gap-1 shadow-sm">
-              <span>⏱️</span> +1 分鐘
-            </button>
-            <button type="button" id="btn-plus-5" class="py-3.5 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100 font-bold text-base text-slate-800 transition flex items-center justify-center gap-1 shadow-sm">
-              <span>⏱️</span> +5 分鐘
-            </button>
+        <!-- 需求 5: 預估車資（加到按鈕下方） -->
+        <div class="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-base">💵</span>
+            <span class="text-xs font-semibold text-slate-600">預估此單車資</span>
+          </div>
+          <div class="text-right">
+            <span id="fare-amount" class="text-lg font-extrabold text-slate-900">載入中...</span>
+            <span id="fare-distance" class="text-[11px] text-slate-400 block -mt-0.5">預約計程收費</span>
           </div>
         </div>
 
-        <!-- 確認按鈕 (Transitions.dev Pro Glow) -->
-        <div class="pt-2">
-          <button type="button" id="btn-confirm-bid" class="t-pro-btn w-full py-3.5 px-6">
-            <span class="t-pro-btn-label text-white font-bold flex items-center gap-2">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
-              </svg>
-              確認到達時間並接單
-            </span>
-          </button>
+        <!-- 需求 6: 預留的司機搶單獎勵 (含優先搶單字樣與預覽切換按鈕) -->
+        <div class="space-y-2">
+          <!-- 搶單獎勵卡片本體 -->
+          <div id="reward-priority-card" class="p-3.5 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 flex items-start gap-3">
+            <div class="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center text-base shrink-0 shadow-sm mt-0.5">
+              🏆
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-extrabold text-amber-900 tracking-tight">長單回饋資格</span>
+                <span class="px-2 py-0.5 rounded-md bg-amber-500 text-white text-[10px] font-black tracking-wider uppercase shadow-xs">
+                  優先搶單
+                </span>
+              </div>
+              <p class="text-[11px] text-amber-800/90 mt-1 leading-snug">
+                您符合本趟司機獎勵機制！系統在 60 秒派單媒合時，將為您優先加權指派。
+              </p>
+            </div>
+          </div>
+
+          <!-- 測試/切換按鈕：供目前尚無完整邏輯時顯示/隱藏預覽 -->
+          <div class="text-center pt-0.5">
+            <button type="button" id="btn-toggle-reward" class="text-[11px] font-medium text-slate-400 hover:text-slate-600 transition underline underline-offset-2">
+              切換「優先搶單獎勵」顯示狀態 (測試預覽)
+            </button>
+          </div>
         </div>
 
       </div>

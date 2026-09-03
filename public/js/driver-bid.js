@@ -4,19 +4,32 @@ let currentDriverProfile = null;
 let orderId = null;
 let orderData = null;
 let baseEtaMinutes = 5;
+let baseDistanceKm = 1.5;
 let extraMinutes = 0;
 let driverLat = 25.0478;
 let driverLng = 121.5170;
 
 function updateEtaDisplay() {
   const totalEta = baseEtaMinutes + extraMinutes;
-  document.getElementById('eta-mins').textContent = totalEta;
+  const etaMinsEl = document.getElementById('eta-mins');
+  if (etaMinsEl) {
+    etaMinsEl.textContent = totalEta;
+  }
 
-  const now = new Date();
-  now.setMinutes(now.getMinutes() + totalEta);
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  document.getElementById('eta-clock').textContent = `${hours}:${minutes}`;
+  const distanceBadgeEl = document.getElementById('eta-distance-badge');
+  if (distanceBadgeEl) {
+    distanceBadgeEl.textContent = `約 ${baseDistanceKm.toFixed(1)} km`;
+  }
+
+  // 需求 4: 按加後，數字下方/手動微調區出現重設按鈕 (ghost button 樣式)
+  const resetBtn = document.getElementById('btn-reset-eta');
+  if (resetBtn) {
+    if (extraMinutes > 0) {
+      resetBtn.classList.remove('hidden');
+    } else {
+      resetBtn.classList.add('hidden');
+    }
+  }
 }
 
 async function initBidLiff() {
@@ -66,6 +79,50 @@ async function initBidLiff() {
 
     document.getElementById('pickup-addr').textContent = orderData.pickup_address;
     document.getElementById('dropoff-addr').textContent = orderData.dropoff_address || '乘客上車後說明';
+
+    // 需求 5: 把預估車資加到按鈕下方
+    const fareEl = document.getElementById('fare-amount');
+    const fareDistEl = document.getElementById('fare-distance');
+    if (fareEl) {
+      const estimatedFare = orderData.fare || Math.round(60 + (orderData.distance_km || 5) * 20);
+      fareEl.textContent = `$${estimatedFare}`;
+    }
+    if (fareDistEl && orderData.distance_km) {
+      fareDistEl.textContent = `行程約 ${Number(orderData.distance_km).toFixed(1)} 公里`;
+    }
+
+    // 需求 7: 幫我加一個判斷，已經有人的接單，當群組內有人點立刻接單的話，
+    // 該 LIFF 顯示資訊，但不會有時間估算這區以及接單的按鈕。
+    const hasBids = Boolean(orderData.hasBids || (orderData.bidsCount && orderData.bidsCount > 0) || orderData.status === 'accepted');
+    const isAlreadyAccepted = orderData.status === 'accepted' || orderData.status === 'no_driver';
+    
+    if (hasBids || isAlreadyAccepted) {
+      const actionSec = document.getElementById('bidding-action-section');
+      const alreadyNotice = document.getElementById('already-bid-notice');
+      if (actionSec) actionSec.classList.add('hidden');
+      if (alreadyNotice) {
+        alreadyNotice.classList.remove('hidden');
+        if (orderData.status === 'accepted') {
+          alreadyNotice.innerHTML = `
+            <div class="flex items-center justify-center gap-1.5 font-bold text-sm text-slate-800">
+              <span>✅</span> 此訂單已指派中單司機
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed mt-1">
+              本趟行程派單已圓滿結單，已由其他司機前往接送。感謝您的關注！
+            </p>
+          `;
+        }
+      }
+    }
+
+    // 需求 6: 司機搶單獎勵預覽與切換邏輯
+    const toggleRewardBtn = document.getElementById('btn-toggle-reward');
+    const rewardCard = document.getElementById('reward-priority-card');
+    if (toggleRewardBtn && rewardCard) {
+      toggleRewardBtn.addEventListener('click', () => {
+        rewardCard.classList.toggle('hidden');
+      });
+    }
 
     // 取得司機手機 GPS 定位 (加上 2.5 秒超時保護，避免 iOS LINE 內建瀏覽器卡住)
     let located = false;
@@ -123,6 +180,7 @@ async function fetchCalculatedEta() {
     if (etaRes.ok) {
       const etaData = await etaRes.json();
       baseEtaMinutes = etaData.durationMinutes || 5;
+      baseDistanceKm = (etaData.distanceMeters || 1500) / 1000;
     }
   } catch (e) {
     console.warn('計算車程異常，使用預估值:', e);
@@ -132,6 +190,12 @@ async function fetchCalculatedEta() {
     updateEtaDisplay();
   }
 }
+
+// 需求 4: 重設按鈕監聽 (恢復為測算的 baseEtaMinutes)
+document.getElementById('btn-reset-eta')?.addEventListener('click', () => {
+  extraMinutes = 0;
+  updateEtaDisplay();
+});
 
 document.getElementById('btn-plus-1')?.addEventListener('click', () => {
   extraMinutes += 1;
