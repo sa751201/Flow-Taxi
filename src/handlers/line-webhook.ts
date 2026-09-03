@@ -9,6 +9,7 @@ import { geocodeAddress } from '../services/google-maps.js';
 import { createOrder, getActiveOrderByDriverId } from '../db/queries/orders.js';
 import { dispatchEngine } from '../app.js';
 import { calculateFare } from '../services/fare-calculator.js';
+import { isGroupAllowed } from '../services/group-whitelist.js';
 
 type WebhookEvent = webhook.Event;
 
@@ -130,6 +131,32 @@ export async function handleLineEvents(events: WebhookEvent[]) {
         const groupId = groupSource.groupId;
         console.log(`🎉 [LINE Group Join] OA 被加入群組！GroupId: ${groupId}`);
 
+        const isAllowed = isGroupAllowed(groupId);
+
+        if (!isAllowed) {
+          console.warn(`⛔ [Group Whitelist] 群組 ${groupId} 不在允許白名單內！發送拒絕通知並退出群組。`);
+          if ('replyToken' in event && event.replyToken) {
+            await lineClient.replyMessage({
+              replyToken: event.replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: `⚠️【未授權的司機群組】\n\n感謝您的邀請！本派單系統目前僅提供給通過審核之合作車隊群組使用。\n\n本群組 ID 為：\n${groupId}\n\n若需開通車隊自動化派單功能，請將此群組 ID 提供給系統管理員/負責人開通授權。為維護安全，機器人將自動退出本群組。`,
+                },
+              ],
+            });
+          }
+
+          // 安全機制：自動主動退出未授權群組
+          try {
+            await lineClient.leaveGroup(groupId);
+            console.log(`👋 [Group Whitelist] 機器人已成功退出未授權群組: ${groupId}`);
+          } catch (leaveErr: any) {
+            console.warn(`[Group Whitelist] 退出群組失敗:`, leaveErr.message);
+          }
+          continue;
+        }
+
         try {
           await query(
             `INSERT INTO driver_groups (group_id, name, created_at)
@@ -164,6 +191,15 @@ export async function handleLineEvents(events: WebhookEvent[]) {
         if (!replyToken) continue;
 
         const senderUserId = event.source.userId;
+
+        // 若訊息來自群組，檢查群組是否在允許白名單中
+        if (event.source.type === 'group') {
+          const groupId = (event.source as webhook.GroupSource).groupId;
+          if (!isGroupAllowed(groupId)) {
+            console.warn(`⛔ [Group Whitelist] 忽略來自未授權群組 ${groupId} 的文字訊息: "${text}"`);
+            continue;
+          }
+        }
 
         // 1. 群組或個人中輸入「填資料」或「登記」➔ 彈出 Flex Message
         if (text === '填資料' || text === '登記' || text === '司機登記') {
