@@ -1,4 +1,4 @@
-import { webhook } from '@line/bot-sdk';
+import { webhook, messagingApi } from '@line/bot-sdk';
 import { getLineClient } from '../services/line-client.js';
 import { query } from '../db/index.js';
 import { env } from '../config/env.js';
@@ -257,9 +257,43 @@ export async function handleLineEvents(events: WebhookEvent[]) {
 
           console.log(`[Driver Arrival] 司機 ${senderUserId} 已到達訂單 ${activeOrder.id} 上車地！通知乘客: ${activeOrder.customer_id}`);
 
-          // 透過 1:1 OA 通知乘客，附帶 Quick Reply 按鈕 (「準時」、「晚1-5分鐘」)
+          // 透過 1:1 OA 通知乘客，附帶 Quick Reply 按鈕 (「準時」、「晚1-5分鐘」、「📞 電話聯繫」)
           if (activeOrder.customer_id) {
             try {
+              const driver = await getDriverById(senderUserId);
+              const driverPhone = driver?.phone?.replace(/[^0-9]/g, '');
+
+              const quickReplyItems: messagingApi.QuickReplyItem[] = [
+                {
+                  type: 'action',
+                  action: {
+                    type: 'message',
+                    label: '✅ 準時',
+                    text: '準時，我正在前往上車點！',
+                  },
+                },
+                {
+                  type: 'action',
+                  action: {
+                    type: 'message',
+                    label: '⏳ 晚1-5分鐘',
+                    text: '稍微耽擱，約晚 1-5 分鐘抵達，請稍候！',
+                  },
+                },
+              ];
+
+              // 若司機有登記聯絡電話，掛載「📞 電話聯繫」按鈕供測試與討論評估
+              if (driverPhone) {
+                quickReplyItems.push({
+                  type: 'action',
+                  action: {
+                    type: 'uri',
+                    label: '📞 電話聯繫',
+                    uri: `tel:${driverPhone}`,
+                  },
+                });
+              }
+
               await lineClient.pushMessage({
                 to: activeOrder.customer_id,
                 messages: [
@@ -267,29 +301,12 @@ export async function handleLineEvents(events: WebhookEvent[]) {
                     type: 'text',
                     text: '🚖 司機已抵達指定上車地，請確認車號車色後上車！',
                     quickReply: {
-                      items: [
-                        {
-                          type: 'action',
-                          action: {
-                            type: 'message',
-                            label: '✅ 準時',
-                            text: '準時，我正在前往上車點！',
-                          },
-                        },
-                        {
-                          type: 'action',
-                          action: {
-                            type: 'message',
-                            label: '⏳ 晚1-5分鐘',
-                            text: '稍微耽擱，約晚 1-5 分鐘抵達，請稍候！',
-                          },
-                        },
-                      ],
+                      items: quickReplyItems,
                     },
                   },
                 ],
               });
-              console.log(`[Driver Arrival] ✅ 成功透過 1:1 OA 通知乘客已抵達: ${activeOrder.customer_id}`);
+              console.log(`[Driver Arrival] ✅ 成功透過 1:1 OA 通知乘客已抵達 (包含電話聯繫按鈕: ${Boolean(driverPhone)}): ${activeOrder.customer_id}`);
             } catch (notifyErr: any) {
               console.error('[Driver Arrival] 通知乘客失敗:', notifyErr.message);
             }
