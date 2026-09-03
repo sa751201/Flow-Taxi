@@ -774,6 +774,18 @@ export function createGroupOrderAssignedFlexMessage(params: {
             uri: mapUrl,
           },
         },
+        {
+          type: 'button',
+          style: 'secondary',
+          color: '#f8fafc',
+          height: 'md',
+          margin: 'sm',
+          action: {
+            type: 'message',
+            label: '🔔 我已到達上車點 (通知乘客)',
+            text: '到',
+          },
+        },
       ],
     },
     footer: {

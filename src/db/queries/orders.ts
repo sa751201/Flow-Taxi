@@ -206,3 +206,32 @@ export async function markOrderDispatching(orderId: string): Promise<boolean> {
   }
   return false;
 }
+
+/**
+ * 查詢司機目前正在執行的活躍訂單 (accepted / in_progress)
+ */
+export async function getActiveOrderByDriverId(driverId: string): Promise<Order | null> {
+  if (env.DATABASE_URL) {
+    try {
+      const sql = `
+        SELECT * FROM orders 
+        WHERE driver_id = $1 AND status IN ('accepted', 'in_progress')
+        ORDER BY created_at DESC 
+        LIMIT 1;
+      `;
+      const res = await query<Order>(sql, [driverId]);
+      if (res.rows[0]) return res.rows[0];
+    } catch {
+      // fallback
+    }
+  }
+
+  // 記憶體備援查詢
+  for (const order of memoryOrders.values()) {
+    if (order.driver_id === driverId && (order.status === 'accepted' || (order as any).status === 'in_progress')) {
+      return order;
+    }
+  }
+
+  return null;
+}

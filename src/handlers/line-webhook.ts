@@ -6,7 +6,7 @@ import { parseDriverRegistrationText } from '../services/driver-parser.js';
 import { upsertDriver, getDriverById } from '../db/queries/drivers.js';
 import { createDriverRegisterFlexMessage, createWelcomeServiceMessage, createCityRidePromptMessage, createAirportRidePromptMessage, createGroupDispatchOrderFlexMessage } from '../services/flex-messages.js';
 import { geocodeAddress } from '../services/google-maps.js';
-import { createOrder } from '../db/queries/orders.js';
+import { createOrder, getActiveOrderByDriverId } from '../db/queries/orders.js';
 import { dispatchEngine } from '../app.js';
 import { calculateFare } from '../services/fare-calculator.js';
 
@@ -239,7 +239,136 @@ export async function handleLineEvents(events: WebhookEvent[]) {
           continue;
         }
 
-        // 4. 個人 1:1 聊天室指令 (Ping / 查 ID / 6大服務點擊 / 預設回覆)
+        // 4. 司機回報「到」：車輛抵達上車地點，通知乘客
+        if (text === '到' || text === '我到了' || text === '已抵達') {
+          if (!senderUserId) continue;
+          const activeOrder = await getActiveOrderByDriverId(senderUserId);
+
+          if (!activeOrder) {
+            console.log(`[Driver Arrival] 司機 ${senderUserId} 回報「到」，但無進行中之訂單`);
+            if (event.source.type === 'user') {
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [{ type: 'text', text: '⚠️ 查無您目前進行中的接單行程。' }],
+              });
+            }
+            continue;
+          }
+
+          console.log(`[Driver Arrival] 司機 ${senderUserId} 已到達訂單 ${activeOrder.id} 上車地！通知乘客: ${activeOrder.customer_id}`);
+
+          // 透過 1:1 OA 通知乘客，附帶 Quick Reply 按鈕 (「準時」、「晚1-5分鐘」)
+          if (activeOrder.customer_id) {
+            try {
+              await lineClient.pushMessage({
+                to: activeOrder.customer_id,
+                messages: [
+                  {
+                    type: 'text',
+                    text: '🚖 司機已抵達指定上車地，請確認車號車色後上車！',
+                    quickReply: {
+                      items: [
+                        {
+                          type: 'action',
+                          action: {
+                            type: 'message',
+                            label: '✅ 準時',
+                            text: '準時，我正在前往上車點！',
+                          },
+                        },
+                        {
+                          type: 'action',
+                          action: {
+                            type: 'message',
+                            label: '⏳ 晚1-5分鐘',
+                            text: '稍微耽擱，約晚 1-5 分鐘抵達，請稍候！',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              });
+              console.log(`[Driver Arrival] ✅ 成功透過 1:1 OA 通知乘客已抵達: ${activeOrder.customer_id}`);
+            } catch (notifyErr: any) {
+              console.error('[Driver Arrival] 通知乘客失敗:', notifyErr.message);
+            }
+          }
+
+          // 回覆群組確認訊息
+          await lineClient.replyMessage({
+            replyToken,
+            messages: [
+              {
+                type: 'text',
+                text: '✅ 已收到到點回報！系統已透過 1:1 OA 通知乘客「司機已抵達」，請耐心等候乘客上車。',
+              },
+            ],
+          });
+          continue;
+        }
+
+        // 5. 司機回報「客上」：乘客上車，媒合訂單並推播溫馨叮嚀與推薦連結
+        if (text === '客上' || text === '客人上車' || text === '已上車') {
+          if (!senderUserId) continue;
+          const activeOrder = await getActiveOrderByDriverId(senderUserId);
+
+          if (!activeOrder) {
+            console.log(`[Passenger Boarded] 司機 ${senderUserId} 回報「客上」，但無進行中之訂單`);
+            if (event.source.type === 'user') {
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [{ type: 'text', text: '⚠️ 查無您目前進行中的接單行程。' }],
+              });
+            }
+            continue;
+          }
+
+          console.log(`[Passenger Boarded] 司機 ${senderUserId} 回報客上！訂單: ${activeOrder.id}, 乘客: ${activeOrder.customer_id}`);
+
+          // 1:1 OA 傳給客人完整文案
+          if (activeOrder.customer_id) {
+            try {
+              const passengerMessage = 
+`司機已回報 您上車囉
+感謝搭乘 歡迎您再次預約
+溫馨提醒
+下車請記得隨身物品
+為了您個資的安全
+如有司機向您留聯絡方式
+下車後請馬上告知小編
+若乘車體驗不錯 歡迎分享給朋友
+https://lin.ee/AOp42u7`;
+
+              await lineClient.pushMessage({
+                to: activeOrder.customer_id,
+                messages: [
+                  {
+                    type: 'text',
+                    text: passengerMessage,
+                  },
+                ],
+              });
+              console.log(`[Passenger Boarded] ✅ 成功透過 1:1 OA 推播客上溫馨提醒至乘客: ${activeOrder.customer_id}`);
+            } catch (custErr: any) {
+              console.error('[Passenger Boarded] 推播乘客失敗:', custErr.message);
+            }
+          }
+
+          // 回覆群組確認訊息
+          await lineClient.replyMessage({
+            replyToken,
+            messages: [
+              {
+                type: 'text',
+                text: '👍 已收到「客上」回報！已發送感謝乘車與安全叮嚀給乘客，祝行車平安順利！',
+              },
+            ],
+          });
+          continue;
+        }
+
+        // 6. 個人 1:1 聊天室指令 (Ping / 查 ID / 6大服務點擊 / 預設回覆)
         if (event.source.type === 'user') {
           const userSource = event.source as webhook.UserSource;
           if (text.toLowerCase() === 'ping') {
