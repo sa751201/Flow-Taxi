@@ -487,10 +487,22 @@ https://lin.ee/AOp42u7`;
                     {
                       type: 'text',
                       text: `📢 乘客回覆：${replyBrief}\n（請 ${driverMention} 稍候乘客）`,
+                      quickReply: {
+                        items: [
+                          {
+                            type: 'action',
+                            action: {
+                              type: 'message',
+                              label: '🚕 客上',
+                              text: '客上',
+                            },
+                          },
+                        ],
+                      },
                     },
                   ],
                 });
-                console.log(`[Passenger Reply] ✅ 已將乘客回覆同步至司機群組`);
+                console.log(`[Passenger Reply] ✅ 已將乘客回覆同步至司機群組 (附帶客上 Quick Button)`);
               }
             } catch (fwdErr: any) {
               console.warn('[Passenger Reply] 轉發司機群組失敗:', fwdErr.message);
