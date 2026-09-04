@@ -640,6 +640,21 @@ https://lin.ee/AOp42u7`;
                 console.error('[Line Webhook] 派單建立廣播失敗:', dispatchErr);
               }
             })();
+          } else if (
+            text === '叫車' ||
+            text === '預約叫車' ||
+            text === '服務項目' ||
+            text === '我要叫車' ||
+            text === '開始叫車' ||
+            text === '選單' ||
+            text === '服務選單'
+          ) {
+            // 圖文選單點擊呼叫：發送完整服務說明與 6 大服務 Quick Reply 膠囊按鈕
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [createWelcomeServiceMessage()],
+            });
+            continue;
           } else if (text.includes('市區搭乘')) {
             // 輸入「市區搭乘」時的回覆
             await lineClient.replyMessage({
