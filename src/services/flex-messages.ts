@@ -148,9 +148,9 @@ export function createWelcomeServiceMessage(): messagingApi.TextMessage {
 請點選以下的符合您需求的服務，歡迎大家提早預約💎`;
 
   const cityRideFillIn = `1. 上車地點：
-2. 下車地點：台北車站東門
+2. 下車地點：
 3. 人數：
-4. 乘車時間：現在要車免填🌊`;
+4. 乘車時間：`;
 
   const airportFillIn = `送機 /接機 ：
 航班：（接機必填）（出國免填）
@@ -235,9 +235,9 @@ export function createWelcomeServiceMessage(): messagingApi.TextMessage {
  */
 export function createCityRidePromptMessage(): messagingApi.TextMessage {
   const cityRideFillIn = `1. 上車地點：
-2. 下車地點：台北車站東門
+2. 下車地點：
 3. 人數：
-4. 乘車時間：現在要車免填🌊`;
+4. 乘車時間：`;
 
   return {
     type: 'text',
