@@ -1,9 +1,10 @@
 import express from 'express';
 import { env } from './config/env.js';
 import { DispatchEngine } from './services/dispatch-engine.js';
-import { getOrderById } from './db/queries/orders.js';
+import { getOrderById, updateOrderDropoffAndDistance } from './db/queries/orders.js';
 import { getBidsByOrderId } from './db/queries/bids.js';
 import { getLineClient } from './services/line-client.js';
+import { geocodeAddress } from './services/google-maps.js';
 
 import { middleware, webhook, messagingApi } from '@line/bot-sdk';
 import { handleLineEvents } from './handlers/line-webhook.js';
@@ -185,6 +186,14 @@ app.get([
   res.sendFile('public/driver/bid.html', { root: process.cwd() });
 });
 
+app.get([
+  '/driver/short-trip',
+  '/driver/short-trip/driver/short-trip',
+  '/driver/bid/driver/short-trip',
+], (req, res) => {
+  res.sendFile('public/driver/short-trip.html', { root: process.cwd() });
+});
+
 // 記憶體 Log 緩衝區 (供除錯查看即時計時器秒數與事件)
 const recentLogs: string[] = [];
 const originalLog = console.log;
@@ -272,6 +281,52 @@ app.post('/api/dispatch/calculate-eta', async (req, res) => {
   } catch (err: any) {
     console.error('[ETA API Error]', err);
     res.status(500).json({ error: err.message, durationMinutes: 5 });
+  }
+});
+
+// 需求 3: 司機回報短距離單 (輸入下車地點，計算里程並標記短程單)
+app.post('/api/orders/report-short-trip', async (req, res) => {
+  try {
+    const { orderId, driverId, dropoffAddress } = req.body;
+    if (!orderId || !dropoffAddress) {
+      return res.status(400).json({ error: '缺少訂單編號或下車地點' });
+    }
+
+    const order = await getOrderById(orderId);
+    if (!order) {
+      return res.status(404).json({ error: '訂單不存在' });
+    }
+
+    // 取得上車點座標
+    const pickupLat = (order as any).pickup_lat || 25.0478;
+    const pickupLng = (order as any).pickup_lng || 121.5170;
+
+    // 解析下車地點座標
+    const dropoffGeo = await geocodeAddress(dropoffAddress);
+
+    // 計算兩點行車距離 (Google Distance Matrix API)
+    const etaResult = await calculateDrivingEta(pickupLat, pickupLng, dropoffGeo.lat, dropoffGeo.lng);
+    const distanceKm = Number((etaResult.distanceMeters / 1000).toFixed(1));
+
+    // 依據參數表規則：5 公里以下認定為短程單
+    const isShortTrip = distanceKm <= 5.0;
+
+    // 更新訂單資料庫
+    await updateOrderDropoffAndDistance(orderId, dropoffAddress, distanceKm, isShortTrip);
+
+    console.log(`[Short Trip Reported] 訂單 ${orderId} 下車地點更新為: ${dropoffAddress}, 里程: ${distanceKm} km, 是否短單: ${isShortTrip}`);
+
+    res.json({
+      success: true,
+      orderId,
+      dropoffAddress,
+      distanceKm,
+      isShortTrip,
+      message: isShortTrip ? '符合短程單門檻，已成功記錄！' : '已成功記錄下車地點與里程',
+    });
+  } catch (err: any) {
+    console.error('[Short Trip Error]', err);
+    res.status(500).json({ error: err.message });
   }
 });
 

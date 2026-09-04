@@ -176,6 +176,48 @@ export async function updateOrderStatus(
   return false;
 }
 
+/**
+ * 更新訂單的下車地點與行駛距離 (供司機回報短程單使用)
+ */
+export async function updateOrderDropoffAndDistance(
+  orderId: string,
+  dropoffAddress: string,
+  distanceKm: number,
+  isShortTrip: boolean
+): Promise<boolean> {
+  if (env.DATABASE_URL) {
+    try {
+      const sql = `
+        UPDATE orders 
+        SET dropoff_address = $1, distance_km = $2, note = COALESCE(note, '') || $3
+        WHERE id = $4;
+      `;
+      const noteAppend = isShortTrip ? ' [司機回報短程單]' : '';
+      const res = await query(sql, [dropoffAddress, distanceKm, noteAppend, orderId]);
+      if ((res.rowCount ?? 0) >= 1) {
+        const cached = memoryOrders.get(orderId);
+        if (cached) {
+          cached.dropoff_address = dropoffAddress;
+          cached.distance_km = distanceKm;
+          cached.note = (cached.note || '') + noteAppend;
+        }
+        return true;
+      }
+    } catch (e: any) {
+      console.warn('[Orders DB] 更新下車點與里程失敗，切換至備援:', e.message);
+    }
+  }
+
+  const cached = memoryOrders.get(orderId);
+  if (cached) {
+    cached.dropoff_address = dropoffAddress;
+    cached.distance_km = distanceKm;
+    cached.note = (cached.note || '') + (isShortTrip ? ' [司機回報短程單]' : '');
+    return true;
+  }
+  return false;
+}
+
 export async function markOrderDispatching(orderId: string): Promise<boolean> {
   if (env.DATABASE_URL) {
     try {

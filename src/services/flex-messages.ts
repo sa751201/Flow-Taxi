@@ -324,7 +324,10 @@ export function createGroupDispatchOrderFlexMessage(params: {
   fareBreakdown?: string;
   distanceKm?: number;
   bidUrl: string;
+  shortTripUrl?: string;
 }): messagingApi.FlexMessage {
+  const isDropoffSpecified = Boolean(params.dropoffAddress && params.dropoffAddress.trim());
+
   const bodyContents: messagingApi.FlexComponent[] = [
     {
       type: 'box',
@@ -363,9 +366,9 @@ export function createGroupDispatchOrderFlexMessage(params: {
         },
         {
           type: 'text',
-          text: params.dropoffAddress || '抵達後告知或跳表',
-          color: '#0f172a',
-          weight: 'bold',
+          text: isDropoffSpecified ? params.dropoffAddress! : '乘客上車後說明',
+          color: isDropoffSpecified ? '#0f172a' : '#64748b',
+          weight: isDropoffSpecified ? 'bold' : 'regular',
           size: 'sm',
           wrap: true,
           flex: 7,
@@ -423,8 +426,8 @@ export function createGroupDispatchOrderFlexMessage(params: {
     });
   }
 
-  // 預估車資欄位（醒目金色高亮）
-  if (params.estimatedFare !== undefined) {
+  // 需求 2: 當下車地點沒填時，不用計算費用，該欄位空著 (只有在有填下車地點時才顯示預估車資)
+  if (isDropoffSpecified && params.estimatedFare !== undefined) {
     const fareText = params.estimatedFare !== null
       ? `$${params.estimatedFare}`
       : (params.fareBreakdown || '專人報價');
@@ -484,6 +487,22 @@ export function createGroupDispatchOrderFlexMessage(params: {
       },
     }
   );
+
+  // 需求 3: 當下車地點沒填時，下方多一個按鈕「回報為短距離單」
+  if (!isDropoffSpecified && params.shortTripUrl) {
+    bodyContents.push({
+      type: 'button',
+      style: 'secondary',
+      color: '#f8fafc',
+      height: 'md',
+      margin: 'sm',
+      action: {
+        type: 'uri',
+        label: '📍 回報為短距離單',
+        uri: params.shortTripUrl,
+      },
+    });
+  }
 
   const container: messagingApi.FlexBubble = {
     type: 'bubble',

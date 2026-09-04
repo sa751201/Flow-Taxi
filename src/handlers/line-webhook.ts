@@ -513,8 +513,77 @@ https://lin.ee/AOp42u7`;
             (text.includes('下車') || text.includes('2.'))
           ) {
             // ==========================================
-            // 乘客送出叫車資訊 (3 點格式解析與派單)
+            // 乘客送出叫車資訊 (格式解析與派單)
             // ==========================================
+
+            // 萃取上車地點、下車地點、人數、乘車時間
+            let pickupAddr = '';
+            let dropoffAddr = '';
+            let passengerCount: number | undefined = undefined;
+            let scheduledTimeText: string | undefined = undefined;
+
+            const lines = text.split('\n');
+            for (const line of lines) {
+              const cleaned = line.trim();
+              if (cleaned.includes('上車地點') || cleaned.includes('上車：') || cleaned.includes('上車:')) {
+                pickupAddr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[上車地點]+[\s：:]*/, '').trim();
+              } else if (cleaned.includes('下車地點') || cleaned.includes('下車：') || cleaned.includes('下車:')) {
+                dropoffAddr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[下車地點]+[\s：:]*/, '').trim();
+              } else if (cleaned.includes('人數') && !cleaned.includes('乘車時間')) {
+                const countStr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[人數]+[\s：:]*/, '').trim();
+                const match = countStr.match(/\d+/);
+                if (match) passengerCount = parseInt(match[0], 10);
+              } else if (cleaned.includes('乘車時間')) {
+                const timeStr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[乘車時間]+[\s：:]*/, '').trim();
+                if (timeStr && !timeStr.includes('現在要車免填') && timeStr !== '免填') {
+                  scheduledTimeText = timeStr;
+                }
+              } else if (cleaned.includes('乘車時間與人數')) {
+                const oldStr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[乘車時間與人數]+[\s：:]*/, '').trim();
+                const match = oldStr.match(/\d+/);
+                if (match) passengerCount = parseInt(match[0], 10);
+                if (oldStr.includes('分') || oldStr.includes('點') || oldStr.includes(':')) {
+                  scheduledTimeText = oldStr;
+                }
+              }
+            }
+
+            // 需求 1: 這四個資訊中必填的只有 1.上車地點。
+            // 如果沒填卻送出的話，1:1 OA 回覆請至少要填寫上車地點，並再次帶入空白的 [1-4] 點乘車資訊到輸入框中。
+            if (!pickupAddr) {
+              console.log(`[Line Webhook] 乘客 ${userSource.userId} 未填寫上車地點，提示補填並帶入空白範本`);
+              const blankRideFillIn = `1. 上車地點：
+2. 下車地點：
+3. 人數：
+4. 乘車時間：`;
+
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [
+                  {
+                    type: 'text',
+                    text: '⚠️ 請至少填寫【1. 上車地點】才能為您安排車輛喔！請點選下方按鈕重新帶入格式填寫：',
+                    quickReply: {
+                      items: [
+                        {
+                          type: 'action',
+                          action: {
+                            type: 'postback',
+                            label: '📝 填寫上車地點',
+                            data: 'action=service_select&service=city_ride',
+                            displayText: '填寫叫車資訊',
+                            inputOption: 'openKeyboard',
+                            fillInText: blankRideFillIn,
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              });
+              continue;
+            }
+
             // 1. 立即回覆乘客：正在聯絡司機中，1 分鐘內將回覆
             await lineClient.replyMessage({
               replyToken,
@@ -529,43 +598,6 @@ https://lin.ee/AOp42u7`;
             // 非同步進行 Geocoding、建單與群組廣播 (不卡住 reply)
             (async () => {
               try {
-                // 萃取上車地點、下車地點、人數、乘車時間
-                let pickupAddr = '';
-                let dropoffAddr = '';
-                let passengerCount: number | undefined = undefined;
-                let scheduledTimeText: string | undefined = undefined;
-
-                const lines = text.split('\n');
-                for (const line of lines) {
-                  const cleaned = line.trim();
-                  if (cleaned.includes('上車地點') || cleaned.includes('上車：') || cleaned.includes('上車:')) {
-                    pickupAddr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[上車地點]+[\s：:]*/, '').trim();
-                  } else if (cleaned.includes('下車地點') || cleaned.includes('下車：') || cleaned.includes('下車:')) {
-                    dropoffAddr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[下車地點]+[\s：:]*/, '').trim();
-                  } else if (cleaned.includes('人數') && !cleaned.includes('乘車時間')) {
-                    const countStr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[人數]+[\s：:]*/, '').trim();
-                    const match = countStr.match(/\d+/);
-                    if (match) passengerCount = parseInt(match[0], 10);
-                  } else if (cleaned.includes('乘車時間')) {
-                    const timeStr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[乘車時間]+[\s：:]*/, '').trim();
-                    // 若有填且不是預設的「現在要車免填」，才視為有預約時間
-                    if (timeStr && !timeStr.includes('現在要車免填') && timeStr !== '免填') {
-                      scheduledTimeText = timeStr;
-                    }
-                  } else if (cleaned.includes('乘車時間與人數')) {
-                    // 相容舊格式
-                    const oldStr = cleaned.replace(/^[0-9一二三四五六七八九十\.\s]*[乘車時間與人數]+[\s：:]*/, '').trim();
-                    const match = oldStr.match(/\d+/);
-                    if (match) passengerCount = parseInt(match[0], 10);
-                    if (oldStr.includes('分') || oldStr.includes('點') || oldStr.includes(':')) {
-                      scheduledTimeText = oldStr;
-                    }
-                  }
-                }
-
-                if (!pickupAddr) pickupAddr = '台北市信義區信義路五段7號 (台北101)';
-                if (!dropoffAddr) dropoffAddr = '台北車站東門';
-
                 // 確保 customer 存在
                 const customerId = userSource.userId;
                 try {
@@ -582,16 +614,19 @@ https://lin.ee/AOp42u7`;
                 // 呼叫 Google Geocoding 取得上車點經緯度
                 const pickupGeo = await geocodeAddress(pickupAddr);
 
-                // 同時對下車地點做 Geocoding（用於計算距離與車資）
-                const dropoffGeo = await geocodeAddress(dropoffAddr);
-
-                // 計算預估車資
-                const fareResult = calculateFare(
-                  'city',
-                  pickupGeo.lat, pickupGeo.lng,
-                  dropoffGeo.lat, dropoffGeo.lng
-                );
-                console.log(`[Line Webhook] 預估車資: $${fareResult.estimatedFare} (${fareResult.distanceKm}km, ${fareResult.fareBreakdown})`);
+                // 需求 2: 當下車地點沒填時，不用計算費用，該欄位空著
+                let fareResult: any = undefined;
+                if (dropoffAddr) {
+                  const dropoffGeo = await geocodeAddress(dropoffAddr);
+                  fareResult = calculateFare(
+                    'city',
+                    pickupGeo.lat, pickupGeo.lng,
+                    dropoffGeo.lat, dropoffGeo.lng
+                  );
+                  console.log(`[Line Webhook] 預估車資: $${fareResult.estimatedFare} (${fareResult.distanceKm}km, ${fareResult.fareBreakdown})`);
+                } else {
+                  console.log('[Line Webhook] 乘客未填下車地點，跳過車資預估計算');
+                }
 
                 // 建立訂單 (status: pending)
                 const newOrder = await createOrder({
@@ -602,6 +637,8 @@ https://lin.ee/AOp42u7`;
                   pickup_lng: pickupGeo.lng,
                   dropoff_address: dropoffAddr || undefined,
                   passenger_count: passengerCount || 1,
+                  distance_km: fareResult ? fareResult.distanceKm : undefined,
+                  fare: fareResult ? fareResult.estimatedFare : undefined,
                   note: scheduledTimeText ? `預約時間: ${scheduledTimeText}` : undefined,
                 });
 
@@ -612,7 +649,12 @@ https://lin.ee/AOp42u7`;
                   ? `https://liff.line.me/${env.LIFF_ID}/driver/bid?orderId=${newOrder.id}`
                   : `https://flow-taxi-production.up.railway.app/driver/bid?orderId=${newOrder.id}`;
 
-                // 1. 先向司機群組廣播 Flex Message（含預估車資）
+                // 需求 3: 回報為短距離單 LIFF 網址
+                const shortTripUrl = env.LIFF_ID
+                  ? `https://liff.line.me/${env.LIFF_ID}/driver/short-trip?orderId=${newOrder.id}`
+                  : `https://flow-taxi-production.up.railway.app/driver/short-trip?orderId=${newOrder.id}`;
+
+                // 1. 向司機群組廣播 Flex Message
                 const targetGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
                 if (targetGroupId) {
                   const dispatchFlex = createGroupDispatchOrderFlexMessage({
@@ -621,10 +663,11 @@ https://lin.ee/AOp42u7`;
                     dropoffAddress: dropoffAddr || undefined,
                     passengerCount: passengerCount || 1,
                     scheduledTimeText: scheduledTimeText,
-                    estimatedFare: fareResult.estimatedFare,
-                    fareBreakdown: fareResult.fareBreakdown,
-                    distanceKm: fareResult.distanceKm,
+                    estimatedFare: fareResult ? fareResult.estimatedFare : undefined,
+                    fareBreakdown: fareResult ? fareResult.fareBreakdown : undefined,
+                    distanceKm: fareResult ? fareResult.distanceKm : undefined,
                     bidUrl,
+                    shortTripUrl: !dropoffAddr ? shortTripUrl : undefined,
                   });
 
                   await lineClient.pushMessage({

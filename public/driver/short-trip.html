@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>回報短距離單 — 派單系統</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <!-- LINE Seed TW Font -->
+  <link rel="stylesheet" href="https://seed.line.me/src/css/line-seed-tw.css">
+  <!-- LIFF SDK -->
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    body, button, input, select, textarea {
+      font-family: 'LINE Seed TW', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+      background-color: #f8fafc;
+      color: #0f172a;
+    }
+    .card-shadow {
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4 selection:bg-emerald-500 selection:text-white">
+
+  <div class="w-full max-w-md my-auto">
+    <!-- Header -->
+    <div class="text-center mb-5">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-800 text-xs font-semibold mb-2.5 tracking-wider">
+        <span>🏆</span> 司機短程回饋累積機制
+      </div>
+      <h1 class="text-2xl font-bold tracking-tight text-slate-900">
+        回報短距離單
+      </h1>
+      <p class="text-xs text-slate-500 mt-1">
+        此單乘客上車後說明目的地，請填入下車點計算里程
+      </p>
+    </div>
+
+    <!-- Main Card -->
+    <div id="main-card" class="bg-white rounded-2xl p-6 card-shadow border border-slate-200/80 relative">
+      
+      <!-- Loading State -->
+      <div id="loading-state" class="py-10 text-center space-y-3">
+        <svg class="animate-spin w-8 h-8 mx-auto text-blue-600" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        <p class="text-sm font-semibold text-slate-700">正在讀取訂單資訊...</p>
+      </div>
+
+      <!-- Form Content -->
+      <div id="form-content" class="hidden space-y-5">
+        <!-- 上車地點顯示 -->
+        <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1 text-xs">
+          <div class="flex items-start gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 mt-1 shrink-0"></span>
+            <div class="w-full">
+              <p class="text-slate-400 font-medium">乘客上車地點</p>
+              <p id="pickup-addr-display" class="font-bold text-slate-900 text-sm mt-0.5">載入中...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 司機輸入下車地點 -->
+        <div class="space-y-2">
+          <label for="dropoff-input" class="block text-xs font-bold text-slate-700">
+            📍 乘客實際下車地點：
+          </label>
+          <div class="relative">
+            <input 
+              type="text" 
+              id="dropoff-input" 
+              placeholder="例如：板橋火車站、新埔捷運站"
+              class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-slate-900 transition font-medium"
+            >
+          </div>
+          <p class="text-[11px] text-slate-400">
+            系統將以 Google Maps 計算兩點開車路程。
+          </p>
+        </div>
+
+        <!-- 里程測算預覽卡片 -->
+        <div id="distance-preview-card" class="hidden p-4 rounded-xl bg-blue-50 border border-blue-200 text-center space-y-1">
+          <p class="text-xs font-bold text-blue-800">測算行駛里程</p>
+          <p class="text-3xl font-extrabold text-blue-600 my-1">
+            <span id="preview-km">--</span> <span class="text-sm font-bold text-blue-800">公里</span>
+          </p>
+          <div id="short-trip-badge" class="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+            ✅ 符合 5 公里短程單門檻
+          </div>
+        </div>
+
+        <!-- 提交按鈕 -->
+        <div class="pt-2 space-y-2">
+          <button 
+            type="button" 
+            id="btn-calculate" 
+            class="w-full py-3.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-sm transition flex items-center justify-center gap-2 shadow-sm"
+          >
+            <span>📏</span> 測算里程並回報
+          </button>
+          
+          <button 
+            type="button" 
+            onclick="closeLiffWindow()" 
+            class="w-full py-2.5 px-4 rounded-xl text-slate-400 hover:text-slate-600 text-xs font-medium transition"
+          >
+            返回 LINE
+          </button>
+        </div>
+
+        <!-- 說明 -->
+        <div class="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200/60 text-[11px] text-amber-800 space-y-1">
+          <p class="font-bold flex items-center gap-1">💡 短程累積優先搶單機制：</p>
+          <p class="text-amber-700/90 leading-relaxed">
+            依據系統參數表，累積接滿短程單（5 公里以下）可享有日後長單「優先搶單」評選加權！
+          </p>
+        </div>
+      </div>
+
+      <!-- 成功畫面 -->
+      <div id="success-screen" class="hidden py-8 text-center space-y-4">
+        <div class="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto text-3xl">
+          ✓
+        </div>
+        <h2 class="text-xl font-bold text-slate-900">回報成功！</h2>
+        <p id="success-desc" class="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
+          已成功記錄本單下車地點與里程，即將為您返回 LINE...
+        </p>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="/js/driver-short-trip.js"></script>
+</body>
+</html>
