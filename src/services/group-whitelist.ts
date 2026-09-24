@@ -28,6 +28,16 @@ export function getAllowedGroups(): AllowedGroup[] {
     });
   }
 
+  // 幹部群組保底白名單
+  if (env.ADMIN_GROUP_ID) {
+    allowedGroups.push({
+      name: '預設幹部群組 (Env)',
+      groupId: env.ADMIN_GROUP_ID,
+      status: 'active',
+      note: '來自環境變數 ADMIN_GROUP_ID',
+    });
+  }
+
   const excelPath = path.resolve(process.cwd(), 'config/派單系統參數表.xlsx');
   if (!fs.existsSync(excelPath)) {
     return allowedGroups;
@@ -77,5 +87,20 @@ export function isGroupAllowed(groupId: string): boolean {
   if (!groupId) return false;
   const groups = getAllowedGroups();
   const matched = groups.find((g) => g.groupId === groupId && g.status === 'active');
+  return Boolean(matched);
+}
+
+/**
+ * 檢查指定的 groupId 是否為幹部管理群組
+ */
+export function isAdminGroup(groupId: string): boolean {
+  if (!groupId) return false;
+  if (env.ADMIN_GROUP_ID && env.ADMIN_GROUP_ID === groupId) {
+    return true;
+  }
+  const groups = getAllowedGroups();
+  const matched = groups.find(
+    (g) => g.groupId === groupId && g.status === 'active' && (g.name.includes('幹部') || g.note?.includes('admin'))
+  );
   return Boolean(matched);
 }

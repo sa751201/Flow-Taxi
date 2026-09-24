@@ -21,8 +21,12 @@ export interface Order {
   service_type: ServiceType;
   pickup_address: string;
   pickup_geog?: any;
+  pickup_lat?: number | null;
+  pickup_lng?: number | null;
   dropoff_address?: string;
   dropoff_geog?: any;
+  dropoff_lat?: number | null;
+  dropoff_lng?: number | null;
   passenger_count: number;
   scheduled_time?: Date | null;
   region?: string | null;

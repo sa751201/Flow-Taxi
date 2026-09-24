@@ -687,7 +687,7 @@ export function createDriverAssignedFlexMessage(params: {
 }
 
 /**
- * 司機群組派單結單廣播卡片（附目的地 Google Maps 連結）
+ * 司機群組派單結單廣播卡片（附上車與下車地點 Google Maps 連結）
  */
 export function createGroupOrderAssignedFlexMessage(params: {
   driverName: string;
@@ -698,9 +698,10 @@ export function createGroupOrderAssignedFlexMessage(params: {
   etaMinutes: number;
   scheduledTimeText?: string;
 }): messagingApi.FlexMessage {
-  const destination = params.dropoffAddress || params.pickupAddress;
-  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`;
   const pickupMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(params.pickupAddress)}`;
+  const dropoffMapUrl = params.dropoffAddress
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(params.dropoffAddress)}`
+    : null;
 
   const container: messagingApi.FlexBubble = {
     type: 'bubble',
@@ -789,10 +790,24 @@ export function createGroupOrderAssignedFlexMessage(params: {
           height: 'md',
           action: {
             type: 'uri',
-            label: '📍 開啟 Google Maps 導航',
-            uri: mapUrl,
+            label: '📍 前往上車地點',
+            uri: pickupMapUrl,
           },
         },
+        ...(dropoffMapUrl ? [
+          {
+            type: 'button',
+            style: 'secondary',
+            color: '#f8fafc',
+            height: 'md',
+            margin: 'sm',
+            action: {
+              type: 'uri',
+              label: '📍 開啟下車地點定位',
+              uri: dropoffMapUrl,
+            },
+          } as messagingApi.FlexComponent,
+        ] : []),
         {
           type: 'button',
           style: 'secondary',

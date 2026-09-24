@@ -58,7 +58,11 @@ export async function createOrder(params: CreateOrderParams): Promise<Order> {
           $${params.id ? 15 : 14},
           'pending'
         )
-        RETURNING *;
+        RETURNING *,
+          ST_Y(pickup_geog::geometry) as pickup_lat,
+          ST_X(pickup_geog::geometry) as pickup_lng,
+          ST_Y(dropoff_geog::geometry) as dropoff_lat,
+          ST_X(dropoff_geog::geometry) as dropoff_lng;
       `;
 
       const values = params.id
@@ -111,7 +115,11 @@ export async function createOrder(params: CreateOrderParams): Promise<Order> {
     customer_id: params.customer_id,
     service_type: (params.service_type as any) || 'city',
     pickup_address: params.pickup_address,
+    pickup_lat: params.pickup_lat,
+    pickup_lng: params.pickup_lng,
     dropoff_address: params.dropoff_address,
+    dropoff_lat: params.dropoff_lat,
+    dropoff_lng: params.dropoff_lng,
     passenger_count: params.passenger_count || 1,
     scheduled_time: params.scheduled_time || null,
     region: params.region || null,
@@ -129,7 +137,14 @@ export async function createOrder(params: CreateOrderParams): Promise<Order> {
 export async function getOrderById(orderId: string): Promise<Order | null> {
   if (env.DATABASE_URL) {
     try {
-      const sql = 'SELECT * FROM orders WHERE id = $1';
+      const sql = `
+        SELECT *,
+          ST_Y(pickup_geog::geometry) as pickup_lat,
+          ST_X(pickup_geog::geometry) as pickup_lng,
+          ST_Y(dropoff_geog::geometry) as dropoff_lat,
+          ST_X(dropoff_geog::geometry) as dropoff_lng
+        FROM orders WHERE id = $1
+      `;
       const res = await query<Order>(sql, [orderId]);
       if (res.rows[0]) return res.rows[0];
     } catch {

@@ -8,6 +8,8 @@ import { geocodeAddress } from './services/google-maps.js';
 
 import { middleware, webhook, messagingApi } from '@line/bot-sdk';
 import { handleLineEvents } from './handlers/line-webhook.js';
+import { initDailyReportScheduler } from './services/daily-reporter.js';
+import { loadSilentRulesFromExcel } from './services/silent-questions.js';
 
 const app = express();
 
@@ -88,7 +90,7 @@ export const dispatchEngine = new DispatchEngine({
             console.warn(`[Dispatch] ⚠️ 訂單 ${order.id} 沒有 customer_id，無法推播乘客！`);
           }
 
-          // 2. 在司機群組通知中單司機前往接送 (附目的地 Google Maps 導航連結)
+          // 2. 在司機群組通知中單司機前往接送 (附上車地點 Google Maps 導航連結)
           const driverGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
           if (driverGroupId) {
             try {
@@ -273,10 +275,21 @@ app.post('/api/dispatch/calculate-eta', async (req, res) => {
     }
 
     // 取得訂單上車經緯度
-    const pickupLat = (order as any).pickup_lat || 25.0478;
-    const pickupLng = (order as any).pickup_lng || 121.5170;
+    let pickupLat = order.pickup_lat ? Number(order.pickup_lat) : undefined;
+    let pickupLng = order.pickup_lng ? Number(order.pickup_lng) : undefined;
+
+    // 若訂單尚未有座標，即時呼叫 Google Geocoding 解析乘客提供的上車地址
+    if (!pickupLat || !pickupLng || isNaN(pickupLat) || isNaN(pickupLng)) {
+      console.log(`[ETA API] 訂單 ${orderId} 尚未有座標，即時呼叫 Geocoding 解析上車地址: "${order.pickup_address}"`);
+      const geo = await geocodeAddress(order.pickup_address);
+      pickupLat = geo.lat;
+      pickupLng = geo.lng;
+    }
+
+    console.log(`[ETA API] 司機座標: (${driverLat}, ${driverLng}) ➔ 乘客上車地點: "${order.pickup_address}" 座標: (${pickupLat}, ${pickupLng})`);
 
     const etaResult = await calculateDrivingEta(driverLat, driverLng, pickupLat, pickupLng);
+    console.log(`[ETA API] Google Maps 測算車程: ${etaResult.durationMinutes} 分鐘 (${(etaResult.distanceMeters / 1000).toFixed(1)} km)`);
     res.json(etaResult);
   } catch (err: any) {
     console.error('[ETA API Error]', err);
@@ -482,6 +495,10 @@ app.post('/api/orders/:orderId/close-window', async (req, res) => {
 });
 
 if (process.env.NODE_ENV !== 'test') {
+  // 載入自訂靜默問題清單與啟動定時日報排程器
+  loadSilentRulesFromExcel();
+  initDailyReportScheduler();
+
   app.listen(env.PORT, () => {
     console.log(`[Server] Taxi dispatch system listening on port ${env.PORT}`);
   });

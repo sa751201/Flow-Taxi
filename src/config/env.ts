@@ -9,6 +9,8 @@ const envSchema = z.object({
   LINE_CHANNEL_ACCESS_TOKEN: z.string().optional().default(''),
   LIFF_ID: z.string().optional().default(''),
   DRIVER_GROUP_ID: z.string().optional().default('C5179346ac8b2f3312cabe051ca818355'),
+  ADMIN_GROUP_ID: z.string().optional().default(''),
+  DAILY_REPORT_TIME: z.string().optional().default('23:00'), // 格式 HH:mm，預設每晚 23:00
 
   // Database / Supabase
   DATABASE_URL: z.string().optional(),

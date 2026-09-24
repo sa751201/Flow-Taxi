@@ -9,7 +9,10 @@ import { geocodeAddress } from '../services/google-maps.js';
 import { createOrder, getActiveOrderByDriverId, getActiveOrderByCustomerId } from '../db/queries/orders.js';
 import { dispatchEngine } from '../app.js';
 import { calculateFare } from '../services/fare-calculator.js';
-import { isGroupAllowed } from '../services/group-whitelist.js';
+import { isGroupAllowed, isAdminGroup } from '../services/group-whitelist.js';
+import { handleAdminGroupCommand, isManualTakeoverActive } from '../services/admin-control.js';
+import { checkSilentQuestion, createSilentAlertForAdmin } from '../services/silent-questions.js';
+import { aggregateDailyStats, createDailyReportFlexMessage } from '../services/daily-reporter.js';
 
 type WebhookEvent = webhook.Event;
 
@@ -198,6 +201,38 @@ export async function handleLineEvents(events: WebhookEvent[]) {
           if (!isGroupAllowed(groupId)) {
             console.warn(`⛔ [Group Whitelist] 忽略來自未授權群組 ${groupId} 的文字訊息: "${text}"`);
             continue;
+          }
+
+          // 幹部群組專屬控制指令處理 (接管、恢復、查狀態、即時日報)
+          if (isAdminGroup(groupId)) {
+            // 即時日報查詢
+            if (['日報', '今日日報', '今日戰報', '營運日報'].includes(text.trim())) {
+              const stats = await aggregateDailyStats();
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [createDailyReportFlexMessage(stats)],
+              });
+              continue;
+            }
+
+            // 幹部模式切換與狀態查詢
+            let senderName = '幹部';
+            if (senderUserId) {
+              try {
+                const profile = await lineClient.getGroupMemberProfile(groupId, senderUserId);
+                senderName = profile.displayName;
+              } catch {
+                // 忽略個人名稱解析失敗
+              }
+            }
+            const adminReply = await handleAdminGroupCommand(text, senderName);
+            if (adminReply) {
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [adminReply],
+              });
+              continue;
+            }
           }
         }
 
@@ -433,9 +468,52 @@ https://lin.ee/AOp42u7`;
           continue;
         }
 
-        // 6. 個人 1:1 聊天室指令 (Ping / 查 ID / 6大服務點擊 / 預設回覆)
+        // 6. 個人 1:1 聊天室指令與叫車處理
         if (event.source.type === 'user') {
           const userSource = event.source as webhook.UserSource;
+
+          // A. 檢查是否命中「靜默問題/特殊關鍵字」（客訴、退費、遺失物、找客服等）
+          const silentCheck = checkSilentQuestion(text);
+          if (silentCheck.isSilent) {
+            console.log(`🔇 [Silent Question] 乘客訊息命中靜默問題: "${silentCheck.matchedKeyword}" (${silentCheck.category})，保持靜默不回覆。`);
+            
+            // 若規則設定需通報，推播提醒至幹部群組
+            if (silentCheck.notifyAdmin && env.ADMIN_GROUP_ID) {
+              let passengerName = '乘客';
+              const pUserId = userSource.userId || 'unknown';
+              if (userSource.userId) {
+                try {
+                  const profile = await lineClient.getProfile(userSource.userId);
+                  passengerName = profile.displayName;
+                } catch {
+                  // 忽略個人名稱解析失敗
+                }
+              }
+              const alertFlex = createSilentAlertForAdmin({
+                passengerName,
+                passengerUserId: pUserId,
+                messageText: text,
+                matchedKeyword: silentCheck.matchedKeyword || '特殊問題',
+                category: silentCheck.category,
+              });
+              try {
+                await lineClient.pushMessage({
+                  to: env.ADMIN_GROUP_ID,
+                  messages: [alertFlex],
+                });
+              } catch (alertErr: any) {
+                console.warn('[Silent Question] 推播幹部群組失敗:', alertErr.message);
+              }
+            }
+            continue; // 保持靜默，不進行任何機器人自動回覆
+          }
+
+          // B. 檢查是否處於「幹部人工接管模式」
+          if (await isManualTakeoverActive()) {
+            console.log(`🛑 [Manual Takeover] 系統目前由幹部手動接管中，略過機器人自動回覆與派單: "${text}"`);
+            continue; // 不由機器人回覆，由真人客服直接透過 LINE OA 後台回覆
+          }
+
           if (text.toLowerCase() === 'ping') {
             await lineClient.replyMessage({
               replyToken,
