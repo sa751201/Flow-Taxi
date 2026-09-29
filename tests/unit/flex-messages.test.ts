@@ -56,16 +56,16 @@ describe('createDriverOrderCardFlexMessage', () => {
 
     expect(uriButtons).toHaveLength(2);
 
-    // 第一個按鈕：前往上車地點
+    // 第一個按鈕：前往上車地點（起點自動為司機手機定位，終點為上車點）
     expect(uriButtons[0].action.label).toBe('📍 前往上車地點');
     expect(uriButtons[0].action.uri).toBe(
-      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pickupAddress)}`
+      `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(pickupAddress)}&travelmode=driving`
     );
 
-    // 第二個按鈕：開啟下車地點定位
+    // 第二個按鈕：開啟下車地點定位（起點為上車點，終點為下車點）
     expect(uriButtons[1].action.label).toBe('📍 開啟下車地點定位');
     expect(uriButtons[1].action.uri).toBe(
-      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(dropoffAddress)}`
+      `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(pickupAddress)}&destination=${encodeURIComponent(dropoffAddress)}&travelmode=driving`
     );
 
     // 第三個按鈕（通知按鈕）：我已到達上車點

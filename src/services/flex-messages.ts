@@ -775,9 +775,11 @@ export function createDriverOrderCardFlexMessage(params: {
   etaMinutes: number;
   scheduledTimeText?: string;
 }): messagingApi.FlexMessage {
-  const pickupMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(params.pickupAddress)}`;
+  // 1. 前往上車地點：起點不填（Google Maps 會自動抓取司機目前手機定位），終點為乘客上車點
+  const pickupMapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(params.pickupAddress)}&travelmode=driving`;
+  // 2. 開啟下車地點定位：起點為乘客上車點，終點為乘客下車目的地
   const dropoffMapUrl = params.dropoffAddress
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(params.dropoffAddress)}`
+    ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(params.pickupAddress)}&destination=${encodeURIComponent(params.dropoffAddress)}&travelmode=driving`
     : null;
 
   const container: messagingApi.FlexBubble = {
