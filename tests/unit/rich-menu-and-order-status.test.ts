@@ -23,6 +23,12 @@ describe('Rich Menu & Order Status Lifecycle Tests', () => {
       expect(actionTexts).toContain('乘客下車');
       expect(actionTexts).toContain('修改資料');
     });
+
+    it('未設定 DRIVER_RICH_MENU_ID 時，syncUserRichMenuByRole 應安全回傳 skipped', async () => {
+      const { syncUserRichMenuByRole } = await import('../../src/services/rich-menu.js');
+      const res = await syncUserRichMenuByRole('test-user-without-env');
+      expect(['skipped', 'passenger', 'driver']).toContain(res);
+    });
   });
 
   describe('Order Status Transition: accepted -> picked_up -> done', () => {

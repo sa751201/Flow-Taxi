@@ -12,6 +12,7 @@ import {
   createDriverOrderCardFlexMessage,
   createGroupOrderAssignedFlexMessage,
 } from './services/flex-messages.js';
+import { linkDriverRichMenu } from './services/rich-menu.js';
 
 import { middleware, webhook, messagingApi } from '@line/bot-sdk';
 import { handleLineEvents } from './handlers/line-webhook.js';
@@ -455,6 +456,11 @@ app.post('/api/driver/register', async (req, res) => {
     });
 
     console.log(`[Driver API] 司機 ${userId} (${displayName}) 透過 LIFF 完成登記！`);
+
+    // 自動為註冊完成的司機綁定專屬司機 Rich Menu
+    linkDriverRichMenu(userId).catch((rmErr: any) => {
+      console.warn('[Driver API] 綁定司機 Rich Menu 失敗:', rmErr.message);
+    });
 
     // 立即回應前端，不等待 LINE API 推播延遲
     res.json({ success: true, driver });

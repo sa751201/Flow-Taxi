@@ -19,7 +19,7 @@ import {
   getActiveOrderByCustomerId,
   updateOrderStatus,
 } from '../db/queries/orders.js';
-import { linkDriverRichMenu } from '../services/rich-menu.js';
+import { linkDriverRichMenu, syncUserRichMenuByRole } from '../services/rich-menu.js';
 import { dispatchEngine } from '../app.js';
 import { calculateFare } from '../services/fare-calculator.js';
 import { isGroupAllowed, isAdminGroup } from '../services/group-whitelist.js';
@@ -110,7 +110,15 @@ export async function handleLineEvents(events: WebhookEvent[]) {
       if (event.type === 'follow') {
         const replyToken = 'replyToken' in event ? event.replyToken : undefined;
         if (!replyToken) continue;
-        console.log(`🎉 [LINE Follow] 有新使用者加入官方帳號好友！userId: ${event.source?.userId}`);
+        const followerUserId = event.source?.userId;
+        console.log(`🎉 [LINE Follow] 有新使用者加入官方帳號好友！userId: ${followerUserId}`);
+
+        // 自動連線資料庫判斷身份並指派對應 Rich Menu (司機 vs 乘客)
+        if (followerUserId) {
+          syncUserRichMenuByRole(followerUserId).catch((rmErr) => {
+            console.warn('[LINE Follow] 自動同步 Rich Menu 失敗:', rmErr.message);
+          });
+        }
 
         await lineClient.replyMessage({
           replyToken,
@@ -631,6 +639,11 @@ https://lin.ee/AOp42u7`;
         // 6. 個人 1:1 聊天室指令與叫車處理
         if (event.source.type === 'user') {
           const userSource = event.source as webhook.UserSource;
+
+          // 自動依資料庫身分同步 Rich Menu（司機工作台 vs 乘客選單）
+          if (userSource.userId) {
+            syncUserRichMenuByRole(userSource.userId).catch(() => {});
+          }
 
           // A. 檢查是否命中「靜默問題/特殊關鍵字」（客訴、退費、遺失物、找客服等）
           const silentCheck = checkSilentQuestion(text);

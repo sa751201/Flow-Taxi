@@ -1,15 +1,46 @@
 import { getLineClient } from './line-client.js';
 import { env } from '../config/env.js';
+import { getDriverById } from '../db/queries/drivers.js';
 
 /**
  * 司機與乘客 Rich Menu (圖文選單) 管理服務
  * 
- * LINE Messaging API 支援：
- * 1. 預設圖文選單 (Default Rich Menu)：適用於所有一般使用者與乘客。
- * 2. 用戶綁定圖文選單 (Per-User Linked Rich Menu)：適用於特定已驗證/已註冊的司機。
- *    透過 API 將司機專屬的 Rich Menu ID 綁定到司機的 LINE User ID，
- *    該司機在 1:1 OA 就會看到司機專屬工作台（上線/待命、當前任務、到點回報、客上回報、下車結單、車籍修改）。
+ * 核心原理：
+ * 1. 預設圖文選單 (Default Rich Menu)：
+ *    在 LINE Console 設為「預設選單」即可，所有一般乘客或新好友進來預設就看到「乘客選單」。
+ * 2. 司機圖文選單 (Driver Rich Menu)：
+ *    環境變數 DRIVER_RICH_MENU_ID 只需要填寫「司機圖文選單的編號」（如 richmenu-xxxx），
+ *    系統會自動連線資料庫查詢使用者的身分，如果是已註冊司機，自動幫該 LINE 帳號綁定司機選單，
+ *    完全不需要手動把成千上萬個司機的 User ID 寫進環境變數！
  */
+
+/**
+ * 依據資料庫身份動態判斷並同步使用者的 Rich Menu：
+ * - 資料庫中存在且 registered = true ➔ 自動指派司機 Rich Menu
+ * - 非司機（一般乘客）➔ 自動確保使用預設乘客 Rich Menu（若曾綁定過司機選單則自動解除）
+ */
+export async function syncUserRichMenuByRole(userId: string): Promise<'driver' | 'passenger' | 'skipped'> {
+  if (!env.DRIVER_RICH_MENU_ID) {
+    return 'skipped';
+  }
+
+  try {
+    const driver = await getDriverById(userId);
+    if (driver && driver.registered) {
+      await linkDriverRichMenu(userId);
+      return 'driver';
+    } else {
+      const currentMenu = await getUserRichMenuId(userId);
+      if (currentMenu === env.DRIVER_RICH_MENU_ID) {
+        await unlinkDriverRichMenu(userId);
+      }
+      return 'passenger';
+    }
+  } catch (err: any) {
+    console.warn(`[RichMenu] 自動同步用戶 ${userId} 選單身分失敗:`, err.message);
+    return 'skipped';
+  }
+}
 
 /**
  * 為指定司機綁定專屬的司機 Rich Menu
