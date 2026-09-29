@@ -687,9 +687,86 @@ export function createDriverAssignedFlexMessage(params: {
 }
 
 /**
- * 司機群組派單結單廣播卡片（附上車與下車地點 Google Maps 連結）
+ * 司機群組派單中單提示卡片（僅提示是誰接到單，下方 ghost button 開啟 1:1 OA）
  */
-export function createGroupOrderAssignedFlexMessage(params: {
+export function createGroupOrderWonFlexMessage(params: {
+  driverName: string;
+  oaUrl?: string;
+}): messagingApi.FlexMessage {
+  const oaUrl = params.oaUrl || 'https://lin.ee/AOp42u7';
+
+  const container: messagingApi.FlexBubble = {
+    type: 'bubble',
+    size: 'kilo',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#0f172a',
+      paddingAll: '16px',
+      contents: [
+        {
+          type: 'text',
+          text: '🚕【派單已結單】',
+          color: '#38bdf8',
+          weight: 'bold',
+          size: 'md',
+        },
+        {
+          type: 'text',
+          text: `恭喜 @${params.driverName} 成功接單！`,
+          color: '#facc15',
+          weight: 'bold',
+          size: 'sm',
+          margin: 'sm',
+        },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#ffffff',
+      paddingAll: '16px',
+      spacing: 'sm',
+      contents: [
+        {
+          type: 'text',
+          text: '詳細接單任務資訊已同步至接單司機 1:1 官方帳號。後續回報（到點、客上、乘客下車結單）請點擊下方開啟 1:1 OA 進行。',
+          color: '#64748b',
+          size: 'xs',
+          wrap: true,
+          lineSpacing: '3px',
+        },
+        {
+          type: 'separator',
+          color: '#f1f5f9',
+          margin: 'md',
+        },
+        {
+          type: 'button',
+          style: 'link', // Ghost Button 樣式（無邊框底色）
+          height: 'sm',
+          color: '#0284c7',
+          action: {
+            type: 'uri',
+            label: '💬 開啟 1:1 OA 查看訂單與回報',
+            uri: oaUrl,
+          },
+        },
+      ],
+    },
+  };
+
+  return {
+    type: 'flex',
+    altText: `🚕【派單已結單】恭喜 @${params.driverName} 成功接單！`,
+    contents: container,
+  };
+}
+
+/**
+ * 司機 1:1 OA 確認接單卡片（呈現於司機與 OA 的 1:1 聊天室，附導航與回報到達按鈕）
+ */
+export function createDriverOrderCardFlexMessage(params: {
   driverName: string;
   orderId: string;
   pickupAddress: string;
@@ -714,7 +791,7 @@ export function createGroupOrderAssignedFlexMessage(params: {
       contents: [
         {
           type: 'text',
-          text: '🚕【派單已結單】',
+          text: '🚕【確認接單任務明細】',
           color: '#38bdf8',
           weight: 'bold',
           size: 'md',
@@ -830,10 +907,11 @@ export function createGroupOrderAssignedFlexMessage(params: {
       contents: [
         {
           type: 'text',
-          text: '請接單司機盡速前往接送，祝行車平安！感謝各位司機配合。',
+          text: '抵達請點擊「我已到達」，客上請回報「客上」，乘客下車請回報「乘客下車」進行結單。祝行車平安！',
           color: '#94a3b8',
           size: 'xxs',
           align: 'center',
+          wrap: true,
         },
       ],
     },
@@ -841,8 +919,13 @@ export function createGroupOrderAssignedFlexMessage(params: {
 
   return {
     type: 'flex',
-    altText: `🚕【派單已結單】恭喜 @${params.driverName} 成功接單！`,
+    altText: `🚕【確認接單任務】恭喜 @${params.driverName} 成功接單！`,
     contents: container,
   };
 }
+
+/**
+ * 相容既有別名
+ */
+export const createGroupOrderAssignedFlexMessage = createDriverOrderCardFlexMessage;
 

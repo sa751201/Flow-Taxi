@@ -4,9 +4,22 @@ import { query } from '../db/index.js';
 import { env } from '../config/env.js';
 import { parseDriverRegistrationText } from '../services/driver-parser.js';
 import { upsertDriver, getDriverById } from '../db/queries/drivers.js';
-import { createDriverRegisterFlexMessage, createWelcomeServiceMessage, createCityRidePromptMessage, createAirportRidePromptMessage, createGroupDispatchOrderFlexMessage } from '../services/flex-messages.js';
+import {
+  createDriverRegisterFlexMessage,
+  createWelcomeServiceMessage,
+  createCityRidePromptMessage,
+  createAirportRidePromptMessage,
+  createGroupDispatchOrderFlexMessage,
+  createDriverOrderCardFlexMessage,
+} from '../services/flex-messages.js';
 import { geocodeAddress } from '../services/google-maps.js';
-import { createOrder, getActiveOrderByDriverId, getActiveOrderByCustomerId } from '../db/queries/orders.js';
+import {
+  createOrder,
+  getActiveOrderByDriverId,
+  getActiveOrderByCustomerId,
+  updateOrderStatus,
+} from '../db/queries/orders.js';
+import { linkDriverRichMenu } from '../services/rich-menu.js';
 import { dispatchEngine } from '../app.js';
 import { calculateFare } from '../services/fare-calculator.js';
 import { isGroupAllowed, isAdminGroup } from '../services/group-whitelist.js';
@@ -298,31 +311,49 @@ export async function handleLineEvents(events: WebhookEvent[]) {
             status: 'active',
           });
 
+          // 若有設定司機專屬 Rich Menu，自動為新司機綁定
+          linkDriverRichMenu(senderUserId).catch((rmErr) => {
+            console.warn('[Line Webhook] 司機 Rich Menu 自動綁定失敗:', rmErr.message);
+          });
+
           await lineClient.replyMessage({
             replyToken,
             messages: [
               {
                 type: 'text',
-                text: `✅【${saved.display_name || '夥伴'}】你的司機資料已經建立完成！\n\n🚙 車型：${saved.car_brand || '未填'}\n🔢 車號：${saved.plate_number || '未填'}\n🎨 車色：${saved.car_color || '未填'}\n\n已為您正式開通派單接單權限！若日後需變更資料，隨時輸入「填資料」即可調整。`,
+                text: `✅【${saved.display_name || '夥伴'}】你的司機資料已經建立完成！\n\n🚙 車型：${saved.car_brand || '未填'}\n🔢 車號：${saved.plate_number || '未填'}\n🎨 車色：${saved.car_color || '未填'}\n\n已為您正式開通派單接單權限！若日後需變更資料，隨時輸入「修改資料」即可調整。`,
               },
             ],
           });
           continue;
         }
 
-        // 4. 司機回報「到」：車輛抵達上車地點，通知乘客
-        if (text === '到' || text === '我到了' || text === '已抵達') {
+        // 4. 司機回報「到」/「到達」：車輛抵達上車地點，通知乘客
+        if (text === '到' || text === '我到了' || text === '已抵達' || text === '到達') {
           if (!senderUserId) continue;
+
+          // 需求：司機回報全面改在 1:1 OA 進行，群組內發送則提醒前往 1:1 OA
+          if (event.source.type === 'group' || event.source.type === 'room') {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: '⚠️ 為維護群組秩序，行程進度回報（到達、客上、乘客下車）請至「1:1 官方帳號」進行！\n👉 請點擊前往 1:1 OA：https://lin.ee/AOp42u7',
+                },
+              ],
+            });
+            continue;
+          }
+
           const activeOrder = await getActiveOrderByDriverId(senderUserId);
 
           if (!activeOrder) {
             console.log(`[Driver Arrival] 司機 ${senderUserId} 回報「到」，但無進行中之訂單`);
-            if (event.source.type === 'user') {
-              await lineClient.replyMessage({
-                replyToken,
-                messages: [{ type: 'text', text: '⚠️ 查無您目前進行中的接單行程。' }],
-              });
-            }
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [{ type: 'text', text: '⚠️ 查無您目前進行中的接單行程。' }],
+            });
             continue;
           }
 
@@ -353,7 +384,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
                 },
               ];
 
-              // 若司機有登記聯絡電話，掛載「📞 電話聯繫」按鈕供測試與討論評估
+              // 若司機有登記聯絡電話，掛載「📞 電話聯繫」按鈕
               if (driverPhone) {
                 quickReplyItems.push({
                   type: 'action',
@@ -383,7 +414,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
             }
           }
 
-          // 回覆群組確認訊息，下方附帶 Quick Reply 按鈕「客上」
+          // 1:1 回覆司機確認訊息，下方附帶 Quick Reply 按鈕「客上」
           await lineClient.replyMessage({
             replyToken,
             messages: [
@@ -408,23 +439,39 @@ export async function handleLineEvents(events: WebhookEvent[]) {
           continue;
         }
 
-        // 5. 司機回報「客上」：乘客上車，媒合訂單並推播溫馨叮嚀與推薦連結
+        // 5. 司機回報「客上」：乘客上車，更新狀態為 picked_up 並推播溫馨叮嚀
         if (text === '客上' || text === '客人上車' || text === '已上車') {
           if (!senderUserId) continue;
+
+          // 需求：司機回報全面改在 1:1 OA 進行，群組內發送則提醒前往 1:1 OA
+          if (event.source.type === 'group' || event.source.type === 'room') {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: '⚠️ 為維護群組秩序，行程進度回報（到達、客上、乘客下車）請至「1:1 官方帳號」進行！\n👉 請點擊前往 1:1 OA：https://lin.ee/AOp42u7',
+                },
+              ],
+            });
+            continue;
+          }
+
           const activeOrder = await getActiveOrderByDriverId(senderUserId);
 
           if (!activeOrder) {
             console.log(`[Passenger Boarded] 司機 ${senderUserId} 回報「客上」，但無進行中之訂單`);
-            if (event.source.type === 'user') {
-              await lineClient.replyMessage({
-                replyToken,
-                messages: [{ type: 'text', text: '⚠️ 查無您目前進行中的接單行程。' }],
-              });
-            }
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [{ type: 'text', text: '⚠️ 查無您目前進行中的接單行程。' }],
+            });
             continue;
           }
 
           console.log(`[Passenger Boarded] 司機 ${senderUserId} 回報客上！訂單: ${activeOrder.id}, 乘客: ${activeOrder.customer_id}`);
+
+          // 更新訂單狀態為 picked_up
+          await updateOrderStatus(activeOrder.id, 'picked_up');
 
           // 1:1 OA 傳給客人完整文案
           if (activeOrder.customer_id) {
@@ -455,17 +502,130 @@ https://lin.ee/AOp42u7`;
             }
           }
 
-          // 回覆群組確認訊息
+          // 1:1 回覆司機確認訊息，引導抵達時回報下車結單
           await lineClient.replyMessage({
             replyToken,
             messages: [
               {
                 type: 'text',
-                text: '👍 已收到「客上」回報！已發送感謝乘車與安全叮嚀給乘客，祝行車平安順利！',
+                text: '👍 已收到「客上」回報！系統已發送感謝搭乘與安全叮嚀給乘客。\n\n抵達目的地乘客下車後，請輸入或點選「乘客下車」進行結單。',
+                quickReply: {
+                  items: [
+                    {
+                      type: 'action',
+                      action: {
+                        type: 'message',
+                        label: '🏁 乘客下車 (結單)',
+                        text: '乘客下車',
+                      },
+                    },
+                  ],
+                },
               },
             ],
           });
           continue;
+        }
+
+        // 5.5 司機回報「乘客下車」：抵達目的地，正式結單
+        if (text === '乘客下車' || text === '下車' || text === '已下車' || text === '結單' || text === '下客') {
+          if (!senderUserId) continue;
+
+          // 需求：司機回報全面改在 1:1 OA 進行，群組內發送則提醒前往 1:1 OA
+          if (event.source.type === 'group' || event.source.type === 'room') {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: '⚠️ 為維護群組秩序，行程進度回報（到達、客上、乘客下車）請至「1:1 官方帳號」進行！\n👉 請點擊前往 1:1 OA：https://lin.ee/AOp42u7',
+                },
+              ],
+            });
+            continue;
+          }
+
+          const activeOrder = await getActiveOrderByDriverId(senderUserId);
+
+          if (!activeOrder) {
+            console.log(`[Trip Completed] 司機 ${senderUserId} 回報「乘客下車」，但無進行中之訂單`);
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [{ type: 'text', text: '⚠️ 查無您目前進行中的接單行程。' }],
+            });
+            continue;
+          }
+
+          console.log(`[Trip Completed] 司機 ${senderUserId} 回報行程結束結單！訂單: ${activeOrder.id}, 乘客: ${activeOrder.customer_id}`);
+
+          // 更新訂單狀態為 done (正式結單)
+          await updateOrderStatus(activeOrder.id, 'done');
+
+          // 1:1 OA 傳給乘客抵達與感謝通知
+          if (activeOrder.customer_id) {
+            try {
+              await lineClient.pushMessage({
+                to: activeOrder.customer_id,
+                messages: [
+                  {
+                    type: 'text',
+                    text: '🏁 您已順利抵達目的地，感謝搭乘！\n請記得攜帶隨身物品，祝您有美好的一天，歡迎再次預約用車！😊\nhttps://lin.ee/AOp42u7',
+                  },
+                ],
+              });
+              console.log(`[Trip Completed] ✅ 成功向乘客發送下車結單感謝訊息`);
+            } catch (dropErr: any) {
+              console.warn('[Trip Completed] 推播乘客結單失敗:', dropErr.message);
+            }
+          }
+
+          // 1:1 回覆司機結單確認
+          const fareInfo = activeOrder.fare ? `\n💰 本趟車資：$${activeOrder.fare}` : '';
+          await lineClient.replyMessage({
+            replyToken,
+            messages: [
+              {
+                type: 'text',
+                text: `🎉【本次行程已圓滿結單】\n\n🟢 上車：${activeOrder.pickup_address}\n🔴 下車：${activeOrder.dropoff_address || '乘客指定地點'}${fareInfo}\n\n辛苦司機夥伴了！祝您行車平安、接單順利！🚖`,
+              },
+            ],
+          });
+          continue;
+        }
+
+        // 5.6 司機查詢「目前行程」
+        if (text === '目前行程' || text === '當前行程') {
+          if (!senderUserId) continue;
+          if (event.source.type === 'user') {
+            const activeOrder = await getActiveOrderByDriverId(senderUserId);
+            if (!activeOrder) {
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [{ type: 'text', text: '🚕 目前沒有進行中的接單行程。' }],
+              });
+              continue;
+            }
+
+            const driver = await getDriverById(senderUserId);
+            const orderCard = createDriverOrderCardFlexMessage({
+              driverName: driver?.display_name || '司機夥伴',
+              orderId: activeOrder.id,
+              pickupAddress: activeOrder.pickup_address,
+              dropoffAddress: activeOrder.dropoff_address,
+              passengerCount: activeOrder.passenger_count || 1,
+              etaMinutes: 5,
+              scheduledTimeText: activeOrder.note?.replace('預約時間: ', ''),
+            });
+
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                { type: 'text', text: `📋 這是您目前進行中的行程任務：` },
+                orderCard,
+              ],
+            });
+            continue;
+          }
         }
 
         // 6. 個人 1:1 聊天室指令與叫車處理

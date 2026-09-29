@@ -3,8 +3,15 @@ import { env } from './config/env.js';
 import { DispatchEngine } from './services/dispatch-engine.js';
 import { getOrderById, updateOrderDropoffAndDistance } from './db/queries/orders.js';
 import { getBidsByOrderId } from './db/queries/bids.js';
+import { upsertDriver, getDriverById as getDriverProfile, clearAllDrivers } from './db/queries/drivers.js';
 import { getLineClient } from './services/line-client.js';
-import { geocodeAddress } from './services/google-maps.js';
+import { geocodeAddress, calculateDrivingEta } from './services/google-maps.js';
+import {
+  createDriverAssignedFlexMessage,
+  createGroupOrderWonFlexMessage,
+  createDriverOrderCardFlexMessage,
+  createGroupOrderAssignedFlexMessage,
+} from './services/flex-messages.js';
 
 import { middleware, webhook, messagingApi } from '@line/bot-sdk';
 import { handleLineEvents } from './handlers/line-webhook.js';
@@ -90,12 +97,30 @@ export const dispatchEngine = new DispatchEngine({
             console.warn(`[Dispatch] ⚠️ 訂單 ${order.id} 沒有 customer_id，無法推播乘客！`);
           }
 
-          // 2. 在司機群組通知中單司機前往接送 (附上車地點 Google Maps 導航連結)
+          // 2. 在司機群組通知中單結果（只提示是誰接到單，下方 ghost button 開啟 1:1 OA）
           const driverGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
           if (driverGroupId) {
             try {
-              const groupAssignedFlex = createGroupOrderAssignedFlexMessage({
-                driverName: driver.display_name || '司機夥伴',
+              const groupWonFlex = createGroupOrderWonFlexMessage({
+                driverName,
+                oaUrl: 'https://lin.ee/AOp42u7',
+              });
+
+              await lineClient.pushMessage({
+                to: driverGroupId,
+                messages: [groupWonFlex],
+              });
+              console.log(`[Dispatch] ✅ 成功向司機群組發送中單提示與開啟 1:1 OA ghost button: ${driverName}`);
+            } catch (groupErr: any) {
+              console.warn('[Dispatch] 司機群組推播結單失敗:', groupErr.message);
+            }
+          }
+
+          // 3. 在接單司機與 OA 的 1:1 chat room 呈現確認接單卡片（含 Google Maps 導航與回報到點按鈕）
+          if (result.winnerDriverId) {
+            try {
+              const driverCardFlex = createDriverOrderCardFlexMessage({
+                driverName,
                 orderId: order.id,
                 pickupAddress: order.pickup_address,
                 dropoffAddress: order.dropoff_address,
@@ -104,19 +129,19 @@ export const dispatchEngine = new DispatchEngine({
                 scheduledTimeText: order.note?.replace('預約時間: ', ''),
               });
 
-              const driverName = driver.display_name || '司機夥伴';
-              const textMessage: messagingApi.TextMessage = {
-                type: 'text',
-                text: `恭喜 @${driverName} 成功接單！請盡速前往接送。`,
-              };
-
               await lineClient.pushMessage({
-                to: driverGroupId,
-                messages: [textMessage, groupAssignedFlex],
+                to: result.winnerDriverId,
+                messages: [
+                  {
+                    type: 'text',
+                    text: `🚕 恭喜您成功接單！請前往上車地點接送乘客。\n到達後請點擊卡片下方「我已到達上車點」或直接輸入「到」回報。`,
+                  },
+                  driverCardFlex,
+                ],
               });
-              console.log(`[Dispatch] ✅ 成功向司機群組發送文字@通知與中單卡片: ${driverName}`);
-            } catch (groupErr: any) {
-              console.warn('[Dispatch] 司機群組推播結單失敗:', groupErr.message);
+              console.log(`[Dispatch] ✅ 成功向中單司機 1:1 OA (${result.winnerDriverId}) 推播確認接單卡片`);
+            } catch (driverDmErr: any) {
+              console.warn(`[Dispatch] 向司機 1:1 OA 推播確認卡片失敗 (司機可能尚未加 OA 好友):`, driverDmErr.message);
             }
           }
         } else {
@@ -237,9 +262,6 @@ app.get('/api/logs', (req, res) => {
   res.send(recentLogs.join('\n'));
 });
 
-import { upsertDriver, getDriverById as getDriverProfile, clearAllDrivers } from './db/queries/drivers.js';
-import { calculateDrivingEta } from './services/google-maps.js';
-import { createDriverAssignedFlexMessage, createGroupOrderAssignedFlexMessage } from './services/flex-messages.js';
 
 app.post('/api/driver/reset', async (req, res) => {
   await clearAllDrivers();

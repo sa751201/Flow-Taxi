@@ -8,6 +8,7 @@ let baseDistanceKm = 1.5;
 let extraMinutes = 0;
 let driverLat = 25.0478;
 let driverLng = 121.5170;
+let hasRealGps = false;
 
 function updateEtaDisplay() {
   const totalEta = baseEtaMinutes + extraMinutes;
@@ -19,6 +20,21 @@ function updateEtaDisplay() {
   const distanceBadgeEl = document.getElementById('eta-distance-badge');
   if (distanceBadgeEl) {
     distanceBadgeEl.textContent = `約 ${baseDistanceKm.toFixed(1)} km`;
+  }
+
+  const sourceNoteEl = document.getElementById('eta-source-note');
+  if (sourceNoteEl) {
+    if (hasRealGps) {
+      sourceNoteEl.innerHTML = '🟢 由司機手機即時 GPS 定位測算導航時間';
+      sourceNoteEl.className = 'text-[11px] text-emerald-600 font-medium';
+    } else {
+      sourceNoteEl.innerHTML = '⚠️ 未取得手機即時 GPS（<button id="btn-retry-gps" type="button" class="underline font-bold text-amber-800">點此重新定位</button>）';
+      sourceNoteEl.className = 'text-[11px] text-amber-700 font-medium';
+      document.getElementById('btn-retry-gps')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        requestGpsLocation(true);
+      });
+    }
   }
 
   // 需求 4: 按加後，數字下方/手動微調區出現重設按鈕 (ghost button 樣式)
@@ -124,46 +140,65 @@ async function initBidLiff() {
       });
     }
 
-    // 取得司機手機 GPS 定位 (加上 2.5 秒超時保護，避免 iOS LINE 內建瀏覽器卡住)
-    let located = false;
-    const fallbackTimer = setTimeout(async () => {
-      if (!located) {
-        located = true;
-        console.warn('GPS 定位逾時，自動切換至市區預設距離估算');
-        await fetchCalculatedEta();
-      }
-    }, 2500);
-
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          if (!located) {
-            located = true;
-            clearTimeout(fallbackTimer);
-            driverLat = pos.coords.latitude;
-            driverLng = pos.coords.longitude;
-            await fetchCalculatedEta();
-          }
-        },
-        async (geoErr) => {
-          if (!located) {
-            located = true;
-            clearTimeout(fallbackTimer);
-            console.warn('無法取得精準 GPS，使用市區預設距離估算:', geoErr.message);
-            await fetchCalculatedEta();
-          }
-        },
-        { timeout: 2000, enableHighAccuracy: false, maximumAge: 60000 }
-      );
+    // 取得司機手機 GPS 定位 (並等待手機 GPS 回傳)
+    if (hasRealGps) {
+      await fetchCalculatedEta();
     } else {
-      clearTimeout(fallbackTimer);
+      const waitGps = new Promise((resolve) => {
+        const timer = setInterval(() => {
+          if (hasRealGps) {
+            clearInterval(timer);
+            resolve(true);
+          }
+        }, 200);
+        setTimeout(() => {
+          clearInterval(timer);
+          resolve(false);
+        }, 3000);
+      });
+
+      await waitGps;
       await fetchCalculatedEta();
     }
-
   } catch (err) {
     showError(err.message);
   }
 }
+
+function requestGpsLocation(isUserAction = false) {
+  if (!navigator.geolocation) {
+    if (isUserAction) alert('您的手機瀏覽器不支援 GPS 定位功能');
+    return;
+  }
+
+  const sourceNoteEl = document.getElementById('eta-source-note');
+  if (isUserAction && sourceNoteEl) {
+    sourceNoteEl.innerHTML = '<span class="text-emerald-700 font-semibold animate-pulse">🔄 正在重新讀取精確 GPS 中...</span>';
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      driverLat = pos.coords.latitude;
+      driverLng = pos.coords.longitude;
+      hasRealGps = true;
+      console.log(`[GPS] 成功取得司機即時定位: (${driverLat}, ${driverLng})`);
+      if (orderData) {
+        await fetchCalculatedEta();
+      }
+    },
+    (geoErr) => {
+      console.warn('[GPS] 取得位置失敗或權限未開:', geoErr.message);
+      if (isUserAction) {
+        alert(`無法取得 GPS 定位 (${geoErr.message})，請檢查 LINE 或 Safari 是否開啟位置存取權限。`);
+      }
+      updateEtaDisplay();
+    },
+    { timeout: 8000, enableHighAccuracy: true, maximumAge: 0 }
+  );
+}
+
+// 頁面載入時第一時間立即啟動 GPS 請求
+requestGpsLocation(false);
 
 async function fetchCalculatedEta() {
   try {

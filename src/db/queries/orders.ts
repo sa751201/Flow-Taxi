@@ -161,7 +161,16 @@ export async function updateOrderStatus(
 ): Promise<boolean> {
   if (env.DATABASE_URL) {
     try {
-      let sql = 'UPDATE orders SET status = $1 WHERE id = $2';
+      let setClauses = ['status = $1'];
+      if (newStatus === 'picked_up') {
+        setClauses.push('picked_up_at = now()');
+      } else if (newStatus === 'done') {
+        setClauses.push('completed_at = now()');
+      } else if (newStatus === 'cancelled') {
+        setClauses.push('cancelled_at = now()');
+      }
+
+      let sql = `UPDATE orders SET ${setClauses.join(', ')} WHERE id = $2`;
       const params: any[] = [newStatus, orderId];
 
       if (expectedCurrentStatus) {
@@ -172,7 +181,12 @@ export async function updateOrderStatus(
       const res = await query(sql, params);
       if ((res.rowCount ?? 0) === 1) {
         const cached = memoryOrders.get(orderId);
-        if (cached) cached.status = newStatus;
+        if (cached) {
+          cached.status = newStatus;
+          if (newStatus === 'picked_up') cached.picked_up_at = new Date();
+          if (newStatus === 'done') cached.completed_at = new Date();
+          if (newStatus === 'cancelled') cached.cancelled_at = new Date();
+        }
         return true;
       }
     } catch {
@@ -186,6 +200,9 @@ export async function updateOrderStatus(
       return false;
     }
     cached.status = newStatus;
+    if (newStatus === 'picked_up') cached.picked_up_at = new Date();
+    if (newStatus === 'done') cached.completed_at = new Date();
+    if (newStatus === 'cancelled') cached.cancelled_at = new Date();
     return true;
   }
   return false;
@@ -265,14 +282,14 @@ export async function markOrderDispatching(orderId: string): Promise<boolean> {
 }
 
 /**
- * 查詢司機目前正在執行的活躍訂單 (accepted / in_progress)
+ * 查詢司機目前正在執行的活躍訂單 (accepted / in_progress / picked_up)
  */
 export async function getActiveOrderByDriverId(driverId: string): Promise<Order | null> {
   if (env.DATABASE_URL) {
     try {
       const sql = `
         SELECT * FROM orders 
-        WHERE driver_id = $1 AND status IN ('accepted', 'in_progress')
+        WHERE driver_id = $1 AND status IN ('accepted', 'in_progress', 'picked_up')
         ORDER BY created_at DESC 
         LIMIT 1;
       `;
@@ -285,7 +302,10 @@ export async function getActiveOrderByDriverId(driverId: string): Promise<Order 
 
   // 記憶體備援查詢
   for (const order of memoryOrders.values()) {
-    if (order.driver_id === driverId && (order.status === 'accepted' || (order as any).status === 'in_progress')) {
+    if (
+      order.driver_id === driverId &&
+      (order.status === 'accepted' || (order as any).status === 'in_progress' || order.status === 'picked_up')
+    ) {
       return order;
     }
   }
@@ -294,14 +314,14 @@ export async function getActiveOrderByDriverId(driverId: string): Promise<Order 
 }
 
 /**
- * 查詢乘客目前正在進行中的活躍訂單 (pending / dispatching / accepted / in_progress)
+ * 查詢乘客目前正在進行中的活躍訂單 (pending / dispatching / accepted / in_progress / picked_up)
  */
 export async function getActiveOrderByCustomerId(customerId: string): Promise<Order | null> {
   if (env.DATABASE_URL) {
     try {
       const sql = `
         SELECT * FROM orders 
-        WHERE customer_id = $1 AND status IN ('pending', 'dispatching', 'accepted', 'in_progress')
+        WHERE customer_id = $1 AND status IN ('pending', 'dispatching', 'accepted', 'in_progress', 'picked_up')
         ORDER BY created_at DESC 
         LIMIT 1;
       `;
@@ -316,7 +336,11 @@ export async function getActiveOrderByCustomerId(customerId: string): Promise<Or
   for (const order of memoryOrders.values()) {
     if (
       order.customer_id === customerId &&
-      (order.status === 'pending' || order.status === 'dispatching' || order.status === 'accepted' || (order as any).status === 'in_progress')
+      (order.status === 'pending' ||
+        order.status === 'dispatching' ||
+        order.status === 'accepted' ||
+        (order as any).status === 'in_progress' ||
+        order.status === 'picked_up')
     ) {
       return order;
     }
