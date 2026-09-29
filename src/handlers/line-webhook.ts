@@ -725,26 +725,24 @@ https://lin.ee/AOp42u7`;
               ],
             });
 
-            // 2. 同步將乘客的動態轉發至司機群組或司機 1:1
+            // 2. 同步將乘客的動態轉發至接單司機的 1:1 OA（不發到群組）
             try {
               const activeOrder = userSource.userId ? await getActiveOrderByCustomerId(userSource.userId) : null;
-              const targetGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
-              if (targetGroupId) {
-                const driverMention = activeOrder?.driver_id ? `已接單司機夥伴` : '接單司機';
+              if (activeOrder?.driver_id) {
                 const replyBrief = text.includes('準時') ? '【準時前來】正在前往上車點！' : '【稍候片刻】約晚 1-5 分鐘抵達！';
                 await lineClient.pushMessage({
-                  to: targetGroupId,
+                  to: activeOrder.driver_id,
                   messages: [
                     {
                       type: 'text',
-                      text: `📢 乘客回覆：${replyBrief}\n（請 ${driverMention} 稍候乘客）`,
+                      text: `📢 乘客回覆：${replyBrief}\n（乘客已收到您到達的通知，請稍候乘客）`,
                       quickReply: {
                         items: [
                           {
                             type: 'action',
                             action: {
                               type: 'message',
-                              label: '🚕 客上',
+                              label: '🚕 客上 (乘客已上車)',
                               text: '客上',
                             },
                           },
@@ -753,10 +751,12 @@ https://lin.ee/AOp42u7`;
                     },
                   ],
                 });
-                console.log(`[Passenger Reply] ✅ 已將乘客回覆同步至司機群組 (附帶客上 Quick Button)`);
+                console.log(`[Passenger Reply] ✅ 已將乘客回覆轉發至司機 1:1 OA (${activeOrder.driver_id})`);
+              } else {
+                console.log('[Passenger Reply] 未找到接單司機或訂單已結束，無需轉發');
               }
             } catch (fwdErr: any) {
-              console.warn('[Passenger Reply] 轉發司機群組失敗:', fwdErr.message);
+              console.warn('[Passenger Reply] 轉發司機 1:1 OA 失敗:', fwdErr.message);
             }
             continue;
           } else if (
