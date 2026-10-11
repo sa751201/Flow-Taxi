@@ -348,3 +348,103 @@ export async function getActiveOrderByCustomerId(customerId: string): Promise<Or
 
   return null;
 }
+
+/**
+ * 查詢特定經緯度半徑 (公里) 內正在派單 (dispatching) 的訂單
+ */
+export async function getNearbyOrders(
+  lat: number,
+  lng: number,
+  radiusKm: number = 1.5
+): Promise<Array<Order & { distance_to_driver_km: number }>> {
+  const result: Array<Order & { distance_to_driver_km: number }> = [];
+
+  if (env.DATABASE_URL) {
+    try {
+      const sql = `
+        SELECT *,
+          ST_Y(pickup_geog::geometry) as pickup_lat,
+          ST_X(pickup_geog::geometry) as pickup_lng,
+          ST_Y(dropoff_geog::geometry) as dropoff_lat,
+          ST_X(dropoff_geog::geometry) as dropoff_lng,
+          (ST_Distance(pickup_geog, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000.0) as distance_to_driver_km
+        FROM orders
+        WHERE status = 'dispatching'
+          AND pickup_geog IS NOT NULL
+          AND ST_DWithin(pickup_geog, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3 * 1000)
+        ORDER BY distance_to_driver_km ASC;
+      `;
+      const res = await query<Order & { distance_to_driver_km: number }>(sql, [lng, lat, radiusKm]);
+      if (res.rows.length > 0) {
+        return res.rows.map(r => ({
+          ...r,
+          distance_to_driver_km: Number(Number(r.distance_to_driver_km).toFixed(2)),
+        }));
+      }
+    } catch (err: any) {
+      console.warn('[Orders DB] 附近訂單空間查詢失敗，使用記憶體空間計算:', err.message);
+    }
+  }
+
+  // 記憶體備援空間計算 (Haversine Formula)
+  for (const order of memoryOrders.values()) {
+    if (order.status === 'dispatching' && order.pickup_lat && order.pickup_lng) {
+      const pLat = Number(order.pickup_lat);
+      const pLng = Number(order.pickup_lng);
+      // Haversine
+      const R = 6371; // km
+      const dLat = (pLat - lat) * (Math.PI / 180);
+      const dLng = (pLng - lng) * (Math.PI / 180);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat * (Math.PI / 180)) *
+          Math.cos(pLat * (Math.PI / 180)) *
+          Math.sin(dLng / 2) *
+          Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const dist = R * c;
+
+      if (dist <= radiusKm) {
+        result.push({
+          ...order,
+          distance_to_driver_km: Number(dist.toFixed(2)),
+        });
+      }
+    }
+  }
+
+  return result.sort((a, b) => a.distance_to_driver_km - b.distance_to_driver_km);
+}
+
+/**
+ * 查詢指定司機的過往歷史訂單 (上限 20 筆)
+ */
+export async function getOrdersByDriverId(driverId: string, limit: number = 20): Promise<Order[]> {
+  if (env.DATABASE_URL) {
+    try {
+      const sql = `
+        SELECT *,
+          ST_Y(pickup_geog::geometry) as pickup_lat,
+          ST_X(pickup_geog::geometry) as pickup_lng,
+          ST_Y(dropoff_geog::geometry) as dropoff_lat,
+          ST_X(dropoff_geog::geometry) as dropoff_lng
+        FROM orders
+        WHERE driver_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2;
+      `;
+      const res = await query<Order>(sql, [driverId, limit]);
+      return res.rows;
+    } catch {
+      // fallback
+    }
+  }
+
+  const list: Order[] = [];
+  for (const o of memoryOrders.values()) {
+    if (o.driver_id === driverId) {
+      list.push(o);
+    }
+  }
+  return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, limit);
+}

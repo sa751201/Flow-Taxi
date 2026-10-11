@@ -1,7 +1,14 @@
 import express from 'express';
 import { env } from './config/env.js';
 import { DispatchEngine } from './services/dispatch-engine.js';
-import { getOrderById, updateOrderDropoffAndDistance } from './db/queries/orders.js';
+import {
+  getOrderById,
+  updateOrderDropoffAndDistance,
+  getNearbyOrders,
+  getOrdersByDriverId,
+  getActiveOrderByDriverId,
+  updateOrderStatus,
+} from './db/queries/orders.js';
 import { getBidsByOrderId } from './db/queries/bids.js';
 import { upsertDriver, getDriverById as getDriverProfile, clearAllDrivers } from './db/queries/drivers.js';
 import { getLineClient } from './services/line-client.js';
@@ -247,22 +254,164 @@ console.error = (...args: any[]) => {
   originalError.apply(console, args);
 };
 
+// 路由轉發：/driver/app (司機全螢幕地圖調度中心 PWA)
+app.get([
+  '/driver/app',
+  '/driver/app/driver/app',
+], (req, res) => {
+  res.sendFile('public/driver/app.html', { root: process.cwd() });
+});
+
 // 提供前端 LIFF 設定與環境診斷
 app.get('/api/config', (req, res) => {
   res.json({
     liffId: env.LIFF_ID || '',
     driverGroupId: env.DRIVER_GROUP_ID || '',
-    version: '2026-09-03-fast-1min-v4',
+    googleMapsApiKey: env.GOOGLE_MAPS_API_KEY || '',
+    oaUrl: 'https://lin.ee/AOp42u7',
+    dispatchPhone: '02-23456789', // 中控客服專線代撥
+    version: '2026-10-pwa-v1',
     windowSeconds: (dispatchEngine as any).windowDurationSeconds,
     timerType: ((dispatchEngine as any).timer?.constructor?.name) || 'Unknown',
   });
+});
+
+// 司機網頁版：取得方圓 1.5 公里內正在派單中的訂單
+app.get('/api/dispatch/nearby-orders', async (req, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lng = Number(req.query.lng);
+    const radiusKm = req.query.radiusKm ? Number(req.query.radiusKm) : 1.5;
+
+    if (isNaN(lat) || isNaN(lng)) {
+      return res.status(400).json({ error: '請提供有效的司機經緯度座標 (lat, lng)' });
+    }
+
+    const nearbyOrders = await getNearbyOrders(lat, lng, radiusKm);
+    res.json({ success: true, count: nearbyOrders.length, orders: nearbyOrders });
+  } catch (err: any) {
+    console.error('[Nearby Orders API Error]', err);
+    res.status(500).json({ error: err.message, orders: [] });
+  }
+});
+
+// 司機網頁版：查詢司機當前進行中的任務 (accepted / picked_up)
+app.get('/api/driver/:driverId/active-trip', async (req, res) => {
+  try {
+    const activeOrder = await getActiveOrderByDriverId(req.params.driverId);
+    if (!activeOrder) {
+      return res.json({ hasActiveTrip: false, order: null });
+    }
+    res.json({ hasActiveTrip: true, order: activeOrder });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 司機網頁版：查詢司機歷史訂單清單 (右上角選單)
+app.get('/api/driver/:driverId/history-orders', async (req, res) => {
+  try {
+    const history = await getOrdersByDriverId(req.params.driverId, 20);
+    res.json({ success: true, orders: history });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message, orders: [] });
+  }
+});
+
+// 司機網頁版：進行中訂單快捷動作回報 (我已到達、客上、乘客下車結單)
+app.post('/api/driver/trip-action', async (req, res) => {
+  try {
+    const { orderId, driverId, action } = req.body;
+    if (!orderId || !action) {
+      return res.status(400).json({ error: '缺少 orderId 或 action' });
+    }
+
+    const order = await getOrderById(orderId);
+    if (!order) {
+      return res.status(404).json({ error: '找不到該訂單' });
+    }
+
+    const lineClient = getLineClient();
+    const customerId = order.customer_id;
+
+    if (action === 'arrived') {
+      // 司機回報到達上車點
+      if (customerId && customerId !== 'UNKNOWN_CUSTOMER') {
+        await lineClient.pushMessage({
+          to: customerId,
+          messages: [
+            {
+              type: 'text',
+              text: `🚖 您的司機夥伴已抵達【${order.pickup_address}】！\n請您前往搭乘，祝您搭車愉快！`,
+              quickReply: {
+                items: [
+                  {
+                    type: 'action',
+                    action: {
+                      type: 'message',
+                      label: '🟢 準時前往',
+                      text: '準時前來，正在前往上車點',
+                    },
+                  },
+                  {
+                    type: 'action',
+                    action: {
+                      type: 'message',
+                      label: '🟡 稍等 1-5 分鐘',
+                      text: '稍候片刻，約晚 1-5 分鐘抵達',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+      return res.json({ success: true, message: '已通知乘客您已到達！' });
+    } else if (action === 'picked_up') {
+      // 司機回報客上
+      await updateOrderStatus(orderId, 'picked_up');
+      if (customerId && customerId !== 'UNKNOWN_CUSTOMER') {
+        await lineClient.pushMessage({
+          to: customerId,
+          messages: [
+            {
+              type: 'text',
+              text: '🚕 乘客已上車，行程啟動中！繫好安全帶，祝您路途平安順心！✨',
+            },
+          ],
+        });
+      }
+      return res.json({ success: true, message: '已更新為「客上」狀態！' });
+    } else if (action === 'completed') {
+      // 司機回報乘客下車 (結單)
+      await updateOrderStatus(orderId, 'done');
+      const fareInfo = order.fare ? `\n💰 本次車資：$${order.fare} 元` : '';
+      if (customerId && customerId !== 'UNKNOWN_CUSTOMER') {
+        await lineClient.pushMessage({
+          to: customerId,
+          messages: [
+            {
+              type: 'text',
+              text: `🏁 您已順利抵達目的地，感謝搭乘！${fareInfo}\n請記得攜帶隨身物品，歡迎再次預約用車！😊`,
+            },
+          ],
+        });
+      }
+      return res.json({ success: true, message: '行程已圓滿結單！辛苦司機了！' });
+    }
+
+    return res.status(400).json({ error: '未知的動作指令' });
+  } catch (err: any) {
+    console.error('[Trip Action Error]', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/logs', (req, res) => {
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.send(recentLogs.join('\n'));
 });
-
 
 app.post('/api/driver/reset', async (req, res) => {
   await clearAllDrivers();

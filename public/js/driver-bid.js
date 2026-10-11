@@ -286,9 +286,20 @@ document.getElementById('btn-confirm-bid')?.addEventListener('click', async () =
       checkIcon?.setAttribute('data-state', 'in');
     }, 50);
 
-    // 需求 1: 接單後請關閉 LIFF 畫面 (停留 1.5 秒讓司機看見接單成功畫面後自動關閉)
+    // 需求 5: 如果是從網頁捷徑 (source=web) 進來的，接單按鈕按下去後回到主畫面（地圖＋清單）等待接單結果；若是 LINE 聊天室進入則維持關閉 LIFF
+    const urlParams = new URLSearchParams(window.location.search);
+    const isWebSource = urlParams.get('source') === 'web' || !liff.isInClient();
+
+    if (isWebSource) {
+      document.getElementById('success-desc').textContent = `預估約 ${totalMins} 分鐘抵達現場。系統正在進行派單媒合中，即將返回地圖儀表板...`;
+    }
+
     setTimeout(() => {
-      closeLiffWindow();
+      if (isWebSource) {
+        window.location.href = `/driver/app?submittedOrder=${orderId}`;
+      } else {
+        closeLiffWindow();
+      }
     }, 1500);
 
   } catch (err) {

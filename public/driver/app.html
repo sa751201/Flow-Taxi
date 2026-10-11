@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Flow Taxi 司機調度中心</title>
+  <!-- Tailwind CSS 4 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <!-- LINE Seed TW Font -->
+  <link rel="stylesheet" href="https://seed.line.me/src/css/line-seed-tw.css">
+  <!-- LIFF SDK -->
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <!-- Transitions.dev Custom Tokens -->
+  <link rel="stylesheet" href="/css/transitions.css">
+
+  <style>
+    body, button, input, select, textarea {
+      font-family: 'LINE Seed TW', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .custom-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    /* Topo Pattern for Hero Card */
+    .topo-pattern {
+      background-image: radial-gradient(rgba(255, 255, 255, 0.18) 1.5px, transparent 1.5px),
+                        radial-gradient(rgba(255, 255, 255, 0.12) 1.5px, transparent 1.5px);
+      background-size: 24px 24px;
+      background-position: 0 0, 12px 12px;
+    }
+    /* Radar wave pulse */
+    @keyframes radar-pulse {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.15); opacity: 0.3; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+    .radar-pulse-anim {
+      animation: radar-pulse 3s infinite ease-in-out;
+    }
+    /* Floating sheet shadow */
+    .sheet-shadow {
+      box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.12);
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-900 select-none overflow-x-hidden min-h-screen">
+
+  <!-- Mobile Frame Container (Max width 440px on desktop, full on mobile) -->
+  <div id="app-container" class="relative max-w-md mx-auto min-h-screen bg-[#f8fafc] flex flex-col shadow-2xl overflow-hidden pb-24">
+
+    <!-- ==============================================================
+         1. Top Global Navigation Header (Matches Image Left Screen Top)
+         ============================================================== -->
+    <header class="sticky top-0 z-30 bg-[#f8fafc]/90 backdrop-blur-md px-5 pt-3 pb-2.5 flex items-center justify-between border-b border-slate-200/60">
+      <!-- Brand Logo & Name (Triangle Taxi Badge + Flow Taxi) -->
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center text-amber-400 font-black shadow-sm">
+          <svg class="w-4 h-4 fill-amber-400" viewBox="0 0 24 24">
+            <polygon points="12 3 22 21 2 21"></polygon>
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-base font-extrabold tracking-tight text-slate-900">Flow Taxi</span>
+            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">司機端</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Header Actions (Bell + Driver Avatar) -->
+      <div class="flex items-center gap-3">
+        <!-- Notification Bell with Red Dot -->
+        <button id="btn-bell" type="button" class="relative p-2 rounded-full hover:bg-slate-200/70 transition" title="新單通知">
+          <svg class="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+          </svg>
+          <span id="bell-dot" class="hidden absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white"></span>
+        </button>
+
+        <!-- Driver Avatar (Opens Profile & History Drawer) -->
+        <button id="btn-open-drawer" type="button" class="relative group" title="司機選單與歷史訂單">
+          <div class="w-9 h-9 rounded-full bg-emerald-500 ring-2 ring-emerald-500/80 p-0.5 shadow-sm overflow-hidden flex items-center justify-center text-white font-bold text-xs">
+            <img id="header-avatar-img" class="w-full h-full object-cover rounded-full hidden" src="" alt="Avatar">
+            <span id="header-avatar-initial">運</span>
+          </div>
+          <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white"></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- ==============================================================
+         2. Slide-down New Order Banner (Top Floating Notification)
+         ============================================================== -->
+    <div id="new-order-banner" class="hidden transition-all duration-300 transform -translate-y-full fixed top-14 left-0 right-0 max-w-md mx-auto z-40 px-4">
+      <div class="bg-slate-900 text-white rounded-2xl p-4 shadow-2xl border border-emerald-500/50 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-lg shrink-0 animate-pulse">
+            ⚡
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950">新叫車訂單</span>
+              <span id="banner-distance" class="text-xs text-slate-300 font-medium">距離約 1.2 km</span>
+            </div>
+            <p id="banner-address" class="text-sm font-bold text-white truncate mt-0.5">台北市信義區忠孝東路五段...</p>
+          </div>
+        </div>
+        <button id="banner-action-btn" type="button" class="px-3.5 py-2 rounded-xl bg-emerald-500 text-slate-950 font-extrabold text-xs shrink-0 hover:bg-emerald-400 transition shadow-md">
+          搶單查看
+        </button>
+      </div>
+    </div>
+
+    <!-- ==============================================================
+         3. Active Trip Floating Mini-Bar (當司機有進行中任務時置頂提醒)
+         ============================================================== -->
+    <div id="active-trip-reminder" class="hidden mx-4 mt-2 mb-1 p-3 bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-2xl shadow-lg flex items-center justify-between cursor-pointer">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold animate-spin">
+          🚖
+        </div>
+        <div>
+          <p class="text-xs font-bold text-emerald-100">當前有進行中任務</p>
+          <p id="active-trip-reminder-text" class="text-sm font-extrabold truncate max-w-[210px]">前往上車點中...</p>
+        </div>
+      </div>
+      <button id="btn-switch-to-tracking" type="button" class="px-3 py-1.5 rounded-xl bg-white text-emerald-800 text-xs font-bold shadow-sm hover:bg-emerald-50">
+        進入導航 >
+      </button>
+    </div>
+
+    <!-- ==============================================================
+         4. MAIN VIEW CONTAINER (切換 儀表板清單 / 全螢幕地圖 / 任務導航)
+         ============================================================== -->
+    <main class="flex-1 flex flex-col">
+
+      <!-- ------------------------------------------------------------
+           VIEW A: Dashboard & Orders List (100% 參照圖片左側螢幕設計)
+           ------------------------------------------------------------ -->
+      <section id="view-dashboard" class="flex flex-col p-4 space-y-4">
+
+        <!-- Top Emerald Hero Banner (Dog walking in neighbor -> 1.5km 叫車雷達) -->
+        <div class="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 text-white p-6 shadow-lg topo-pattern">
+          <!-- Geometric wave decorative curves -->
+          <div class="absolute -right-8 -bottom-8 w-44 h-44 rounded-full bg-emerald-400/20 blur-xl pointer-events-none"></div>
+
+          <div class="relative z-10 flex items-center justify-between">
+            <div class="space-y-3 max-w-[62%]">
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/20 text-white text-[11px] font-bold backdrop-blur-sm">
+                <span class="w-2 h-2 rounded-full bg-emerald-300 animate-ping"></span>
+                半徑 1.5 km 雷達
+              </span>
+              <h2 class="text-xl font-extrabold leading-snug tracking-tight">
+                附近即時訂單<br>60 秒媒合派單
+              </h2>
+              <button id="btn-hero-radar-refresh" type="button" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-slate-900 text-white text-xs font-bold shadow-md hover:bg-slate-800 active:scale-95 transition">
+                <span>重新掃描附近</span>
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+              </button>
+            </div>
+
+            <!-- Cute Cutout Illustration Badge (Sticker style) -->
+            <div class="relative shrink-0 pr-1">
+              <div class="w-24 h-24 rounded-2xl bg-white/10 backdrop-blur-sm border-2 border-white/40 p-2 shadow-inner flex flex-col items-center justify-center transform rotate-2">
+                <div class="text-4xl filter drop-shadow">🚖</div>
+                <span class="text-[10px] font-black tracking-widest text-emerald-100 uppercase mt-1">ONLINE</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Middle Black Capsule Card (Matches "Michel" Card with 4 Metric Pills) -->
+        <div class="rounded-[26px] bg-[#0f172a] text-white p-4 shadow-xl border border-slate-800 flex items-center justify-between gap-3">
+          <!-- Left: Driver Circular Avatar & Name -->
+          <div class="flex items-center gap-3 shrink-0">
+            <div class="relative">
+              <div class="w-14 h-14 rounded-full bg-slate-800 ring-2 ring-amber-400 p-0.5 shadow-md flex items-center justify-center text-xl overflow-hidden font-bold">
+                <span id="driver-card-avatar-text">🚕</span>
+              </div>
+              <span class="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-[#0f172a]"></span>
+            </div>
+            <div>
+              <p class="text-[11px] text-slate-400 font-semibold tracking-wider">司機夥伴</p>
+              <h3 id="driver-card-name" class="text-base font-extrabold text-white tracking-tight">陳運將</h3>
+              <p id="driver-card-plate" class="text-xs text-amber-400 font-bold mt-0.5">TDC-8888</p>
+            </div>
+          </div>
+
+          <!-- Right: 2x2 Metric Badges (Matches paws, km, clock, kcl in image) -->
+          <div class="grid grid-cols-2 gap-2 shrink-0">
+            <!-- Badge 1: 狀態 -->
+            <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[11px] font-bold">
+              <span>⚡</span>
+              <span id="stat-online-status">營業中</span>
+            </div>
+            <!-- Badge 2: 範圍 -->
+            <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold">
+              <span>📍</span>
+              <span>1.5 km</span>
+            </div>
+            <!-- Badge 3: 均達 -->
+            <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-400 text-[11px] font-bold">
+              <span>⏱️</span>
+              <span id="stat-eta-avg">5-8m</span>
+            </div>
+            <!-- Badge 4: 今日單 -->
+            <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[11px] font-bold">
+              <span>🔥</span>
+              <span id="stat-today-orders">0 單</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Order List Section ("Recent walker" -> "附近叫車訂單") -->
+        <div class="space-y-3 pt-1">
+          <div class="flex items-center justify-between px-1">
+            <h4 class="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+              <span>附近叫車訂單</span>
+              <span id="orders-count-badge" class="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-xs font-bold">0</span>
+            </h4>
+            <button id="btn-toggle-map-shortcut" type="button" class="text-xs font-bold text-slate-500 hover:text-emerald-600 transition flex items-center gap-0.5">
+              <span>切換地圖檢視</span>
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Orders Dynamic Container -->
+          <div id="orders-list-container" class="space-y-2.5">
+            <!-- Loading Skeleton -->
+            <div id="orders-loading-skeleton" class="p-8 text-center bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-3">
+              <svg class="animate-spin w-7 h-7 mx-auto text-emerald-600" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+              <p class="text-xs font-bold text-slate-600">正在定位並掃描 1.5km 內訂單...</p>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ------------------------------------------------------------
+           VIEW B: Radar Map View (全螢幕地圖調度雷達)
+           ------------------------------------------------------------ -->
+      <section id="view-map" class="hidden flex-1 flex flex-col relative h-[calc(100vh-130px)]">
+        <!-- Interactive Map Container -->
+        <div id="radar-map-canvas" class="w-full h-full bg-slate-200 relative">
+          <!-- Fallback when loading Google Maps -->
+          <div id="map-loading-placeholder" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-100 p-6 text-center space-y-3">
+            <div class="w-12 h-12 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin"></div>
+            <p class="text-sm font-bold text-slate-700">正在載入 Google Maps 雷達地圖...</p>
+          </div>
+        </div>
+
+        <!-- Floating Quick GPS Control Button on Map -->
+        <button id="btn-recenter-map" type="button" class="absolute top-4 right-4 z-10 w-11 h-11 rounded-2xl bg-white shadow-xl border border-slate-200 flex items-center justify-center text-slate-800 hover:bg-slate-50 active:scale-95 transition" title="重新定位我">
+          <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+          </svg>
+        </button>
+
+        <!-- Floating Bottom Drawer on Map (Collapsed preview of nearest orders) -->
+        <div class="absolute bottom-2 left-3 right-3 z-10">
+          <div class="bg-white/95 backdrop-blur-md rounded-2xl p-3.5 shadow-2xl border border-slate-200 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+              <span class="w-3 h-3 rounded-full bg-emerald-500 animate-ping"></span>
+              <div>
+                <p class="text-xs font-bold text-slate-900">半徑 1.5km 叫車雷達啟動中</p>
+                <p id="map-status-subtext" class="text-[11px] text-slate-500">已偵測到 0 張可搶訂單</p>
+              </div>
+            </div>
+            <button id="btn-map-show-list" type="button" class="px-3.5 py-1.5 rounded-full bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition">
+              檢視清單
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------------
+           VIEW C: Active Trip / Tracking View (100% 參照圖片右側螢幕設計)
+           ------------------------------------------------------------ -->
+      <section id="view-tracking" class="hidden flex-1 flex flex-col relative h-[calc(100vh-130px)]">
+
+        <!-- Top Tracking Navigation Bar (Matches "< Tracking walker" in right screen) -->
+        <div class="absolute top-3 left-4 right-4 z-20 flex items-center justify-between">
+          <button id="btn-tracking-back" type="button" class="w-10 h-10 rounded-full bg-white/90 backdrop-blur-md shadow-md flex items-center justify-center text-slate-800 hover:bg-white transition" title="返回">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"></path>
+            </svg>
+          </button>
+          <div class="px-4 py-2 rounded-full bg-slate-900/80 backdrop-blur-md text-white text-xs font-bold shadow-md">
+            行程進行中 (Tracking Trip)
+          </div>
+          <div class="w-10"></div> <!-- Placeholder spacer -->
+        </div>
+
+        <!-- Upper 50%: Interactive Tracking Route Map -->
+        <div id="tracking-map-canvas" class="w-full h-1/2 bg-slate-200 relative">
+          <!-- Fallback or Map renders here -->
+        </div>
+
+        <!-- Lower 50%: Bottom Sheet (Matches Image Right Screen: Black Header + White Body) -->
+        <div class="w-full flex-1 flex flex-col justify-end z-10 -mt-6">
+          
+          <!-- Black Header Pill/Card (Matches "Ketrina Malik" header in screenshot) -->
+          <div class="bg-[#0f172a] text-white rounded-t-[32px] px-6 pt-5 pb-4 shadow-2xl flex items-center justify-between border-t border-slate-800">
+            <!-- Left: Passenger Avatar with Gold Ring & Rating -->
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 rounded-full bg-slate-800 ring-2 ring-amber-400 p-0.5 shadow-md flex items-center justify-center text-lg font-bold">
+                <span id="trip-passenger-avatar">👤</span>
+              </div>
+              <div>
+                <h4 id="trip-passenger-name" class="text-base font-extrabold text-white tracking-tight">乘客 媒合中</h4>
+                <div class="flex items-center gap-1 text-xs text-amber-400 font-semibold mt-0.5">
+                  <span>⭐⭐⭐⭐⭐</span>
+                  <span class="text-slate-400 text-[11px]">(5.0)</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: Yellow Message Icon (LINE OA) + Green Phone Icon (中控代撥) -->
+            <div class="flex items-center gap-2.5">
+              <!-- Yellow Message Button (Opens 1:1 LINE OA for custom text) -->
+              <a id="btn-trip-open-oa" href="https://lin.ee/AOp42u7" target="_blank" class="w-10 h-10 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 flex items-center justify-center shadow-md active:scale-95 transition" title="開啟官方帳號文字溝通">
+                <svg class="w-5 h-5 fill-slate-950" viewBox="0 0 24 24">
+                  <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0-2-.9-2-2V4c0-1.1-.9-2-2-2z"/>
+                </svg>
+              </a>
+
+              <!-- Green Phone Button (Calls dispatch phone or direct) -->
+              <button id="btn-trip-call-dispatch" type="button" class="w-10 h-10 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white flex items-center justify-center shadow-md active:scale-95 transition" title="中控代撥電話">
+                <svg class="w-5 h-5 fill-white" viewBox="0 0 24 24">
+                  <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- White Lower Container (Matches "Start walking / End walking" & Progress Slider) -->
+          <div class="bg-white px-6 py-5 space-y-4 shadow-2xl overflow-y-auto max-h-[50vh] custom-scrollbar">
+
+            <!-- Step 1: Start Location (Green Pin) -->
+            <div class="flex items-start gap-3">
+              <div class="w-7 h-7 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+                <svg class="w-4 h-4 fill-emerald-600" viewBox="0 0 24 24">
+                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                </svg>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-bold text-slate-500">前往上車地點</p>
+                <p id="trip-pickup-addr" class="text-sm font-extrabold text-slate-900 truncate">載入中...</p>
+                <p id="trip-eta-text" class="text-xs text-emerald-600 font-semibold mt-0.5">預計 5 分鐘抵達</p>
+              </div>
+            </div>
+
+            <!-- Step 2: End Location (Yellow Flag) -->
+            <div class="flex items-start gap-3 pt-2 border-t border-slate-100">
+              <div class="w-7 h-7 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 mt-0.5">
+                <svg class="w-4 h-4 fill-amber-600" viewBox="0 0 24 24">
+                  <path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z"/>
+                </svg>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-bold text-slate-500">前往下車地點</p>
+                <p id="trip-dropoff-addr" class="text-sm font-extrabold text-slate-900 truncate">載入中...</p>
+              </div>
+            </div>
+
+            <!-- Step 3: Progress Slider (Matches image: Starting [===O===] End) -->
+            <div class="pt-2 space-y-1.5">
+              <div class="flex justify-between text-[11px] font-bold text-slate-400">
+                <span id="trip-stage-start-label">前往接客</span>
+                <span id="trip-stage-mid-label">已到點</span>
+                <span id="trip-stage-end-label">行程結單</span>
+              </div>
+
+              <!-- Track with moving circular handle -->
+              <div class="relative w-full h-2.5 bg-slate-100 rounded-full overflow-visible">
+                <div id="trip-progress-fill" class="h-full bg-emerald-500 rounded-full transition-all duration-500" style="width: 30%;"></div>
+                <div id="trip-progress-knob" class="absolute top-1/2 -translate-y-1/2 -ml-2.5 w-6 h-6 rounded-full bg-white ring-2 ring-emerald-500 shadow-md flex items-center justify-center text-[10px] transition-all duration-500" style="left: 30%;">
+                  🚕
+                </div>
+              </div>
+
+              <div class="flex justify-between text-[10px] font-semibold text-slate-400 pt-0.5">
+                <span>0 km</span>
+                <span id="trip-progress-dist-text">1.2 km</span>
+                <span id="trip-progress-total-dist">3.5 km</span>
+              </div>
+            </div>
+
+            <!-- Step 4: Big Driver Action Buttons -->
+            <div class="pt-2 space-y-2">
+              <!-- Primary Stage Action Button (我已到達 / 客上 / 下車結單) -->
+              <button id="btn-trip-main-action" type="button" class="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm shadow-lg shadow-emerald-600/30 active:scale-98 transition flex items-center justify-center gap-2">
+                <span id="trip-main-action-icon">🔔</span>
+                <span id="trip-main-action-text">我已抵達上車地點（到點通知）</span>
+              </button>
+
+              <!-- Secondary Action: Open External Google Maps Navigation -->
+              <a id="btn-trip-ext-nav" href="#" target="_blank" class="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4 text-emerald-600" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                </svg>
+                <span>開啟 Google Maps 語音導航</span>
+              </a>
+            </div>
+
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- ==============================================================
+         5. Floating Bottom Navigation Pill (Matches Screenshot Bottom Pill)
+         ============================================================== -->
+    <nav class="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-[#0f172a] text-white rounded-full px-7 py-3 flex items-center gap-8 shadow-2xl border border-slate-800">
+      
+      <!-- Nav 1: Radar Map View -->
+      <button id="nav-btn-map" type="button" class="flex flex-col items-center justify-center text-slate-400 hover:text-emerald-400 active:scale-95 transition group" title="雷達地圖">
+        <svg class="w-6 h-6 stroke-current fill-none" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" stroke-width="2"/>
+          <path d="M12 3a9 9 0 0 1 9 9" stroke-width="2"/>
+          <circle cx="12" cy="12" r="3" stroke-width="2"/>
+        </svg>
+      </button>
+
+      <!-- Nav 2: Home / Dashboard Orders List -->
+      <button id="nav-btn-dashboard" type="button" class="relative flex flex-col items-center justify-center text-emerald-400 active:scale-95 transition" title="訂單中心">
+        <svg class="w-6 h-6 fill-current" viewBox="0 0 24 24">
+          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+        </svg>
+        <span id="nav-dashboard-badge" class="hidden absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-[#0f172a]"></span>
+      </button>
+
+      <!-- Nav 3: Profile & Orders Menu -->
+      <button id="nav-btn-menu" type="button" class="flex flex-col items-center justify-center text-slate-400 hover:text-emerald-400 active:scale-95 transition" title="司機選單">
+        <svg class="w-6 h-6 stroke-current fill-none" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="7" height="7" rx="1.5" stroke-width="2"/>
+          <rect x="14" y="3" width="7" height="7" rx="1.5" stroke-width="2"/>
+          <rect x="14" y="14" width="7" height="7" rx="1.5" stroke-width="2"/>
+          <rect x="3" y="14" width="7" height="7" rx="1.5" stroke-width="2"/>
+        </svg>
+      </button>
+
+    </nav>
+
+    <!-- ==============================================================
+         6. Slide-in Side Drawer (Driver Profile Edit & History Orders)
+         ============================================================== -->
+    <div id="drawer-backdrop" class="hidden fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm transition-opacity"></div>
+    <aside id="side-drawer" class="fixed top-0 right-0 bottom-0 z-50 w-full max-w-sm bg-white shadow-2xl transform translate-x-full transition-transform duration-300 flex flex-col">
+      <!-- Drawer Header -->
+      <div class="p-5 bg-slate-900 text-white flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center font-extrabold text-sm">
+            <span id="drawer-avatar-txt">運</span>
+          </div>
+          <div>
+            <h3 id="drawer-driver-title" class="font-extrabold text-base">陳運將 (司機中心)</h3>
+            <p id="drawer-driver-status" class="text-xs text-emerald-400 font-semibold">● 權限開通·在線中</p>
+          </div>
+        </div>
+        <button id="btn-close-drawer" type="button" class="p-2 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Drawer Tabs (司機資料 / 歷史行程) -->
+      <div class="flex border-b border-slate-200 bg-slate-50 text-xs font-bold text-slate-600">
+        <button id="tab-btn-profile" type="button" class="flex-1 py-3 border-b-2 border-emerald-600 text-emerald-600 font-extrabold">
+          個人與車輛資料
+        </button>
+        <button id="tab-btn-history" type="button" class="flex-1 py-3 border-b-2 border-transparent hover:text-slate-900">
+          歷史接單紀錄
+        </button>
+      </div>
+
+      <!-- Tab Content 1: Driver Profile Form -->
+      <div id="tab-content-profile" class="flex-1 p-5 overflow-y-auto space-y-4 custom-scrollbar">
+        <form id="driver-profile-form" class="space-y-3.5 text-xs">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">司機姓名 / 稱呼</label>
+            <input id="input-display-name" type="text" required class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">車牌號碼</label>
+            <input id="input-plate-number" type="text" required placeholder="例：TDC-8888" class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 uppercase">
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">車輛廠牌 / 車型</label>
+              <input id="input-car-brand" type="text" required placeholder="例：TOYOTA RAV4" class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900">
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">車身顏色</label>
+              <input id="input-car-color" type="text" required placeholder="例：黑色" class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900">
+            </div>
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">聯絡電話</label>
+            <input id="input-driver-phone" type="tel" placeholder="例：0912345678" class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900">
+          </div>
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">特色備註</label>
+            <input id="input-driver-notes" type="text" value="🚭 禁菸 🚯 禁食" class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900">
+          </div>
+          <button type="submit" class="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs shadow-md transition">
+            儲存司機資料
+          </button>
+          <p id="profile-save-status" class="hidden text-center text-xs font-bold text-emerald-600"></p>
+        </form>
+      </div>
+
+      <!-- Tab Content 2: History Orders -->
+      <div id="tab-content-history" class="hidden flex-1 p-4 overflow-y-auto space-y-3 custom-scrollbar">
+        <div id="history-orders-list" class="space-y-2.5 text-xs">
+          <p class="text-slate-400 text-center py-8">載入歷史紀錄中...</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ==============================================================
+         7. Dispatch Phone Modal (中控代撥電話提示視窗)
+         ============================================================== -->
+    <div id="phone-modal" class="hidden fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="bg-white rounded-3xl p-6 max-w-xs w-full shadow-2xl text-center space-y-4">
+        <div class="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center text-2xl">
+          📞
+        </div>
+        <div>
+          <h4 class="font-extrabold text-lg text-slate-900">中控專線代撥</h4>
+          <p class="text-xs text-slate-500 mt-1">如需與乘客通話，將由派單中控協助轉接</p>
+          <p id="modal-phone-num" class="text-base font-black text-emerald-600 mt-2">02-23456789</p>
+        </div>
+        <div class="grid grid-cols-2 gap-2 pt-1">
+          <button id="btn-cancel-phone-modal" type="button" class="py-2.5 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs hover:bg-slate-200">
+            取消
+          </button>
+          <a id="btn-confirm-phone-modal" href="tel:0223456789" class="py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-500">
+            立即撥號
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Audio Chime for New Orders (Web Audio API fallback) -->
+  <!-- Main Script -->
+  <script src="/js/driver-app.js"></script>
+</body>
+</html>
