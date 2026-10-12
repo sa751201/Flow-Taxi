@@ -11,6 +11,7 @@ import {
   createAirportRidePromptMessage,
   createGroupDispatchOrderFlexMessage,
   createDriverOrderCardFlexMessage,
+  createGroupOrderCancelledFlexMessage,
 } from '../services/flex-messages.js';
 import { geocodeAddress } from '../services/google-maps.js';
 import {
@@ -810,6 +811,7 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
               await dispatchEngine.cancelDispatch(activeOrder.id);
               await updateOrderStatus(activeOrder.id, 'cancelled');
 
+              // 1. 回覆乘客確認訊息
               await lineClient.replyMessage({
                 replyToken,
                 messages: [
@@ -820,6 +822,26 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
                 ],
               });
               console.log(`[Cancel Order] 乘客 ${customerId} 成功取消媒合中訂單: ${activeOrder.id}`);
+
+              // 2. 在司機聊天室 / 群組 (chatroom) 也推播該訂單已取消的訊息
+              const targetGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
+              if (targetGroupId) {
+                try {
+                  const cancelFlex = createGroupOrderCancelledFlexMessage({
+                    orderId: activeOrder.id,
+                    pickupAddress: activeOrder.pickup_address,
+                    dropoffAddress: activeOrder.dropoff_address || undefined,
+                  });
+                  await lineClient.pushMessage({
+                    to: targetGroupId,
+                    messages: [cancelFlex],
+                  });
+                  console.log(`[Cancel Order] ✅ 成功向司機群組聊天室 ${targetGroupId} 推播訂單取消卡片！`);
+                } catch (pushErr: any) {
+                  console.error('[Cancel Order] ❌ 推播司機群組聊天室取消卡片失敗:', pushErr);
+                }
+              }
+
               continue;
             }
 

@@ -928,6 +928,98 @@ export function createDriverOrderCardFlexMessage(params: {
 }
 
 /**
+ * 建立「群組/聊天室訂單已取消」的通知 Flex Message 卡片
+ * 當乘客在媒合中或接單後取消時，推播至司機群組通知司機
+ */
+export function createGroupOrderCancelledFlexMessage(params: {
+  orderId: string;
+  pickupAddress: string;
+  dropoffAddress?: string;
+  reason?: string;
+}): messagingApi.FlexMessage {
+  const container: messagingApi.FlexBubble = {
+    type: 'bubble',
+    size: 'kilo',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#1e293b',
+      paddingAll: '16px',
+      contents: [
+        {
+          type: 'text',
+          text: '❌【訂單已取消】',
+          color: '#f87171',
+          weight: 'bold',
+          size: 'md',
+        },
+        {
+          type: 'text',
+          text: `訂單編號 #${params.orderId.slice(-4)}`,
+          color: '#cbd5e1',
+          weight: 'bold',
+          size: 'xs',
+          margin: 'xs',
+        },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#ffffff',
+      paddingAll: '16px',
+      spacing: 'sm',
+      contents: [
+        {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'xs',
+          contents: [
+            {
+              type: 'text',
+              text: `🟢 上車：${params.pickupAddress}`,
+              color: '#334155',
+              size: 'xs',
+              weight: 'bold',
+              wrap: true,
+            },
+            ...(params.dropoffAddress ? [
+              {
+                type: 'text' as const,
+                text: `🔴 下車：${params.dropoffAddress}`,
+                color: '#64748b',
+                size: 'xs',
+                wrap: true,
+              }
+            ] : []),
+          ],
+        },
+        {
+          type: 'separator',
+          color: '#f1f5f9',
+          margin: 'md',
+        },
+        {
+          type: 'text',
+          text: params.reason || '⚠️ 乘客已取消此筆叫車，請各位司機夥伴無須搶單。感謝配合！',
+          color: '#ef4444',
+          size: 'xs',
+          wrap: true,
+          lineSpacing: '3px',
+          margin: 'sm',
+        },
+      ],
+    },
+  };
+
+  return {
+    type: 'flex',
+    altText: `❌【訂單已取消】訂單 #${params.orderId.slice(-4)} 乘客已取消叫車`,
+    contents: container,
+  };
+}
+
+/**
  * 相容既有別名
  */
 export const createGroupOrderAssignedFlexMessage = createDriverOrderCardFlexMessage;

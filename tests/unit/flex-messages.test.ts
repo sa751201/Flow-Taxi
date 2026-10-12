@@ -3,6 +3,7 @@ import {
   createGroupOrderAssignedFlexMessage,
   createGroupOrderWonFlexMessage,
   createDriverOrderCardFlexMessage,
+  createGroupOrderCancelledFlexMessage,
 } from '../../src/services/flex-messages.js';
 
 describe('createGroupOrderWonFlexMessage', () => {
@@ -100,3 +101,36 @@ describe('createDriverOrderCardFlexMessage', () => {
     expect(uriButtons[0].action.label).toBe('📍 前往上車地點');
   });
 });
+
+describe('createGroupOrderCancelledFlexMessage', () => {
+  it('群組聊天室取消卡片應正確呈現取消標題、訂單編號、上車點與提醒司機無須搶單文案', () => {
+    const flexMsg = createGroupOrderCancelledFlexMessage({
+      orderId: 'order-cancel-9876',
+      pickupAddress: '台北故宮博物院',
+      dropoffAddress: '台北車站',
+    });
+
+    expect(flexMsg.type).toBe('flex');
+    expect(flexMsg.altText).toContain('❌【訂單已取消】');
+    expect(flexMsg.altText).toContain('#9876');
+
+    const bubble = flexMsg.contents as any;
+    expect(bubble.size).toBe('kilo');
+
+    // Header 醒目紅字與訂單編號
+    const headerTexts = bubble.header.contents.map((c: any) => c.text);
+    expect(headerTexts).toContain('❌【訂單已取消】');
+    expect(headerTexts).toContain('訂單編號 #9876');
+
+    // Body 上下車點與提示
+    const bodyContents = bubble.body.contents;
+    const addressBox = bodyContents[0];
+    const addressTexts = addressBox.contents.map((c: any) => c.text);
+    expect(addressTexts).toContain('🟢 上車：台北故宮博物院');
+    expect(addressTexts).toContain('🔴 下車：台北車站');
+
+    const reminderText = bodyContents[2].text;
+    expect(reminderText).toContain('⚠️ 乘客已取消此筆叫車，請各位司機夥伴無須搶單。感謝配合！');
+  });
+});
+
