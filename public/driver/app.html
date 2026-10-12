@@ -254,6 +254,46 @@
           </div>
         </div>
 
+        <!-- 進行中任務置頂卡片 (當司機有中單或進行中任務時顯眼呈現) -->
+        <div id="active-trip-card" class="hidden rounded-3xl bg-gradient-to-br from-slate-900 to-slate-950 text-white p-5 shadow-2xl border-2 border-emerald-500/70 space-y-3.5 relative overflow-hidden">
+          <div class="absolute -right-10 -bottom-10 w-36 h-36 rounded-full bg-emerald-500/15 blur-xl pointer-events-none"></div>
+
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-black border border-emerald-500/40">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              <span id="active-card-stage-badge">🔔 進行中任務：已接單</span>
+            </span>
+            <span id="active-card-order-id" class="text-xs text-slate-400 font-mono font-bold">#----</span>
+          </div>
+
+          <div class="space-y-2 pt-1">
+            <div class="flex items-start gap-2.5">
+              <span class="text-emerald-400 font-bold text-sm shrink-0 mt-0.5">🟢 上車</span>
+              <p id="active-card-pickup" class="text-sm font-black text-white leading-snug">載入中...</p>
+            </div>
+            <div class="flex items-start gap-2.5">
+              <span class="text-rose-400 font-bold text-sm shrink-0 mt-0.5">🔴 下車</span>
+              <p id="active-card-dropoff" class="text-sm font-bold text-slate-300 leading-snug">載入中...</p>
+            </div>
+          </div>
+
+          <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+            <span id="active-card-passenger">乘客 1 人</span>
+            <span id="active-card-fare" class="font-extrabold text-amber-400">跳錶計費</span>
+          </div>
+
+          <!-- 快捷操作動作群組 -->
+          <div class="grid grid-cols-2 gap-2 pt-1">
+            <button id="btn-active-card-action" type="button" class="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-md transition flex items-center justify-center gap-1.5 active:scale-95">
+              <span id="active-card-action-icon">🔔</span>
+              <span id="active-card-action-text">到點回報</span>
+            </button>
+            <button id="btn-active-card-nav" type="button" class="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-extrabold border border-slate-700 transition flex items-center justify-center gap-1.5 active:scale-95">
+              <span>🗺️ 全螢幕導航</span>
+            </button>
+          </div>
+        </div>
+
         <!-- Order List Section ("Recent walker" -> "附近叫車訂單") -->
         <div class="space-y-3 pt-1">
           <div class="flex items-center justify-between px-1">

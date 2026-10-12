@@ -11,8 +11,9 @@ const envSchema = z.object({
   DRIVER_GROUP_ID: z.string().optional().default('C5179346ac8b2f3312cabe051ca818355'),
   ADMIN_GROUP_ID: z.string().optional().default(''),
   DAILY_REPORT_TIME: z.string().optional().default('23:00'), // 格式 HH:mm，預設每晚 23:00
-  DRIVER_RICH_MENU_ID: z.string().optional().default('richmenu-b4972e4b6feb7d86e2123b4a2a4a4375'), // 司機專屬圖文選單 ID
+  DRIVER_RICH_MENU_ID: z.string().optional().default('richmenu-ba11011f94290fc2d2b2d28aa0a93916'), // 司機專屬圖文選單 ID
   PASSENGER_RICH_MENU_ID: z.string().optional().default(''), // 乘客預設圖文選單 ID
+  OFFICIAL_ACCOUNT_URL: z.string().optional().default('https://line.me/R/ti/p/@688muuaw'), // 1:1 OA 連結 (目前為 TAXI測試MAPI，未來可換回福露 https://lin.ee/AOp42u7)
 
   // Database / Supabase
   DATABASE_URL: z.string().optional(),

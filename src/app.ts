@@ -111,7 +111,7 @@ export const dispatchEngine = new DispatchEngine({
             try {
               const groupWonFlex = createGroupOrderWonFlexMessage({
                 driverName,
-                oaUrl: 'https://lin.ee/AOp42u7',
+                oaUrl: env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw',
               });
 
               await lineClient.pushMessage({
@@ -275,7 +275,7 @@ app.get('/api/config', (req, res) => {
     liffId: env.LIFF_ID || '',
     driverGroupId: env.DRIVER_GROUP_ID || '',
     googleMapsApiKey: env.GOOGLE_MAPS_API_KEY || '',
-    oaUrl: 'https://lin.ee/AOp42u7',
+    oaUrl: env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw',
     dispatchPhone: '02-23456789', // 中控客服專線代撥
     version: '2026-10-pwa-v1',
     windowSeconds: (dispatchEngine as any).windowDurationSeconds,

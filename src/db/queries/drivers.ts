@@ -36,7 +36,9 @@ function getRedisClient() {
   if (!redisClient && env.REDIS_URL) {
     const Redis = (IORedis as any).default || IORedis;
     redisClient = new Redis(env.REDIS_URL, {
-      maxRetriesPerRequest: null,
+      maxRetriesPerRequest: 1,
+      commandTimeout: 800,
+      connectTimeout: 1000,
       lazyConnect: false,
     });
     redisClient.on('error', (err: any) => {

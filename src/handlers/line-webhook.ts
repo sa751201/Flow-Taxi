@@ -347,7 +347,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
               messages: [
                 {
                   type: 'text',
-                  text: '⚠️ 為維護群組秩序，行程進度回報（到達、客上、乘客下車）請至「1:1 官方帳號」進行！\n👉 請點擊前往 1:1 OA：https://lin.ee/AOp42u7',
+                  text: `⚠️ 為維護群組秩序，行程進度回報（到達、客上、乘客下車）請至「1:1 官方帳號」進行！\n👉 請點擊前往 1:1 OA：${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`,
                 },
               ],
             });
@@ -458,7 +458,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
               messages: [
                 {
                   type: 'text',
-                  text: '⚠️ 為維護群組秩序，行程進度回報（到達、客上、乘客下車）請至「1:1 官方帳號」進行！\n👉 請點擊前往 1:1 OA：https://lin.ee/AOp42u7',
+                  text: `⚠️ 為維護群組秩序，行程進度回報（到達、客上、乘客下車）請至「1:1 官方帳號」進行！\n👉 請點擊前往 1:1 OA：${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`,
                 },
               ],
             });
@@ -493,7 +493,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
 如有司機向您留聯絡方式
 下車後請馬上告知小編
 若乘車體驗不錯 歡迎分享給朋友
-https://lin.ee/AOp42u7`;
+${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
 
               await lineClient.pushMessage({
                 to: activeOrder.customer_id,
@@ -546,7 +546,7 @@ https://lin.ee/AOp42u7`;
               messages: [
                 {
                   type: 'text',
-                  text: '⚠️ 為維護群組秩序，行程進度回報（到達、客上、乘客下車）請至「1:1 官方帳號」進行！\n👉 請點擊前往 1:1 OA：https://lin.ee/AOp42u7',
+                  text: `⚠️ 為維護群組秩序，行程進度回報（到達、客上、乘客下車）請至「1:1 官方帳號」進行！\n👉 請點擊前往 1:1 OA：${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`,
                 },
               ],
             });
@@ -577,7 +577,7 @@ https://lin.ee/AOp42u7`;
                 messages: [
                   {
                     type: 'text',
-                    text: '🏁 您已順利抵達目的地，感謝搭乘！\n請記得攜帶隨身物品，祝您有美好的一天，歡迎再次預約用車！😊\nhttps://lin.ee/AOp42u7',
+                    text: `🏁 您已順利抵達目的地，感謝搭乘！\n請記得攜帶隨身物品，祝您有美好的一天，歡迎再次預約用車！😊\n${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`,
                   },
                 ],
               });

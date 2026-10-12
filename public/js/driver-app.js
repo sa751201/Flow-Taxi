@@ -88,14 +88,48 @@
   async function initDriverIdentity() {
     // 步驟 A: 優先讀取 LocalStorage 本機快取
     const cachedProfile = localStorage.getItem('flow_taxi_driver_profile');
+    const cachedId = localStorage.getItem('flow_taxi_driver_id');
+
     if (cachedProfile) {
       try {
         const parsed = JSON.parse(cachedProfile);
         if (parsed && parsed.isVerified) {
           currentDriver = parsed;
+          if (cachedId && (!currentDriver.userId || currentDriver.userId === 'driver_guest')) {
+            currentDriver.userId = cachedId;
+          }
           updateDriverUi();
           checkAuthBar();
+          fetchActiveTrip();
+          loadHistoryOrders();
           return;
+        }
+      } catch (e) {}
+    }
+
+    if (cachedId && cachedId !== 'driver_guest') {
+      try {
+        const res = await fetch(`/api/driver/${encodeURIComponent(cachedId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.registered) {
+            currentDriver = {
+              userId: data.line_user_id || cachedId,
+              displayName: data.display_name || '司機夥伴',
+              plateNumber: data.plate_number || '已驗證車牌',
+              carBrand: data.car_brand || 'TOYOTA',
+              carColor: data.car_color || '黑色',
+              phone: data.phone || '',
+              notes: data.notes || '',
+              isVerified: true,
+            };
+            saveCurrentDriver();
+            updateDriverUi();
+            checkAuthBar();
+            fetchActiveTrip();
+            loadHistoryOrders();
+            return;
+          }
         }
       } catch (e) {}
     }
@@ -108,7 +142,7 @@
           const profile = await liff.getProfile();
           currentDriver.userId = profile.userId;
 
-          const res = await fetch(`/api/driver/${profile.userId}`);
+          const res = await fetch(`/api/driver/${encodeURIComponent(profile.userId)}`);
           if (res.ok) {
             const data = await res.json();
             if (data && data.registered) {
@@ -125,6 +159,8 @@
               saveCurrentDriver();
               updateDriverUi();
               checkAuthBar();
+              fetchActiveTrip();
+              loadHistoryOrders();
               return;
             }
           }
@@ -682,14 +718,16 @@
   // 8. 活躍任務查詢與狀態控制 (Tracking Mode)
   // -------------------------------------------------------------
   async function fetchActiveTrip() {
-    if (!currentDriver.userId || currentDriver.userId === 'driver_guest') return;
+    const driverIdentifier = currentDriver.userId || currentDriver.plateNumber || localStorage.getItem('flow_taxi_driver_id');
+    if (!driverIdentifier || driverIdentifier === 'driver_guest') return;
     try {
-      const res = await fetch(`/api/driver/${currentDriver.userId}/active-trip`);
+      const res = await fetch(`/api/driver/${encodeURIComponent(driverIdentifier)}/active-trip`);
       if (!res.ok) return;
 
       const data = await res.json();
       const reminder = document.getElementById('active-trip-reminder');
       const reminderText = document.getElementById('active-trip-reminder-text');
+      const activeCard = document.getElementById('active-trip-card');
 
       if (data.hasActiveTrip && data.order) {
         activeTrip = data.order;
@@ -702,12 +740,63 @@
           }
         }
         renderActiveTripUi(activeTrip);
+        renderActiveTripCard(activeTrip);
       } else {
         activeTrip = null;
         if (reminder) reminder.classList.add('hidden');
+        if (activeCard) activeCard.classList.add('hidden');
       }
     } catch (e) {
       console.warn('[Driver App] 查詢活躍任務失敗:', e);
+    }
+  }
+
+  function renderActiveTripCard(order) {
+    const card = document.getElementById('active-trip-card');
+    if (!card || !order) return;
+
+    card.classList.remove('hidden');
+
+    const stageBadge = document.getElementById('active-card-stage-badge');
+    const orderIdEl = document.getElementById('active-card-order-id');
+    const pickupEl = document.getElementById('active-card-pickup');
+    const dropoffEl = document.getElementById('active-card-dropoff');
+    const passengerEl = document.getElementById('active-card-passenger');
+    const fareEl = document.getElementById('active-card-fare');
+    const actionBtn = document.getElementById('btn-active-card-action');
+    const actionIcon = document.getElementById('active-card-action-icon');
+    const actionText = document.getElementById('active-card-action-text');
+    const navBtn = document.getElementById('btn-active-card-nav');
+
+    if (orderIdEl) orderIdEl.textContent = `#${order.id ? order.id.slice(-4) : '----'}`;
+    if (pickupEl) pickupEl.textContent = order.pickup_address || '未提供上車地址';
+    if (dropoffEl) dropoffEl.textContent = order.dropoff_address || '未提供下車地址';
+    const passCount = order.passenger_count || order.passengers || 1;
+    if (passengerEl) passengerEl.textContent = `乘客 ${passCount} 人`;
+    if (fareEl) fareEl.textContent = order.fare ? `$${order.fare} 元` : '跳錶計費';
+
+    const stage = order.status || tripStage || 'accepted';
+    if (stage === 'accepted') {
+      if (stageBadge) stageBadge.textContent = '🔔 任務已接單・前往上車點';
+      if (actionIcon) actionIcon.textContent = '📍';
+      if (actionText) actionText.textContent = '我已抵達上車點';
+      if (actionBtn) actionBtn.className = 'w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-md transition flex items-center justify-center gap-1.5 active:scale-95';
+    } else if (stage === 'arrived') {
+      if (stageBadge) stageBadge.textContent = '🚕 司機已到點・等待乘客上車';
+      if (actionIcon) actionIcon.textContent = '👥';
+      if (actionText) actionText.textContent = '乘客已上車';
+      if (actionBtn) actionBtn.className = 'w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black shadow-md transition flex items-center justify-center gap-1.5 active:scale-95';
+    } else if (stage === 'picked_up') {
+      if (stageBadge) stageBadge.textContent = '🏁 行程進行中・前往目的地';
+      if (actionIcon) actionIcon.textContent = '✅';
+      if (actionText) actionText.textContent = '到達目的地（完成結單）';
+      if (actionBtn) actionBtn.className = 'w-full py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black shadow-md transition flex items-center justify-center gap-1.5 active:scale-95';
+    }
+
+    if (navBtn) {
+      navBtn.onclick = () => {
+        switchView('tracking');
+      };
     }
   }
 
@@ -761,7 +850,9 @@
   async function performTripAction() {
     if (!activeTrip) return;
     const btn = document.getElementById('btn-trip-main-action');
+    const cardBtn = document.getElementById('btn-active-card-action');
     if (btn) btn.disabled = true;
+    if (cardBtn) cardBtn.disabled = true;
 
     try {
       let action = 'arrived';
@@ -773,12 +864,14 @@
         action = 'completed';
       }
 
+      const driverId = currentDriver.userId || currentDriver.plateNumber || localStorage.getItem('flow_taxi_driver_id') || 'driver_guest';
+
       const res = await fetch('/api/driver/trip-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderId: activeTrip.id,
-          driverId: currentDriver.userId,
+          driverId,
           action,
         }),
       });
@@ -793,22 +886,29 @@
 
       if (action === 'arrived') {
         tripStage = 'arrived';
+        if (activeTrip) activeTrip.status = 'arrived';
       } else if (action === 'picked_up') {
         tripStage = 'picked_up';
+        if (activeTrip) activeTrip.status = 'picked_up';
       } else if (action === 'completed') {
         tripStage = 'completed';
         activeTrip = null;
+        const activeCard = document.getElementById('active-trip-card');
+        if (activeCard) activeCard.classList.add('hidden');
         switchView('dashboard');
         fetchNearbyOrders();
+        loadHistoryOrders();
       }
 
       if (activeTrip) {
         renderActiveTripUi(activeTrip);
+        renderActiveTripCard(activeTrip);
       }
     } catch (e) {
       alert(`網路異常: ${e.message}`);
     } finally {
       if (btn) btn.disabled = false;
+      if (cardBtn) cardBtn.disabled = false;
     }
   }
 
@@ -885,10 +985,15 @@
     const badgeOrdersEl = document.getElementById('history-total-badge');
 
     if (!listEl) return;
+    const driverIdentifier = currentDriver.userId || currentDriver.plateNumber || localStorage.getItem('flow_taxi_driver_id');
+    if (!driverIdentifier || driverIdentifier === 'driver_guest') {
+      listEl.innerHTML = '<p class="text-slate-400 text-center py-6">請先登入以查看歷史訂單</p>';
+      return;
+    }
     listEl.innerHTML = '<p class="text-slate-400 text-center py-6">載入歷史訂單中...</p>';
 
     try {
-      const res = await fetch(`/api/driver/${currentDriver.userId}/history-orders`);
+      const res = await fetch(`/api/driver/${encodeURIComponent(driverIdentifier)}/history-orders`);
       if (!res.ok) throw new Error('查詢失敗');
       const data = await res.json();
       const orders = data.orders || [];
@@ -954,8 +1059,9 @@
       }
     });
 
-    // 任務大按鈕
+    // 任務大按鈕與置頂任務卡片回報按鈕
     document.getElementById('btn-trip-main-action')?.addEventListener('click', performTripAction);
+    document.getElementById('btn-active-card-action')?.addEventListener('click', performTripAction);
 
     // 中控電話 Modal
     document.getElementById('btn-trip-call-dispatch')?.addEventListener('click', () => {

@@ -1,4 +1,5 @@
 import { messagingApi } from '@line/bot-sdk';
+import { env } from '../config/env.js';
 
 /**
  * 建立「司機資料登記 / 修改」的 Flex Message 卡片
@@ -693,7 +694,7 @@ export function createGroupOrderWonFlexMessage(params: {
   driverName: string;
   oaUrl?: string;
 }): messagingApi.FlexMessage {
-  const oaUrl = params.oaUrl || 'https://lin.ee/AOp42u7';
+  const oaUrl = params.oaUrl || env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw';
 
   const container: messagingApi.FlexBubble = {
     type: 'bubble',

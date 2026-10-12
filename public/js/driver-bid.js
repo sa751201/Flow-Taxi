@@ -275,6 +275,27 @@ document.getElementById('btn-confirm-bid')?.addEventListener('click', async () =
     }
 
     const driverName = result.driverName || currentDriverProfile?.display_name || '司機夥伴';
+
+    // 將司機身分資訊同步寫入 LocalStorage，確保後續開接單程式時能無縫連動
+    try {
+      if (currentUserId) {
+        localStorage.setItem('flow_taxi_driver_id', currentUserId);
+      }
+      const profileToSave = currentDriverProfile || result.driver;
+      if (profileToSave) {
+        localStorage.setItem('flow_taxi_driver_profile', JSON.stringify({
+          userId: currentUserId,
+          displayName: profileToSave.display_name || driverName,
+          plateNumber: profileToSave.plate_number || '已驗證車牌',
+          carBrand: profileToSave.car_brand || 'TOYOTA',
+          carColor: profileToSave.car_color || '黑色',
+          phone: profileToSave.phone || '',
+          notes: profileToSave.notes || '',
+          isVerified: true,
+        }));
+      }
+    } catch (e) {}
+
     document.getElementById('success-title').textContent = `【${driverName}】已接單！`;
     document.getElementById('success-desc').textContent = `預估約 ${totalMins} 分鐘抵達現場。系統正在進行派單媒合中，請稍候！即將自動返回聊天室...`;
 

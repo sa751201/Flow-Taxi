@@ -1,6 +1,7 @@
 import { query } from '../index.js';
 import { env } from '../../config/env.js';
 import { Order, OrderStatus } from '../../types/dispatch.js';
+import { getDriverById, findDriverByPhoneOrPlate } from './drivers.js';
 
 export interface CreateOrderParams {
   id?: string;
@@ -283,27 +284,60 @@ export async function markOrderDispatching(orderId: string): Promise<boolean> {
 
 /**
  * 查詢司機目前正在執行的活躍訂單 (accepted / in_progress / picked_up)
+ * 支援傳入 LINE User ID、車牌號碼 (如 CEQ-7710)、姓名 (如 Mike Wang) 或電話
  */
 export async function getActiveOrderByDriverId(driverId: string): Promise<Order | null> {
+  // 1. 快速先查記憶體快取中是否有直接符合 driver_id 的活躍訂單 (極速回傳)
+  for (const order of memoryOrders.values()) {
+    if (
+      order.driver_id === driverId &&
+      (order.status === 'accepted' || (order as any).status === 'in_progress' || order.status === 'picked_up')
+    ) {
+      return order;
+    }
+  }
+
+  const searchIds = new Set<string>([driverId]);
+  try {
+    const driverPromise = (async () => {
+      return (await getDriverById(driverId)) || (await findDriverByPhoneOrPlate(driverId));
+    })();
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 800));
+    const driver = await Promise.race([driverPromise, timeoutPromise]);
+    if (driver) {
+      if (driver.line_user_id) searchIds.add(driver.line_user_id);
+      if (driver.plate_number) searchIds.add(driver.plate_number);
+      if (driver.display_name) searchIds.add(driver.display_name);
+    }
+  } catch {}
+
+  const idsArray = Array.from(searchIds);
+
   if (env.DATABASE_URL) {
     try {
       const sql = `
-        SELECT * FROM orders 
-        WHERE driver_id = $1 AND status IN ('accepted', 'in_progress', 'picked_up')
+        SELECT *,
+          ST_Y(pickup_geog::geometry) as pickup_lat,
+          ST_X(pickup_geog::geometry) as pickup_lng,
+          ST_Y(dropoff_geog::geometry) as dropoff_lat,
+          ST_X(dropoff_geog::geometry) as dropoff_lng
+        FROM orders 
+        WHERE driver_id = ANY($1::text[]) AND status IN ('accepted', 'in_progress', 'picked_up')
         ORDER BY created_at DESC 
         LIMIT 1;
       `;
-      const res = await query<Order>(sql, [driverId]);
+      const res = await query<Order>(sql, [idsArray]);
       if (res.rows[0]) return res.rows[0];
     } catch {
       // fallback
     }
   }
 
-  // 記憶體備援查詢
+  // 記憶體備援查詢 (多身分解析)
   for (const order of memoryOrders.values()) {
     if (
-      order.driver_id === driverId &&
+      order.driver_id &&
+      searchIds.has(order.driver_id) &&
       (order.status === 'accepted' || (order as any).status === 'in_progress' || order.status === 'picked_up')
     ) {
       return order;
@@ -418,8 +452,25 @@ export async function getNearbyOrders(
 
 /**
  * 查詢指定司機的過往歷史訂單 (上限 20 筆)
+ * 支援傳入 LINE User ID、車牌號碼 (如 CEQ-7710)、姓名 (如 Mike Wang) 或電話
  */
 export async function getOrdersByDriverId(driverId: string, limit: number = 20): Promise<Order[]> {
+  const searchIds = new Set<string>([driverId]);
+  try {
+    const driverPromise = (async () => {
+      return (await getDriverById(driverId)) || (await findDriverByPhoneOrPlate(driverId));
+    })();
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 800));
+    const driver = await Promise.race([driverPromise, timeoutPromise]);
+    if (driver) {
+      if (driver.line_user_id) searchIds.add(driver.line_user_id);
+      if (driver.plate_number) searchIds.add(driver.plate_number);
+      if (driver.display_name) searchIds.add(driver.display_name);
+    }
+  } catch {}
+
+  const idsArray = Array.from(searchIds);
+
   if (env.DATABASE_URL) {
     try {
       const sql = `
@@ -429,11 +480,11 @@ export async function getOrdersByDriverId(driverId: string, limit: number = 20):
           ST_Y(dropoff_geog::geometry) as dropoff_lat,
           ST_X(dropoff_geog::geometry) as dropoff_lng
         FROM orders
-        WHERE driver_id = $1
+        WHERE driver_id = ANY($1::text[])
         ORDER BY created_at DESC
         LIMIT $2;
       `;
-      const res = await query<Order>(sql, [driverId, limit]);
+      const res = await query<Order>(sql, [idsArray, limit]);
       return res.rows;
     } catch {
       // fallback
@@ -442,7 +493,7 @@ export async function getOrdersByDriverId(driverId: string, limit: number = 20):
 
   const list: Order[] = [];
   for (const o of memoryOrders.values()) {
-    if (o.driver_id === driverId) {
+    if (o.driver_id && searchIds.has(o.driver_id)) {
       list.push(o);
     }
   }
