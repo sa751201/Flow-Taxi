@@ -695,12 +695,18 @@ app.post('/api/dispatch/bid', async (req, res) => {
     // 司機群組發布即時動態：「[姓名] 已接單」 (依指示取消司機 1:1 私訊)
     const driverGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
     if (driverGroupId) {
+      const order = await getOrderById(orderId);
+      const isRes = order ? isFutureReservation(order) : false;
+      const statusText = isRes
+        ? `🚕【${driverName}】已接單（預約行程），系統派單媒合中...`
+        : `🚕【${driverName}】已接單 (預估 ${etaMinutes} 分鐘抵達)，系統派單媒合中...`;
+
       lineClient.pushMessage({
         to: driverGroupId,
         messages: [
           {
             type: 'text',
-            text: `🚕【${driverName}】已接單 (預估 ${etaMinutes} 分鐘抵達)，系統派單媒合中...`,
+            text: statusText,
           },
         ],
       }).catch((gErr: any) => {

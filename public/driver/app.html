@@ -199,34 +199,65 @@
            ------------------------------------------------------------ -->
       <section id="view-dashboard" class="flex flex-col p-4 space-y-4">
 
-        <!-- Top Emerald Hero Banner (文字為高對比深黑色 text-slate-950) -->
-        <div class="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-emerald-200 via-teal-200 to-emerald-300 border border-emerald-400/80 p-6 shadow-md topo-pattern">
-          <div class="absolute -right-8 -bottom-8 w-44 h-44 rounded-full bg-emerald-400/20 blur-xl pointer-events-none"></div>
-
-          <div class="relative z-10 flex items-center justify-between">
-            <div class="space-y-3 max-w-[62%]">
-              <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 text-emerald-300 text-[11px] font-black shadow-sm">
-                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                半徑 1.5 km 雷達
-              </span>
-              <h2 class="text-xl font-black leading-snug tracking-tight text-slate-950">
-                附近即時訂單<br>60 秒媒合派單
-              </h2>
-              <button id="btn-hero-radar-refresh" type="button" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold shadow-md active:scale-95 transition">
-                <span>重新掃描附近</span>
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                </svg>
+        <!-- ==============================================================
+             Combined Instant Dispatch / Nearby Orders Area
+             沒有訂單時呈現 60 秒媒合派單圖示；有訂單時換成訂單資訊
+             ============================================================== -->
+        <div id="instant-dispatch-section" class="space-y-3">
+          <!-- A. 訂單存在時顯示的頂部標題列 -->
+          <div id="instant-orders-header" class="hidden flex items-center justify-between px-1">
+            <h4 class="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+              <span>附近即時叫車</span>
+              <span id="orders-count-badge" class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">0</span>
+            </h4>
+            <div class="flex items-center gap-2">
+              <button id="btn-hero-radar-refresh-mini" type="button" class="text-xs font-bold text-slate-500 hover:text-emerald-600 transition flex items-center gap-1">
+                <span>重新掃描</span>
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+              </button>
+              <span class="text-slate-300">·</span>
+              <button id="btn-toggle-map-shortcut" type="button" class="text-xs font-bold text-slate-500 hover:text-emerald-600 transition flex items-center gap-0.5">
+                <span>切換地圖</span>
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
               </button>
             </div>
+          </div>
 
-            <!-- Cute Cutout Illustration Badge (Sticker style) -->
-            <div class="relative shrink-0 pr-1">
-              <div class="w-24 h-24 rounded-2xl bg-white/70 backdrop-blur-sm border-2 border-slate-900/10 p-2 shadow-sm flex flex-col items-center justify-center transform rotate-2">
-                <div class="text-4xl filter drop-shadow">🚖</div>
-                <span class="text-[10px] font-black tracking-widest text-slate-950 uppercase mt-1">ONLINE</span>
+          <!-- B. 沒有訂單時呈現的 60 秒媒合派單圖示 (Hero Banner) -->
+          <div id="hero-radar-empty-banner" class="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-emerald-200 via-teal-200 to-emerald-300 border border-emerald-400/80 p-6 shadow-md topo-pattern">
+            <div class="absolute -right-8 -bottom-8 w-44 h-44 rounded-full bg-emerald-400/20 blur-xl pointer-events-none"></div>
+
+            <div class="relative z-10 flex items-center justify-between">
+              <div class="space-y-3 max-w-[62%]">
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 text-emerald-300 text-[11px] font-black shadow-sm">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                  半徑 1.5 km 雷達
+                </span>
+                <h2 class="text-xl font-black leading-snug tracking-tight text-slate-950">
+                  附近即時訂單<br>60 秒媒合派單
+                </h2>
+                <button id="btn-hero-radar-refresh" type="button" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold shadow-md active:scale-95 transition">
+                  <span>重新掃描附近</span>
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Cute Cutout Illustration Badge (Sticker style) -->
+              <div class="relative shrink-0 pr-1">
+                <div class="w-24 h-24 rounded-2xl bg-white/70 backdrop-blur-sm border-2 border-slate-900/10 p-2 shadow-sm flex flex-col items-center justify-center transform rotate-2">
+                  <div class="text-4xl filter drop-shadow">🚖</div>
+                  <span class="text-[10px] font-black tracking-widest text-slate-950 uppercase mt-1">ONLINE</span>
+                </div>
               </div>
             </div>
+          </div>
+
+          <!-- C. 有訂單時呈現的即時訂單清單容器 -->
+          <div id="orders-list-container" class="hidden space-y-2.5">
+            <!-- 訂單卡片渲染此處 -->
           </div>
         </div>
 
@@ -310,33 +341,6 @@
           </div>
         </div>
 
-        <!-- Order List Section ("Recent walker" -> "附近叫車訂單") -->
-        <div class="space-y-3 pt-1">
-          <div class="flex items-center justify-between px-1">
-            <h4 class="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-              <span>附近叫車訂單</span>
-              <span id="orders-count-badge" class="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-xs font-bold">0</span>
-            </h4>
-            <button id="btn-toggle-map-shortcut" type="button" class="text-xs font-bold text-slate-500 hover:text-emerald-600 transition flex items-center gap-0.5">
-              <span>切換地圖檢視</span>
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-              </svg>
-            </button>
-          </div>
-
-          <!-- Orders Dynamic Container -->
-          <div id="orders-list-container" class="space-y-2.5">
-            <!-- Loading Skeleton -->
-            <div id="orders-loading-skeleton" class="p-8 text-center bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-3">
-              <svg class="animate-spin w-7 h-7 mx-auto text-emerald-600" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-              </svg>
-              <p class="text-xs font-bold text-slate-600">正在定位並掃描 1.5km 內訂單...</p>
-            </div>
-          </div>
-        </div>
 
       </section>
 

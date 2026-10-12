@@ -856,70 +856,75 @@
   }
 
   // -------------------------------------------------------------
-  // 7. 渲染訂單清單 (參照圖片截圖 Recent Walker 列表)
+  // 7. 渲染訂單清單 (結合成一區：無訂單時呈現 60 秒媒合派單圖示，有訂單時呈現訂單資訊)
   // -------------------------------------------------------------
   function renderOrdersList(orders) {
     const container = document.getElementById('orders-list-container');
-    if (!container) return;
+    const heroEmptyBanner = document.getElementById('hero-radar-empty-banner');
+    const ordersHeader = document.getElementById('instant-orders-header');
+    const countBadge = document.getElementById('orders-count-badge');
 
     if (!orders || orders.length === 0) {
-      container.innerHTML = `
-        <div class="py-12 px-6 text-center bg-white rounded-3xl border border-slate-200/70 shadow-sm space-y-3">
-          <div class="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 mx-auto flex items-center justify-center text-2xl radar-pulse-anim">
-            📡
-          </div>
-          <h5 class="text-sm font-extrabold text-slate-800">目前 1.5 km 內暫無即時叫車</h5>
-          <p class="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
-            雷達正在持續監聽中，當乘客送出叫車需求時，畫面將立即發出通知！
-          </p>
-        </div>
-      `;
+      if (heroEmptyBanner) heroEmptyBanner.classList.remove('hidden');
+      if (ordersHeader) ordersHeader.classList.add('hidden');
+      if (container) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+      }
+      if (countBadge) countBadge.textContent = '0';
       return;
     }
 
-    container.innerHTML = orders.map((ord) => {
-      const distText = ord.distance_km ? `${ord.distance_km.toFixed(1)} km` : '1.2 km';
-      const timeStr = ord.created_at ? formatTime(ord.created_at) : '剛剛';
-      const scheduledBadge = ord.note && ord.note.includes('預約') ? '📅 預約' : '⚡ 即時';
+    if (heroEmptyBanner) heroEmptyBanner.classList.add('hidden');
+    if (ordersHeader) ordersHeader.classList.remove('hidden');
+    if (countBadge) countBadge.textContent = orders.length;
 
-      return `
-        <div class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition flex items-center justify-between gap-3">
-          <div class="flex items-center gap-3 min-w-0">
-            <div class="w-11 h-11 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-base flex items-center justify-center shrink-0 border border-emerald-200/60">
-              🚖
+    if (container) {
+      container.classList.remove('hidden');
+      container.innerHTML = orders.map((ord) => {
+        const distText = ord.distance_km ? `${ord.distance_km.toFixed(1)} km` : '1.2 km';
+        const timeStr = ord.created_at ? formatTime(ord.created_at) : '剛剛';
+        const scheduledBadge = ord.note && ord.note.includes('預約') ? '📅 預約' : '⚡ 即時';
+
+        return `
+          <div class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-11 h-11 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-base flex items-center justify-center shrink-0 border border-emerald-200/60">
+                🚖
+              </div>
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-bold text-slate-900 truncate">乘客叫車</span>
+                  <span class="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200/50">${scheduledBadge}</span>
+                  <span class="text-[11px] text-slate-400">${timeStr}</span>
+                </div>
+                <div class="mt-1 space-y-0.5">
+                  <p class="text-xs font-bold text-slate-800 truncate flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+                    ${escapeHtml(ord.pickup_address || '上車地點')}
+                  </p>
+                  <p class="text-[11px] text-slate-500 truncate flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span>
+                    ${escapeHtml(ord.dropoff_address || '下車定點')}
+                  </p>
+                </div>
+                <div class="flex items-center gap-2 mt-1.5 text-[11px] font-semibold text-emerald-600">
+                  <span>📍 距您約 ${distText}</span>
+                  <span>· 60秒媒合</span>
+                </div>
+              </div>
             </div>
-            <div class="min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="text-xs font-bold text-slate-900 truncate">乘客叫車</span>
-                <span class="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200/50">${scheduledBadge}</span>
-                <span class="text-[11px] text-slate-400">${timeStr}</span>
-              </div>
-              <div class="mt-1 space-y-0.5">
-                <p class="text-xs font-bold text-slate-800 truncate flex items-center gap-1">
-                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-                  ${escapeHtml(ord.pickup_address || '上車地點')}
-                </p>
-                <p class="text-[11px] text-slate-500 truncate flex items-center gap-1">
-                  <span class="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span>
-                  ${escapeHtml(ord.dropoff_address || '下車定點')}
-                </p>
-              </div>
-              <div class="flex items-center gap-2 mt-1.5 text-[11px] font-semibold text-emerald-600">
-                <span>📍 距您約 ${distText}</span>
-                <span>· 60秒媒合</span>
-              </div>
+
+            <div class="shrink-0">
+              <a href="/driver/bid?orderId=${ord.id}&source=web"
+                 class="inline-block px-4 py-2 rounded-full border border-slate-300 hover:border-slate-900 bg-white hover:bg-slate-900 text-slate-900 hover:text-white font-extrabold text-xs shadow-sm transition active:scale-95">
+                搶單
+              </a>
             </div>
           </div>
-
-          <div class="shrink-0">
-            <a href="/driver/bid?orderId=${ord.id}&source=web"
-               class="inline-block px-4 py-2 rounded-full border border-slate-300 hover:border-slate-900 bg-white hover:bg-slate-900 text-slate-900 hover:text-white font-extrabold text-xs shadow-sm transition active:scale-95">
-              搶單
-            </a>
-          </div>
-        </div>
-      `;
-    }).join('');
+        `;
+      }).join('');
+    }
   }
 
   // -------------------------------------------------------------
@@ -1406,10 +1411,13 @@
     document.getElementById('btn-switch-to-tracking')?.addEventListener('click', () => switchView('tracking'));
     document.getElementById('active-trip-reminder')?.addEventListener('click', () => switchView('tracking'));
 
-    // Hero 掃描按鈕
+    // Hero 掃描按鈕 (大圖示與頂部標題按鈕)
     document.getElementById('btn-hero-radar-refresh')?.addEventListener('click', () => {
       fetchNearbyOrders();
       alert('已重新掃描半徑 1.5km 內叫車訂單！');
+    });
+    document.getElementById('btn-hero-radar-refresh-mini')?.addEventListener('click', () => {
+      fetchNearbyOrders();
     });
 
     // 地圖重置中心點按鈕
