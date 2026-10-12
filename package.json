@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/app.js",
     "dev": "tsx watch src/app.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "setup:richmenu": "tsx scripts/setup-driver-rich-menu.ts"
   },
   "keywords": [],
   "author": "",

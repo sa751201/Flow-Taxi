@@ -14,13 +14,20 @@ import { getDriverById } from '../db/queries/drivers.js';
  *    完全不需要手動把成千上萬個司機的 User ID 寫進環境變數！
  */
 
+export const DEFAULT_DRIVER_RICH_MENU_ID = 'richmenu-b4972e4b6feb7d86e2123b4a2a4a4375';
+
+export function getEffectiveDriverRichMenuId(): string {
+  return env.DRIVER_RICH_MENU_ID || DEFAULT_DRIVER_RICH_MENU_ID;
+}
+
 /**
  * 依據資料庫身份動態判斷並同步使用者的 Rich Menu：
  * - 資料庫中存在且 registered = true ➔ 自動指派司機 Rich Menu
  * - 非司機（一般乘客）➔ 自動確保使用預設乘客 Rich Menu（若曾綁定過司機選單則自動解除）
  */
 export async function syncUserRichMenuByRole(userId: string): Promise<'driver' | 'passenger' | 'skipped'> {
-  if (!env.DRIVER_RICH_MENU_ID) {
+  const targetMenuId = getEffectiveDriverRichMenuId();
+  if (!targetMenuId) {
     return 'skipped';
   }
 
@@ -31,7 +38,7 @@ export async function syncUserRichMenuByRole(userId: string): Promise<'driver' |
       return 'driver';
     } else {
       const currentMenu = await getUserRichMenuId(userId);
-      if (currentMenu === env.DRIVER_RICH_MENU_ID) {
+      if (currentMenu === targetMenuId) {
         await unlinkDriverRichMenu(userId);
       }
       return 'passenger';
@@ -46,7 +53,7 @@ export async function syncUserRichMenuByRole(userId: string): Promise<'driver' |
  * 為指定司機綁定專屬的司機 Rich Menu
  */
 export async function linkDriverRichMenu(userId: string, richMenuId?: string): Promise<boolean> {
-  const targetMenuId = richMenuId || env.DRIVER_RICH_MENU_ID;
+  const targetMenuId = richMenuId || getEffectiveDriverRichMenuId();
   if (!targetMenuId) {
     console.log(`[RichMenu] 未設定 DRIVER_RICH_MENU_ID，略過司機 ${userId} 的 Rich Menu 綁定。`);
     return false;
@@ -92,71 +99,31 @@ export async function getUserRichMenuId(userId: string): Promise<string | null> 
 }
 
 /**
- * 司機專用 Rich Menu 結構範本 (6格設計，尺寸 2500x1686 或 2500x843)
- * 可直接複製至 LINE Official Account Manager 或透過 API 建立
+ * 司機專用 Rich Menu 結構範本 (緊湊橫幅設計，尺寸 2500x843)
+ * 左側 2/3 (0 ~ 1667): 「開啟接單程式」按鈕，連結至 Driver App
+ * 右側 1/3 (1667 ~ 2500): 暫時不設定 action
  */
-export function getDriverRichMenuTemplate() {
+export function getDriverRichMenuTemplate(appUrl: string = 'https://flow-taxi-production.up.railway.app/driver/app') {
   return {
     size: {
       width: 2500,
-      height: 1686,
+      height: 843,
     },
     selected: true,
-    name: '司機專屬工作台選單',
-    chatBarText: '🚕 司機工作台',
+    name: '司機接單工作台 (開啟接單程式)',
+    chatBarText: '🚕 司機接單工作台',
     areas: [
-      // 左上：目前行程 / 導航
       {
-        bounds: { x: 0, y: 0, width: 833, height: 843 },
-        action: {
-          type: 'message',
-          label: '目前行程',
-          text: '目前行程',
+        bounds: {
+          x: 0,
+          y: 0,
+          width: 1667,
+          height: 843,
         },
-      },
-      // 中上：回報到達上車點
-      {
-        bounds: { x: 833, y: 0, width: 834, height: 843 },
         action: {
-          type: 'message',
-          label: '到點回報',
-          text: '到',
-        },
-      },
-      // 右上：回報客上
-      {
-        bounds: { x: 1667, y: 0, width: 833, height: 843 },
-        action: {
-          type: 'message',
-          label: '客上回報',
-          text: '客上',
-        },
-      },
-      // 左下：下車結單
-      {
-        bounds: { x: 0, y: 843, width: 833, height: 843 },
-        action: {
-          type: 'message',
-          label: '下車結單',
-          text: '乘客下車',
-        },
-      },
-      // 中下：司機車籍資料維護
-      {
-        bounds: { x: 833, y: 843, width: 834, height: 843 },
-        action: {
-          type: 'message',
-          label: '車籍資料',
-          text: '修改資料',
-        },
-      },
-      // 右下：聯繫幹部 / 客服
-      {
-        bounds: { x: 1667, y: 843, width: 833, height: 843 },
-        action: {
-          type: 'message',
-          label: '聯繫幹部',
-          text: '找客服',
+          type: 'uri' as const,
+          label: '開啟接單程式',
+          uri: appUrl,
         },
       },
     ],

@@ -127,6 +127,11 @@ export const dispatchEngine = new DispatchEngine({
           // 3. 在接單司機與 OA 的 1:1 chat room 呈現確認接單卡片（含 Google Maps 導航與回報到點按鈕）
           if (result.winnerDriverId) {
             try {
+              // 接單後切換 1:1 OA 選單為「開啟接單程式」專屬圖文選單
+              linkDriverRichMenu(result.winnerDriverId).catch((rmErr: any) => {
+                console.warn(`[Dispatch] 為中單司機 ${result.winnerDriverId} 綁定專屬選單失敗:`, rmErr.message);
+              });
+
               const driverCardFlex = createDriverOrderCardFlexMessage({
                 driverName,
                 orderId: order.id,
@@ -552,6 +557,11 @@ app.post('/api/dispatch/bid', async (req, res) => {
     });
 
     console.log(`[Dispatch API] 司機 ${driverName} (${driverId}) 出價成功！預估車程: ${etaMinutes} 分鐘`);
+
+    // 確保接單司機 1:1 OA 具備司機專屬圖文選單
+    linkDriverRichMenu(driverId).catch((rmErr: any) => {
+      console.warn('[Dispatch Bid] 綁定司機 Rich Menu 失敗:', rmErr.message);
+    });
 
     const lineClient = getLineClient();
 

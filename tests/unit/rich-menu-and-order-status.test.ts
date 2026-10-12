@@ -10,23 +10,22 @@ import {
 
 describe('Rich Menu & Order Status Lifecycle Tests', () => {
   describe('getDriverRichMenuTemplate', () => {
-    it('司機 Rich Menu 範本應符合 LINE 規格並包含到點、客上、下車結單動作', () => {
+    it('司機 Rich Menu 範本應符合 LINE 規格並包含開啟接單程式 URI 動作', () => {
       const template = getDriverRichMenuTemplate();
       expect(template.size.width).toBe(2500);
-      expect(template.size.height).toBe(1686);
-      expect(template.areas.length).toBe(6);
+      expect(template.size.height).toBe(843);
+      expect(template.areas.length).toBe(1);
 
-      const actionTexts = template.areas.map((a: any) => a.action.text);
-      expect(actionTexts).toContain('目前行程');
-      expect(actionTexts).toContain('到');
-      expect(actionTexts).toContain('客上');
-      expect(actionTexts).toContain('乘客下車');
-      expect(actionTexts).toContain('修改資料');
+      const area = template.areas[0];
+      expect(area.action.type).toBe('uri');
+      expect((area.action as any).uri).toBe('https://flow-taxi-production.up.railway.app/driver/app');
+      expect(area.bounds.width).toBe(1667);
+      expect(area.bounds.height).toBe(843);
     });
 
-    it('未設定 DRIVER_RICH_MENU_ID 時，syncUserRichMenuByRole 應安全回傳 skipped', async () => {
+    it('syncUserRichMenuByRole 應安全回傳對應身分狀態', async () => {
       const { syncUserRichMenuByRole } = await import('../../src/services/rich-menu.js');
-      const res = await syncUserRichMenuByRole('test-user-without-env');
+      const res = await syncUserRichMenuByRole('test-user-random');
       expect(['skipped', 'passenger', 'driver']).toContain(res);
     });
   });
