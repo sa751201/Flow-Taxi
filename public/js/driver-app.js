@@ -162,6 +162,9 @@
     const drawerTitle = document.getElementById('drawer-driver-title');
     const drawerAvatar = document.getElementById('drawer-avatar-txt');
     const statusOnline = document.getElementById('stat-online-status');
+    const statusBadgeWrap = document.getElementById('driver-status-badge-wrap');
+    const statusDot = document.getElementById('driver-status-ping-dot');
+    const avatarDot = document.getElementById('driver-avatar-online-dot');
 
     const name = currentDriver.displayName || '未登入';
     const plate = currentDriver.plateNumber || '點此驗證車牌';
@@ -173,7 +176,30 @@
     if (headerAvatar) headerAvatar.textContent = initial;
     if (drawerTitle) drawerTitle.textContent = `${name} (司機中心)`;
     if (drawerAvatar) drawerAvatar.textContent = initial;
-    if (statusOnline) statusOnline.textContent = currentDriver.isVerified ? '營業中' : '待命中';
+
+    if (currentDriver.isVerified) {
+      if (statusOnline) statusOnline.textContent = '營業中';
+      if (statusBadgeWrap) {
+        statusBadgeWrap.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-xs font-black shadow-sm';
+      }
+      if (statusDot) {
+        statusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-ping';
+      }
+      if (avatarDot) {
+        avatarDot.className = 'absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-[#0f172a]';
+      }
+    } else {
+      if (statusOnline) statusOnline.textContent = '待命中';
+      if (statusBadgeWrap) {
+        statusBadgeWrap.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-400 text-xs font-black shadow-sm';
+      }
+      if (statusDot) {
+        statusDot.className = 'w-2 h-2 rounded-full bg-amber-400';
+      }
+      if (avatarDot) {
+        avatarDot.className = 'absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-amber-500 ring-2 ring-[#0f172a]';
+      }
+    }
 
     // 表單同步
     const inputName = document.getElementById('input-display-name');
@@ -839,6 +865,8 @@
     if (backdrop && drawer) {
       backdrop.classList.remove('hidden');
       drawer.classList.remove('translate-x-full');
+      // 開啟選單時預先更新歷史統計
+      loadHistoryOrders();
     }
   }
 
@@ -853,6 +881,9 @@
 
   async function loadHistoryOrders() {
     const listEl = document.getElementById('history-orders-list');
+    const dashOrdersEl = document.getElementById('dash-total-orders');
+    const badgeOrdersEl = document.getElementById('history-total-badge');
+
     if (!listEl) return;
     listEl.innerHTML = '<p class="text-slate-400 text-center py-6">載入歷史訂單中...</p>';
 
@@ -861,6 +892,10 @@
       if (!res.ok) throw new Error('查詢失敗');
       const data = await res.json();
       const orders = data.orders || [];
+
+      // 更新 Dashboard 與歷史清單數量徽章
+      if (dashOrdersEl) dashOrdersEl.textContent = `${orders.length} 單`;
+      if (badgeOrdersEl) badgeOrdersEl.textContent = `${orders.length} 筆`;
 
       if (orders.length === 0) {
         listEl.innerHTML = '<p class="text-slate-400 text-center py-8">尚無過往完成行程記錄</p>';

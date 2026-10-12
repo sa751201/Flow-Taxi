@@ -228,44 +228,28 @@
           </div>
         </div>
 
-        <!-- Middle Black Capsule Card (Matches "Michel" Card with 4 Metric Pills) -->
+        <!-- Middle Black Capsule Card (保留登入/營業中狀態，名字不破版) -->
         <div class="rounded-[26px] bg-[#0f172a] text-white p-4 shadow-xl border border-slate-800 flex items-center justify-between gap-3">
           <!-- Left: Driver Circular Avatar & Name -->
-          <div class="flex items-center gap-3 shrink-0">
-            <div class="relative">
-              <div class="w-14 h-14 rounded-full bg-slate-800 ring-2 ring-amber-400 p-0.5 shadow-md flex items-center justify-center text-xl overflow-hidden font-bold">
+          <div class="flex items-center gap-3 min-w-0 flex-1">
+            <div class="relative shrink-0">
+              <div class="w-13 h-13 rounded-full bg-slate-800 ring-2 ring-amber-400 p-0.5 shadow-md flex items-center justify-center text-xl overflow-hidden font-bold">
                 <span id="driver-card-avatar-text">🚕</span>
               </div>
-              <span class="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-[#0f172a]"></span>
+              <span id="driver-avatar-online-dot" class="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-[#0f172a]"></span>
             </div>
-            <div>
+            <div class="min-w-0 flex-1">
               <p class="text-[11px] text-slate-400 font-semibold tracking-wider">司機夥伴</p>
-              <h3 id="driver-card-name" class="text-base font-extrabold text-white tracking-tight">未登入</h3>
-              <p id="driver-card-plate" class="text-xs text-amber-400 font-bold mt-0.5">點此驗證車牌</p>
+              <h3 id="driver-card-name" class="text-base font-extrabold text-white tracking-tight truncate">未登入</h3>
+              <p id="driver-card-plate" class="text-xs text-amber-400 font-bold mt-0.5 truncate cursor-pointer hover:underline" title="點此更換車牌">點此驗證車牌</p>
             </div>
           </div>
 
-          <!-- Right: 2x2 Metric Badges (Matches paws, km, clock, kcl in image) -->
-          <div class="grid grid-cols-2 gap-2 shrink-0">
-            <!-- Badge 1: 狀態 -->
-            <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[11px] font-bold">
-              <span>⚡</span>
-              <span id="stat-online-status">待命中</span>
-            </div>
-            <!-- Badge 2: 範圍 -->
-            <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold">
-              <span>📍</span>
-              <span>1.5 km</span>
-            </div>
-            <!-- Badge 3: 均達 -->
-            <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-400 text-[11px] font-bold">
-              <span>⏱️</span>
-              <span id="stat-eta-avg">5-8m</span>
-            </div>
-            <!-- Badge 4: 今日單 -->
-            <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[11px] font-bold">
-              <span>🔥</span>
-              <span id="stat-today-orders">0 單</span>
+          <!-- Right: 專屬單一狀態膠囊 (保留營業中/待命中狀態) -->
+          <div class="shrink-0">
+            <div id="driver-status-badge-wrap" class="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-xs font-black shadow-sm">
+              <span id="driver-status-ping-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              <span id="stat-online-status">營業中</span>
             </div>
           </div>
         </div>
@@ -577,10 +561,35 @@
         </form>
       </div>
 
-      <!-- Tab Content 2: History Orders -->
-      <div id="tab-content-history" class="hidden flex-1 p-4 overflow-y-auto space-y-3 custom-scrollbar">
-        <div id="history-orders-list" class="space-y-2.5 text-xs">
-          <p class="text-slate-400 text-center py-8">載入歷史紀錄中...</p>
+      <!-- Tab Content 2: History Orders (含 Dashboard 項目) -->
+      <div id="tab-content-history" class="hidden flex-1 p-4 overflow-y-auto space-y-3.5 custom-scrollbar">
+        <!-- 3 個 Dashboard 項目 (從首頁移至此處) -->
+        <div class="grid grid-cols-3 gap-2">
+          <div class="p-3 rounded-2xl bg-emerald-50 border border-emerald-200/80 text-center space-y-0.5 shadow-sm">
+            <span class="text-base">📍</span>
+            <p class="text-[10px] font-bold text-slate-500">雷達範圍</p>
+            <p class="text-xs font-black text-emerald-800">1.5 km</p>
+          </div>
+          <div class="p-3 rounded-2xl bg-sky-50 border border-sky-200/80 text-center space-y-0.5 shadow-sm">
+            <span class="text-base">⏱️</span>
+            <p class="text-[10px] font-bold text-slate-500">均達車程</p>
+            <p id="dash-eta-avg" class="text-xs font-black text-sky-800">5-8m</p>
+          </div>
+          <div class="p-3 rounded-2xl bg-rose-50 border border-rose-200/80 text-center space-y-0.5 shadow-sm">
+            <span class="text-base">🔥</span>
+            <p class="text-[10px] font-bold text-slate-500">歷史接單</p>
+            <p id="dash-total-orders" class="text-xs font-black text-rose-800">0 單</p>
+          </div>
+        </div>
+
+        <div class="pt-2 border-t border-slate-200">
+          <h5 class="font-extrabold text-xs text-slate-800 mb-2.5 flex items-center justify-between">
+            <span>近期完成行程紀錄</span>
+            <span id="history-total-badge" class="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold">0 筆</span>
+          </h5>
+          <div id="history-orders-list" class="space-y-2.5 text-xs">
+            <p class="text-slate-400 text-center py-8">載入歷史紀錄中...</p>
+          </div>
         </div>
       </div>
     </aside>
