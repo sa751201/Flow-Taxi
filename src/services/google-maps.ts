@@ -1,3 +1,4 @@
+import https from 'node:https';
 import { env } from '../config/env.js';
 
 export interface GeocodeResult {
@@ -212,4 +213,148 @@ function calculateHaversineDistance(lat1: number, lon1: number, lat2: number, lo
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return Math.round(R * c);
+}
+
+export interface DrivingRouteResult {
+  coordinates: Array<[number, number]>; // [lat, lng]
+  distanceMeters: number;
+  durationSeconds: number;
+  provider: 'google' | 'osrm' | 'straight';
+}
+
+function decodeGooglePolyline(encoded: string): Array<[number, number]> {
+  const poly: Array<[number, number]> = [];
+  let index = 0;
+  const len = encoded.length;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < len) {
+    let b: number;
+    let shift = 0;
+    let result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlat = (result & 1) ? ~(result >> 1) : (result >> 1);
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlng = (result & 1) ? ~(result >> 1) : (result >> 1);
+    lng += dlng;
+
+    poly.push([lat / 1e5, lng / 1e5]);
+  }
+  return poly;
+}
+
+function fetchJsonHttpsIpv4<T = any>(urlStr: string, timeoutMs = 6000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      urlStr,
+      {
+        family: 4,
+        headers: { 'User-Agent': 'FlowTaxiApp/1.0' },
+        timeout: timeoutMs,
+      },
+      (res) => {
+        let raw = '';
+        res.on('data', (chunk) => {
+          raw += chunk;
+        });
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(raw));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      }
+    );
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timed out'));
+    });
+    req.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+/**
+ * 取得真實道路行車路徑 (經緯度折線點列)
+ * 優先級：Google Directions API ➔ OSRM 開源路網 ➔ 直線保底
+ */
+export async function getDrivingRoute(
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number
+): Promise<DrivingRouteResult> {
+  const apiKey = env.GOOGLE_MAPS_API_KEY;
+
+  // 1. 若設定有 Google Maps API Key，優先使用 Google Directions API
+  if (apiKey) {
+    try {
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${originLat},${originLng}&destination=${destLat},${destLng}&mode=driving&key=${apiKey}&language=zh-TW`;
+      const res = await fetch(url);
+      const data: any = await res.json();
+      if (data.status === 'OK' && data.routes && data.routes[0]) {
+        const route = data.routes[0];
+        const leg = route.legs?.[0];
+        const encoded = route.overview_polyline?.points;
+        if (encoded) {
+          const coordinates = decodeGooglePolyline(encoded);
+          return {
+            coordinates,
+            distanceMeters: leg?.distance?.value || 0,
+            durationSeconds: leg?.duration?.value || 0,
+            provider: 'google',
+          };
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Google Maps] Directions API 連線失敗，切換至 OSRM:', err.message);
+    }
+  }
+
+  // 2. 備援或無 API Key 時：使用 OSRM (Open Source Routing Machine) 公開路網引擎
+  try {
+    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${originLng},${originLat};${destLng},${destLat}?overview=full&geometries=geojson`;
+    const data: any = await fetchJsonHttpsIpv4(osrmUrl, 6000);
+    if (data && data.code === 'Ok' && data.routes && data.routes[0]) {
+      const route = data.routes[0];
+      const rawCoords = route.geometry?.coordinates || [];
+      // OSRM coordinates 是 [lng, lat]，轉換為 [lat, lng]
+      const coordinates: Array<[number, number]> = rawCoords.map((c: [number, number]) => [c[1], c[0]]);
+      return {
+        coordinates,
+        distanceMeters: Math.round(route.distance || 0),
+        durationSeconds: Math.round(route.duration || 0),
+        provider: 'osrm',
+      };
+    }
+  } catch (err: any) {
+    console.warn('[OSRM] 路線規劃服務連線失敗:', err.message);
+  }
+
+  // 3. 保底：兩點直線
+  const straightDist = calculateHaversineDistance(originLat, originLng, destLat, destLng);
+  return {
+    coordinates: [
+      [originLat, originLng],
+      [destLat, destLng],
+    ],
+    distanceMeters: straightDist,
+    durationSeconds: Math.round((straightDist * 1.35) / 7),
+    provider: 'straight',
+  };
 }

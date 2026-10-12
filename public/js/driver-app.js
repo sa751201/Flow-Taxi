@@ -567,6 +567,57 @@
     return null;
   }
 
+  // 取得真實道路行車路網 (優先呼叫後端 API ➔ 前端 OSRM 備援)
+  async function fetchDrivingRoute(originLat, originLng, destLat, destLng) {
+    try {
+      const res = await fetch(`/api/route?originLat=${originLat}&originLng=${originLng}&destLat=${destLat}&destLng=${destLng}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.coordinates) && data.coordinates.length > 1) {
+          return data;
+        }
+      }
+    } catch (e) {
+      console.warn('[Route API Error, fallback to OSRM]', e);
+    }
+
+    try {
+      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${originLng},${originLat};${destLng},${destLat}?overview=full&geometries=geojson`;
+      const osrmRes = await fetch(osrmUrl);
+      if (osrmRes.ok) {
+        const osrmData = await osrmRes.json();
+        if (osrmData.code === 'Ok' && osrmData.routes && osrmData.routes[0]) {
+          const route = osrmData.routes[0];
+          const coords = (route.geometry?.coordinates || []).map((c) => [c[1], c[0]]);
+          return {
+            success: true,
+            coordinates: coords,
+            distanceMeters: Math.round(route.distance || 0),
+            durationSeconds: Math.round(route.duration || 0),
+            provider: 'osrm',
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('[Direct OSRM Error]', err);
+    }
+
+    return null;
+  }
+
+  function calculateCoordDistanceMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371e3;
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+  }
+
+  let lastRouteFetchTime = 0;
+  let lastRouteDriverPos = null;
+
   function initTrackingMap(order) {
     const mapContainer = document.getElementById('tracking-map-canvas');
     if (!mapContainer || typeof L === 'undefined' || !order) return;
@@ -670,14 +721,15 @@
     `);
     trackingMarkers.push(tMarker);
 
-    // 3. 路線折線
+    // 3. 初始路線折線（先以兩點線起手，隨即由路網引擎替換為真實道路貼地線）
     trackingPolyline = L.polyline([
       [driverLat, driverLng],
       [targetLat, targetLng]
     ], {
       color: isPickedUp ? '#f59e0b' : '#10b981',
-      weight: 4,
+      weight: 5,
       dashArray: '6, 8',
+      opacity: 0.7,
     }).addTo(trackingMap);
 
     // 4. 自動適應全螢幕視野
@@ -687,6 +739,44 @@
         maxZoom: 16,
       });
     } catch {}
+
+    // 5. 立即計算真實道路行車路網 (Real Road Geometry)
+    lastRouteFetchTime = Date.now();
+    lastRouteDriverPos = { lat: driverLat, lng: driverLng };
+    fetchDrivingRoute(driverLat, driverLng, targetLat, targetLng).then((route) => {
+      if (!trackingMap || !route || !route.coordinates || route.coordinates.length < 2) return;
+
+      if (trackingPolyline) {
+        trackingPolyline.setLatLngs(route.coordinates);
+        trackingPolyline.setStyle({
+          color: isPickedUp ? '#f59e0b' : '#059669', // 真實道路：翡翠綠 / 琥珀黃實線
+          weight: 6,
+          dashArray: null, // 實線，貼合真實公路
+          opacity: 0.9,
+          lineJoin: 'round',
+        });
+        try {
+          trackingMap.fitBounds(trackingPolyline.getBounds(), {
+            padding: [50, 50],
+            maxZoom: 16,
+          });
+        } catch {}
+      }
+
+      // 更新介面上的即時里程與預估時間
+      if (route.distanceMeters) {
+        const distKm = (route.distanceMeters / 1000).toFixed(1);
+        const mins = Math.max(1, Math.round(route.durationSeconds / 60));
+        const etaEl = document.getElementById('trip-eta-text');
+        if (etaEl && !isPickedUp) {
+          etaEl.textContent = `預計 ${mins} 分鐘抵達 (${distKm} km)`;
+        }
+        const distEl = document.getElementById('trip-progress-dist-text');
+        if (distEl) {
+          distEl.textContent = `${distKm} km`;
+        }
+      }
+    });
 
     setTimeout(() => {
       if (trackingMap) trackingMap.invalidateSize(true);
@@ -701,7 +791,27 @@
     }
     if (trackingPolyline && trackingMarkers.length > 1) {
       const targetLatLng = trackingMarkers[1].getLatLng();
-      trackingPolyline.setLatLngs([[lat, lng], targetLatLng]);
+      const now = Date.now();
+      const distMoved = lastRouteDriverPos
+        ? calculateCoordDistanceMeters(lat, lng, lastRouteDriverPos.lat, lastRouteDriverPos.lng)
+        : 999;
+
+      // 移動超過 100 公尺或每隔 25 秒重新微調真實道路路徑
+      if (distMoved > 100 || (now - lastRouteFetchTime > 25000 && distMoved > 30)) {
+        lastRouteFetchTime = now;
+        lastRouteDriverPos = { lat, lng };
+        fetchDrivingRoute(lat, lng, targetLatLng.lat, targetLatLng.lng).then((route) => {
+          if (route && route.coordinates && trackingPolyline) {
+            trackingPolyline.setLatLngs(route.coordinates);
+          }
+        });
+      } else {
+        const latLngs = trackingPolyline.getLatLngs();
+        if (Array.isArray(latLngs) && latLngs.length > 1) {
+          latLngs[0] = L.latLng(lat, lng);
+          trackingPolyline.setLatLngs(latLngs);
+        }
+      }
     }
   }
 

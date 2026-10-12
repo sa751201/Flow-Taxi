@@ -14,7 +14,7 @@ import {
 import { getBidsByOrderId } from './db/queries/bids.js';
 import { upsertDriver, getDriverById as getDriverProfile, clearAllDrivers, findDriverByPhoneOrPlate } from './db/queries/drivers.js';
 import { getLineClient } from './services/line-client.js';
-import { geocodeAddress, calculateDrivingEta } from './services/google-maps.js';
+import { geocodeAddress, calculateDrivingEta, getDrivingRoute } from './services/google-maps.js';
 import {
   createDriverAssignedFlexMessage,
   createGroupOrderWonFlexMessage,
@@ -436,6 +436,25 @@ app.get('/api/geocode', async (req, res) => {
     }
     const result = await geocodeAddress(address);
     res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 行車路徑規劃 API (提供前端 Leaflet 地圖繪製真實道路行車線，優先 Google Directions ➔ OSRM ➔ 直線保底)
+app.get('/api/route', async (req, res) => {
+  try {
+    const originLat = Number(req.query.originLat);
+    const originLng = Number(req.query.originLng);
+    const destLat = Number(req.query.destLat);
+    const destLng = Number(req.query.destLng);
+
+    if (isNaN(originLat) || isNaN(originLng) || isNaN(destLat) || isNaN(destLng)) {
+      return res.status(400).json({ error: '請提供完整的起終點座標 (originLat, originLng, destLat, destLng)' });
+    }
+
+    const route = await getDrivingRoute(originLat, originLng, destLat, destLng);
+    res.json({ success: true, ...route });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
