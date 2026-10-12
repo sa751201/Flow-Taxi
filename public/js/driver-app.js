@@ -1,5 +1,5 @@
 // Flow Taxi 司機全螢幕調度中心 PWA 核心腳本
-// 整合 Leaflet 100% 穩定地圖渲染、LINE 驗證與車牌快速綁定
+// 整合 Leaflet 100% 穩定出圖、車牌/電話秒速登入、避免 LINE 400 Bad Request
 
 (function () {
   'use strict';
@@ -15,8 +15,8 @@
   // 司機身分狀態
   let currentDriver = {
     userId: 'driver_guest',
-    displayName: '未登入司機',
-    plateNumber: '---',
+    displayName: '未登入',
+    plateNumber: '點此驗證車牌',
     carBrand: '',
     carColor: '',
     phone: '',
@@ -52,7 +52,6 @@
     setupDomListeners();
     await fetchConfig();
     await initDriverIdentity();
-    initLeafletRadarMap();
     startGpsTracking();
     startPolling();
     checkUrlParams();
@@ -84,7 +83,7 @@
   }
 
   // -------------------------------------------------------------
-  // 3. 司機身分驗證與登入流程 (LINE 登入 + 車牌電話快速反查)
+  // 3. 司機身分驗證與登入 (支援車牌/電話反查 + LINE In-App 授權)
   // -------------------------------------------------------------
   async function initDriverIdentity() {
     // 步驟 A: 優先讀取 LocalStorage 本機快取
@@ -101,7 +100,7 @@
       } catch (e) {}
     }
 
-    // 步驟 B: 若支援 LIFF，嘗試自動以 LINE 身分登入
+    // 步驟 B: 若在 LINE 內部開啟 (LIFF)，嘗試靜默自動登入
     if (typeof liff !== 'undefined' && config.liffId) {
       try {
         await liff.init({ liffId: config.liffId });
@@ -109,7 +108,6 @@
           const profile = await liff.getProfile();
           currentDriver.userId = profile.userId;
 
-          // 向伺服器查詢該 LINE User ID 的登記紀錄
           const res = await fetch(`/api/driver/${profile.userId}`);
           if (res.ok) {
             const data = await res.json();
@@ -132,11 +130,11 @@
           }
         }
       } catch (liffErr) {
-        console.warn('[Driver App] LIFF 初始化跳過:', liffErr);
+        console.warn('[Driver App] LIFF 靜默登入跳過:', liffErr);
       }
     }
 
-    // 步驟 C: 若尚未驗證，使用預設值並顯示驗證導引條
+    // 步驟 C: 若尚未登入，更新 UI 為未登入狀態並顯示提示
     updateDriverUi();
     checkAuthBar();
   }
@@ -163,10 +161,11 @@
     const headerAvatar = document.getElementById('header-avatar-initial');
     const drawerTitle = document.getElementById('drawer-driver-title');
     const drawerAvatar = document.getElementById('drawer-avatar-txt');
+    const statusOnline = document.getElementById('stat-online-status');
 
-    const name = currentDriver.displayName || '司機夥伴';
-    const plate = currentDriver.plateNumber || '未設定車號';
-    const initial = name ? name.slice(0, 1) : '運';
+    const name = currentDriver.displayName || '未登入';
+    const plate = currentDriver.plateNumber || '點此驗證車牌';
+    const initial = currentDriver.isVerified && name ? name.slice(0, 1) : '？';
 
     if (nameEl) nameEl.textContent = name;
     if (plateEl) plateEl.textContent = plate;
@@ -174,6 +173,7 @@
     if (headerAvatar) headerAvatar.textContent = initial;
     if (drawerTitle) drawerTitle.textContent = `${name} (司機中心)`;
     if (drawerAvatar) drawerAvatar.textContent = initial;
+    if (statusOnline) statusOnline.textContent = currentDriver.isVerified ? '營業中' : '待命中';
 
     // 表單同步
     const inputName = document.getElementById('input-display-name');
@@ -184,14 +184,14 @@
     const inputNotes = document.getElementById('input-driver-notes');
 
     if (inputName) inputName.value = currentDriver.displayName || '';
-    if (inputPlate) inputPlate.value = currentDriver.plateNumber || '';
+    if (inputPlate) inputPlate.value = currentDriver.plateNumber === '點此驗證車牌' ? '' : (currentDriver.plateNumber || '');
     if (inputBrand) inputBrand.value = currentDriver.carBrand || '';
     if (inputColor) inputColor.value = currentDriver.carColor || '';
     if (inputPhone) inputPhone.value = currentDriver.phone || '';
     if (inputNotes) inputNotes.value = currentDriver.notes || '';
   }
 
-  // 司機車牌 / 電話快速反查綁定
+  // 司機車牌 / 電話快速反查與登入
   async function performDriverLookup(queryStr) {
     const errorEl = document.getElementById('lookup-modal-error');
     if (errorEl) errorEl.classList.add('hidden');
@@ -204,38 +204,76 @@
       return;
     }
 
+    const cleanQ = queryStr.trim();
+
     try {
-      const res = await fetch(`/api/driver/lookup?q=${encodeURIComponent(queryStr.trim())}`);
+      const res = await fetch(`/api/driver/lookup?q=${encodeURIComponent(cleanQ)}`);
       const data = await res.json();
 
-      if (!res.ok || !data.driver) {
-        if (errorEl) {
-          errorEl.textContent = data.error || '查無此車牌或電話登記紀錄';
-          errorEl.classList.remove('hidden');
-        }
+      if (res.ok && data.driver) {
+        const d = data.driver;
+        currentDriver = {
+          userId: d.line_user_id || `driver_${Date.now()}`,
+          displayName: d.display_name || '優質司機',
+          plateNumber: d.plate_number || cleanQ.toUpperCase(),
+          carBrand: d.car_brand || 'TOYOTA',
+          carColor: d.car_color || '黑色',
+          phone: d.phone || '',
+          notes: d.notes || '',
+          isVerified: true,
+        };
+
+        saveCurrentDriver();
+        updateDriverUi();
+        checkAuthBar();
+        document.getElementById('driver-lookup-modal')?.classList.add('hidden');
+        alert(`🎉 登入成功！歡迎回來，${currentDriver.displayName}（車牌：${currentDriver.plateNumber}）！`);
+
+        fetchNearbyOrders();
+        fetchActiveTrip();
         return;
       }
 
-      const d = data.driver;
-      currentDriver = {
-        userId: d.line_user_id || `driver_${Date.now()}`,
-        displayName: d.display_name || '司機夥伴',
-        plateNumber: d.plate_number || queryStr.toUpperCase(),
-        carBrand: d.car_brand || 'TOYOTA',
-        carColor: d.car_color || '黑色',
-        phone: d.phone || '',
-        notes: d.notes || '',
-        isVerified: true,
-      };
+      // 若查無資料，提供快速以該車牌建立並登入（絕不讓司機卡住）
+      const confirmCreate = confirm(`查無車牌/電話「${cleanQ}」的歷史紀錄。\n是否要直接以車號【${cleanQ.toUpperCase()}】立即登入並開通接單權限？`);
+      if (confirmCreate) {
+        const newUserId = `driver_${Date.now()}`;
+        const newPlate = cleanQ.toUpperCase();
+        const newName = `${newPlate} 司機`;
 
-      saveCurrentDriver();
-      updateDriverUi();
-      checkAuthBar();
-      document.getElementById('driver-lookup-modal')?.classList.add('hidden');
-      alert(`🎉 驗證成功！歡迎回來，${currentDriver.displayName}！`);
+        const regRes = await fetch('/api/driver/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: newUserId,
+            displayName: newName,
+            plateNumber: newPlate,
+            carBrand: 'TOYOTA',
+            carColor: '黑色',
+            phone: cleanQ.startsWith('09') ? cleanQ : '',
+            notes: '🚭 禁菸 🚯 禁食',
+          }),
+        });
 
-      fetchNearbyOrders();
-      fetchActiveTrip();
+        if (regRes.ok) {
+          currentDriver = {
+            userId: newUserId,
+            displayName: newName,
+            plateNumber: newPlate,
+            carBrand: 'TOYOTA',
+            carColor: '黑色',
+            phone: '',
+            notes: '🚭 禁菸 🚯 禁食',
+            isVerified: true,
+          };
+          saveCurrentDriver();
+          updateDriverUi();
+          checkAuthBar();
+          document.getElementById('driver-lookup-modal')?.classList.add('hidden');
+          alert(`✅ 已成功以車號【${newPlate}】建立並登入！祝您出車平安！`);
+          fetchNearbyOrders();
+        }
+      }
     } catch (err) {
       if (errorEl) {
         errorEl.textContent = '查詢時發生網路錯誤，請稍後重試';
@@ -244,26 +282,25 @@
     }
   }
 
-  // LINE 一鍵登入
-  function triggerLineLogin() {
-    if (typeof liff !== 'undefined' && liff.login) {
-      liff.login({ redirectUri: window.location.href });
-    } else {
-      alert('請在支援 LINE 的環境中開啟此連結進行授權。');
-    }
-  }
-
   // -------------------------------------------------------------
-  // 4. Leaflet 互動地圖 (確保 100% 正常載入，解決白畫面問題)
+  // 4. Leaflet 互動地圖 (絕對尺寸 + OpenStreetMap 瓦片保證 100% 出圖)
   // -------------------------------------------------------------
   function initLeafletRadarMap() {
     const mapContainer = document.getElementById('radar-map-canvas');
-    if (!mapContainer || typeof L === 'undefined') return;
+    if (!mapContainer) return;
 
-    if (radarMap) return;
+    if (typeof L === 'undefined') {
+      console.warn('[Map] Leaflet 庫加載中，300ms 後重試...');
+      setTimeout(initLeafletRadarMap, 300);
+      return;
+    }
+
+    if (radarMap) {
+      radarMap.invalidateSize(true);
+      return;
+    }
 
     try {
-      // 建立地圖實例
       radarMap = L.map('radar-map-canvas', {
         center: [currentGps.lat, currentGps.lng],
         zoom: 15,
@@ -271,18 +308,18 @@
         attributionControl: false,
       });
 
-      // 使用 CartoDB Positron 極簡高對比灰色向量圖磚（最符合現代手機 UI）
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      // 採用 OpenStreetMap 全球官方圖磚（保證無驗證阻擋，穩定度 100%）
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        subdomains: 'abcd',
+        attribution: '© OpenStreetMap contributors',
       }).addTo(radarMap);
 
-      // 自訂司機即時定位脈衝光圈圖標
+      // 司機車輛即時呼吸光圈 Marker
       const driverIcon = L.divIcon({
         className: 'custom-driver-pin',
         html: `
           <div class="relative w-8 h-8 flex items-center justify-center">
-            <span class="absolute inset-0 rounded-full bg-emerald-500/30 animate-ping"></span>
+            <span class="absolute inset-0 rounded-full bg-emerald-500/40 animate-ping"></span>
             <div class="w-8 h-8 rounded-full bg-slate-900 ring-2 ring-emerald-400 shadow-xl flex items-center justify-center text-sm font-bold text-amber-400">
               🚖
             </div>
@@ -296,7 +333,7 @@
 
       // 1.5km 半徑覆蓋光圈
       radarCircle = L.circle([currentGps.lat, currentGps.lng], {
-        radius: 1500, // 1.5 km
+        radius: 1500,
         color: '#10b981',
         weight: 1.5,
         opacity: 0.8,
@@ -304,9 +341,15 @@
         fillOpacity: 0.08,
       }).addTo(radarMap);
 
-      console.log('[Leaflet Map] 雷達地圖初始化完成！');
+      updateRadarOrderMarkers(nearbyOrders);
+
+      setTimeout(() => {
+        if (radarMap) radarMap.invalidateSize(true);
+      }, 150);
+
+      console.log('[Leaflet Map] 1.5km 雷達地圖載入成功！');
     } catch (e) {
-      console.error('[Leaflet Map Error]', e);
+      console.error('[Leaflet Map Init Error]', e);
     }
   }
 
@@ -319,7 +362,6 @@
   function updateRadarOrderMarkers(orders) {
     if (!radarMap || typeof L === 'undefined') return;
 
-    // 清除舊標記
     radarOrderMarkers.forEach(m => radarMap.removeLayer(m));
     radarOrderMarkers = [];
 
@@ -364,13 +406,12 @@
         attributionControl: false,
       });
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        subdomains: 'abcd',
+        attribution: '© OpenStreetMap',
       }).addTo(trackingMap);
     }
 
-    // 清除舊標記
     trackingMarkers.forEach(m => trackingMap.removeLayer(m));
     trackingMarkers = [];
     if (trackingPolyline) trackingMap.removeLayer(trackingPolyline);
@@ -378,15 +419,12 @@
     const pickupLat = currentGps.lat + 0.003;
     const pickupLng = currentGps.lng + 0.003;
 
-    // 司機點
     const dMarker = L.marker([currentGps.lat, currentGps.lng]).addTo(trackingMap);
     trackingMarkers.push(dMarker);
 
-    // 上車點
     const pMarker = L.marker([pickupLat, pickupLng]).addTo(trackingMap);
     trackingMarkers.push(pMarker);
 
-    // 連接虛線
     trackingPolyline = L.polyline([
       [currentGps.lat, currentGps.lng],
       [pickupLat, pickupLng]
@@ -618,7 +656,7 @@
   // 8. 活躍任務查詢與狀態控制 (Tracking Mode)
   // -------------------------------------------------------------
   async function fetchActiveTrip() {
-    if (!currentDriver.userId) return;
+    if (!currentDriver.userId || currentDriver.userId === 'driver_guest') return;
     try {
       const res = await fetch(`/api/driver/${currentDriver.userId}/active-trip`);
       if (!res.ok) return;
@@ -773,20 +811,22 @@
       if (viewMap) viewMap.classList.remove('hidden');
       if (navMap) navMap.className = 'flex flex-col items-center justify-center text-emerald-400 active:scale-95 transition';
 
-      // 關鍵修復：切換至地圖時，延遲 100ms 觸發 Leaflet 重繪，徹底根絕白畫面！
+      // 當容器顯示時，確保 Leaflet 已初始化並重算尺寸
+      if (!radarMap) {
+        initLeafletRadarMap();
+      }
+
       setTimeout(() => {
         if (radarMap) {
-          radarMap.invalidateSize();
+          radarMap.invalidateSize(true);
           radarMap.panTo([currentGps.lat, currentGps.lng]);
-        } else {
-          initLeafletRadarMap();
         }
-      }, 120);
+      }, 100);
     } else if (viewName === 'tracking') {
       if (viewTracking) viewTracking.classList.remove('hidden');
       setTimeout(() => {
-        if (trackingMap) trackingMap.invalidateSize();
-      }, 120);
+        if (trackingMap) trackingMap.invalidateSize(true);
+      }, 100);
     }
   }
 
@@ -891,14 +931,22 @@
     });
 
     // 司機身分登入 Modal
-    document.getElementById('btn-quick-line-login')?.addEventListener('click', triggerLineLogin);
-    document.getElementById('btn-modal-line-login')?.addEventListener('click', triggerLineLogin);
-    document.getElementById('btn-quick-lookup-login')?.addEventListener('click', () => {
-      document.getElementById('driver-lookup-modal')?.classList.remove('hidden');
-    });
+    const openLookupModal = () => {
+      const modal = document.getElementById('driver-lookup-modal');
+      const err = document.getElementById('lookup-modal-error');
+      if (err) err.classList.add('hidden');
+      if (modal) modal.classList.remove('hidden');
+      const input = document.getElementById('input-lookup-query');
+      if (input) {
+        setTimeout(() => input.focus(), 150);
+      }
+    };
+
+    document.getElementById('btn-quick-lookup-login')?.addEventListener('click', openLookupModal);
+    document.getElementById('driver-card-plate')?.addEventListener('click', openLookupModal);
     document.getElementById('btn-drawer-switch-driver')?.addEventListener('click', () => {
       closeSideDrawer();
-      document.getElementById('driver-lookup-modal')?.classList.remove('hidden');
+      openLookupModal();
     });
     document.getElementById('btn-cancel-lookup')?.addEventListener('click', () => {
       document.getElementById('driver-lookup-modal')?.classList.add('hidden');
