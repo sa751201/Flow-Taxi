@@ -871,8 +871,9 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
 
                 // 需求 2: 當下車地點沒填時，不用計算費用，該欄位空著
                 let fareResult: any = undefined;
+                let dropoffGeo: any = null;
                 if (dropoffAddr) {
-                  const dropoffGeo = await geocodeAddress(dropoffAddr);
+                  dropoffGeo = await geocodeAddress(dropoffAddr);
                   fareResult = calculateFare(
                     'city',
                     pickupGeo.lat, pickupGeo.lng,
@@ -891,6 +892,8 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
                   pickup_lat: pickupGeo.lat,
                   pickup_lng: pickupGeo.lng,
                   dropoff_address: dropoffAddr || undefined,
+                  dropoff_lat: dropoffGeo ? dropoffGeo.lat : undefined,
+                  dropoff_lng: dropoffGeo ? dropoffGeo.lng : undefined,
                   passenger_count: passengerCount || 1,
                   distance_km: fareResult ? fareResult.distanceKm : undefined,
                   fare: fareResult ? fareResult.estimatedFare : undefined,

@@ -371,7 +371,7 @@
             </svg>
           </button>
           <div class="px-4 py-2 rounded-full bg-slate-900/80 backdrop-blur-md text-white text-xs font-bold shadow-md">
-            行程進行中 (Tracking Trip)
+            <span id="tracking-header-title">行程進行中 (Tracking Trip)</span>
           </div>
           <div class="w-10"></div>
         </div>
@@ -418,29 +418,30 @@
           <div class="bg-white px-6 py-5 space-y-4 shadow-2xl overflow-y-auto max-h-[50vh] custom-scrollbar">
 
             <!-- Step 1: Start Location (Green Pin) -->
-            <div class="flex items-start gap-3">
-              <div class="w-7 h-7 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+            <div id="trip-step1-box" class="flex items-start gap-3">
+              <div id="trip-step1-icon" class="w-7 h-7 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
                 <svg class="w-4 h-4 fill-emerald-600" viewBox="0 0 24 24">
                   <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
                 </svg>
               </div>
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-bold text-slate-500">前往上車地點</p>
+                <p id="trip-step1-title" class="text-xs font-bold text-slate-500">前往上車地點</p>
                 <p id="trip-pickup-addr" class="text-sm font-extrabold text-slate-900 truncate">載入中...</p>
                 <p id="trip-eta-text" class="text-xs text-emerald-600 font-semibold mt-0.5">預計 5 分鐘抵達</p>
               </div>
             </div>
 
             <!-- Step 2: End Location (Yellow Flag) -->
-            <div class="flex items-start gap-3 pt-2 border-t border-slate-100">
-              <div class="w-7 h-7 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 mt-0.5">
+            <div id="trip-step2-box" class="flex items-start gap-3 pt-2 border-t border-slate-100">
+              <div id="trip-step2-icon" class="w-7 h-7 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 mt-0.5">
                 <svg class="w-4 h-4 fill-amber-600" viewBox="0 0 24 24">
                   <path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z"/>
                 </svg>
               </div>
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-bold text-slate-500">前往下車地點</p>
+                <p id="trip-step2-title" class="text-xs font-bold text-slate-500">前往下車地點</p>
                 <p id="trip-dropoff-addr" class="text-sm font-extrabold text-slate-900 truncate">載入中...</p>
+                <p id="trip-step2-subtext" class="hidden text-xs text-amber-600 font-semibold mt-0.5">目前導航目的地</p>
               </div>
             </div>
 
@@ -478,7 +479,7 @@
                 <svg class="w-4 h-4 text-emerald-600" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
                 </svg>
-                <span>開啟 Google Maps 語音導航</span>
+                <span id="btn-trip-ext-nav-text">開啟 Google Maps 語音導航</span>
               </a>
             </div>
 

@@ -554,13 +554,29 @@
     });
   }
 
+  async function fetchGeocode(address) {
+    if (!address) return null;
+    try {
+      const res = await fetch(`/api/geocode?address=${encodeURIComponent(address)}`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('[Geocode Error]', e);
+    }
+    return null;
+  }
+
   function initTrackingMap(order) {
     const mapContainer = document.getElementById('tracking-map-canvas');
-    if (!mapContainer || typeof L === 'undefined') return;
+    if (!mapContainer || typeof L === 'undefined' || !order) return;
+
+    const driverLat = Number(currentGps.lat) || 25.0478;
+    const driverLng = Number(currentGps.lng) || 121.5170;
 
     if (!trackingMap) {
       trackingMap = L.map('tracking-map-canvas', {
-        center: [currentGps.lat, currentGps.lng],
+        center: [driverLat, driverLng],
         zoom: 15,
         zoomControl: false,
         attributionControl: false,
@@ -572,27 +588,121 @@
 
     trackingMarkers.forEach(m => trackingMap.removeLayer(m));
     trackingMarkers = [];
-    if (trackingPolyline) trackingMap.removeLayer(trackingPolyline);
+    if (trackingPolyline) {
+      trackingMap.removeLayer(trackingPolyline);
+      trackingPolyline = null;
+    }
 
-    const pickupLat = currentGps.lat + 0.003;
-    const pickupLng = currentGps.lng + 0.003;
+    // 依據行程階段決定目的地 (客上前前往上車點，客上後前往下車點)
+    const isPickedUp = (tripStage === 'picked_up');
+    let targetLat = isPickedUp ? Number(order.dropoff_lat) : Number(order.pickup_lat);
+    let targetLng = isPickedUp ? Number(order.dropoff_lng) : Number(order.pickup_lng);
+    const targetAddress = isPickedUp ? (order.dropoff_address || '下車地點') : (order.pickup_address || '上車地點');
 
-    const dMarker = L.marker([currentGps.lat, currentGps.lng]).addTo(trackingMap);
+    const isValidCoord = (lat, lng) => typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng) && lat > 15 && lng > 100;
+
+    if (!isValidCoord(targetLat, targetLng) && targetAddress) {
+      console.log(`[Tracking Map] 訂單 ${order.id} 尚無座標，嘗試即時查詢地理座標: "${targetAddress}"`);
+      fetchGeocode(targetAddress).then((geo) => {
+        if (geo && isValidCoord(geo.lat, geo.lng)) {
+          if (isPickedUp) {
+            order.dropoff_lat = geo.lat;
+            order.dropoff_lng = geo.lng;
+          } else {
+            order.pickup_lat = geo.lat;
+            order.pickup_lng = geo.lng;
+          }
+          initTrackingMap(order);
+        }
+      });
+      // 暫時保底以司機座標微偏呈現避免出錯
+      targetLat = driverLat + 0.003;
+      targetLng = driverLng + 0.003;
+    }
+
+    // 1. 司機車輛 Marker (帶有呼吸光圈)
+    const driverIcon = L.divIcon({
+      className: 'tracking-driver-pin',
+      html: `
+        <div class="relative w-8 h-8 flex items-center justify-center">
+          <span class="absolute inset-0 rounded-full bg-emerald-500/40 animate-ping"></span>
+          <div class="w-8 h-8 rounded-full bg-slate-900 ring-2 ring-emerald-400 shadow-xl flex items-center justify-center text-sm font-bold text-amber-400">
+            🚖
+          </div>
+        </div>
+      `,
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
+    });
+    const dMarker = L.marker([driverLat, driverLng], { icon: driverIcon }).addTo(trackingMap);
+    dMarker.bindPopup('<div class="text-xs font-bold text-slate-800 p-1">🚖 您的車輛位置</div>');
     trackingMarkers.push(dMarker);
 
-    const pMarker = L.marker([pickupLat, pickupLng]).addTo(trackingMap);
-    trackingMarkers.push(pMarker);
+    // 2. 目標地點 Marker (客上前：上車地點 / 客上後：下車目的地)
+    const targetIcon = L.divIcon({
+      className: 'tracking-target-pin',
+      html: isPickedUp ? `
+        <div class="flex flex-col items-center">
+          <div class="px-2.5 py-1 rounded-full bg-slate-900 text-amber-400 text-[11px] font-black shadow-xl ring-2 ring-amber-400 flex items-center gap-1 whitespace-nowrap">
+            <span>🏁</span>
+            <span>下車地點</span>
+          </div>
+          <div class="w-2 h-2 bg-slate-900 rotate-45 -mt-1 ring-1 ring-amber-400"></div>
+        </div>
+      ` : `
+        <div class="flex flex-col items-center">
+          <div class="px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[11px] font-black shadow-xl ring-2 ring-emerald-300 flex items-center gap-1 whitespace-nowrap">
+            <span>🟢</span>
+            <span>上車地點</span>
+          </div>
+          <div class="w-2 h-2 bg-emerald-600 rotate-45 -mt-1 ring-1 ring-emerald-300"></div>
+        </div>
+      `,
+      iconSize: [80, 28],
+      iconAnchor: [40, 28],
+    });
+    const tMarker = L.marker([targetLat, targetLng], { icon: targetIcon }).addTo(trackingMap);
+    tMarker.bindPopup(`
+      <div class="text-xs space-y-1 p-1">
+        <p class="font-extrabold text-slate-900">${isPickedUp ? '🏁 目的地（下車地點）' : '🟢 上車地點'}</p>
+        <p class="text-[11px] text-slate-600">${escapeHtml(targetAddress)}</p>
+      </div>
+    `);
+    trackingMarkers.push(tMarker);
 
+    // 3. 路線折線
     trackingPolyline = L.polyline([
-      [currentGps.lat, currentGps.lng],
-      [pickupLat, pickupLng]
+      [driverLat, driverLng],
+      [targetLat, targetLng]
     ], {
-      color: '#10b981',
+      color: isPickedUp ? '#f59e0b' : '#10b981',
       weight: 4,
       dashArray: '6, 8',
     }).addTo(trackingMap);
 
-    trackingMap.fitBounds([[currentGps.lat, currentGps.lng], [pickupLat, pickupLng]], { padding: [40, 40] });
+    // 4. 自動適應全螢幕視野
+    try {
+      trackingMap.fitBounds([[driverLat, driverLng], [targetLat, targetLng]], {
+        padding: [50, 50],
+        maxZoom: 16,
+      });
+    } catch {}
+
+    setTimeout(() => {
+      if (trackingMap) trackingMap.invalidateSize(true);
+    }, 150);
+  }
+
+  function updateTrackingDriverGps(lat, lng) {
+    if (!trackingMap || trackingMarkers.length === 0) return;
+    const dMarker = trackingMarkers[0];
+    if (dMarker && dMarker.setLatLng) {
+      dMarker.setLatLng([lat, lng]);
+    }
+    if (trackingPolyline && trackingMarkers.length > 1) {
+      const targetLatLng = trackingMarkers[1].getLatLng();
+      trackingPolyline.setLatLngs([[lat, lng], targetLatLng]);
+    }
   }
 
   // -------------------------------------------------------------
@@ -612,6 +722,7 @@
           currentGps.lng = pos.coords.longitude;
           currentGps.hasRealGps = true;
           updateRadarDriverGps(currentGps.lat, currentGps.lng);
+          updateTrackingDriverGps(currentGps.lat, currentGps.lng);
         },
         null,
         { enableHighAccuracy: true, maximumAge: 10000 }
@@ -624,6 +735,7 @@
     currentGps.lng = pos.coords.longitude;
     currentGps.hasRealGps = true;
     updateRadarDriverGps(currentGps.lat, currentGps.lng);
+    updateTrackingDriverGps(currentGps.lat, currentGps.lng);
     if (radarMap) radarMap.panTo([currentGps.lat, currentGps.lng]);
     fetchNearbyOrders();
   }
@@ -837,7 +949,10 @@
         if (reminder) {
           reminder.classList.remove('hidden');
           if (reminderText) {
-            reminderText.textContent = `${activeTrip.pickup_address || '前往上車點'}`;
+            const isPickedUp = (tripStage === 'picked_up');
+            reminderText.textContent = isPickedUp
+              ? `前往下車點：${activeTrip.dropoff_address || '目的地'}`
+              : `前往上車點：${activeTrip.pickup_address || '上車地點'}`;
           }
         }
         renderActiveTripUi(activeTrip);
@@ -902,18 +1017,62 @@
   }
 
   function renderActiveTripUi(order) {
+    if (!order) return;
     const pickupEl = document.getElementById('trip-pickup-addr');
     const dropoffEl = document.getElementById('trip-dropoff-addr');
     const extNavBtn = document.getElementById('btn-trip-ext-nav');
+    const extNavText = document.getElementById('btn-trip-ext-nav-text');
     const passengerName = document.getElementById('trip-passenger-name');
+    const headerTitle = document.getElementById('tracking-header-title');
+
+    const step1Title = document.getElementById('trip-step1-title');
+    const step1Eta = document.getElementById('trip-eta-text');
+    const step2Title = document.getElementById('trip-step2-title');
+    const step2Subtext = document.getElementById('trip-step2-subtext');
 
     if (pickupEl) pickupEl.textContent = order.pickup_address || '---';
     if (dropoffEl) dropoffEl.textContent = order.dropoff_address || '---';
     if (passengerName) passengerName.textContent = `乘客 (訂單 #${order.id.slice(-4)})`;
 
-    const targetAddr = (tripStage === 'picked_up') ? order.dropoff_address : order.pickup_address;
+    const isPickedUp = (tripStage === 'picked_up');
+    const targetAddr = isPickedUp ? order.dropoff_address : order.pickup_address;
+
+    if (headerTitle) {
+      headerTitle.textContent = isPickedUp ? '載客中・前往下車地點' : '行程進行中 (Tracking Trip)';
+    }
+
+    if (step1Title) {
+      step1Title.textContent = isPickedUp ? '✅ 上車地點 (乘客已上車)' : '前往上車地點';
+    }
+    if (step1Eta) {
+      step1Eta.textContent = isPickedUp ? '已接客出發' : '預計 5 分鐘抵達';
+      if (isPickedUp) {
+        step1Eta.className = 'text-xs text-slate-400 font-semibold mt-0.5';
+      } else {
+        step1Eta.className = 'text-xs text-emerald-600 font-semibold mt-0.5';
+      }
+    }
+
+    if (step2Title) {
+      step2Title.textContent = isPickedUp ? '🏁 前往下車地點（導航進行中）' : '前往下車地點';
+      step2Title.className = isPickedUp ? 'text-xs font-black text-amber-600' : 'text-xs font-bold text-slate-500';
+    }
+    if (step2Subtext) {
+      if (isPickedUp) {
+        step2Subtext.classList.remove('hidden');
+        step2Subtext.textContent = '🚗 正在導航前往目的地';
+      } else {
+        step2Subtext.classList.add('hidden');
+      }
+    }
+
     if (extNavBtn) {
       extNavBtn.href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(targetAddr || '台北車站')}&travelmode=driving`;
+      if (extNavText) {
+        extNavText.textContent = isPickedUp
+          ? `開啟 Google Maps 語音導航（前往下車地點：${order.dropoff_address || '目的地'}）`
+          : `開啟 Google Maps 語音導航（前往上車地點：${order.pickup_address || '上車地點'}）`;
+      }
     }
 
     updateTripProgressAndAction(order);
@@ -1161,6 +1320,7 @@
     document.getElementById('btn-map-show-list')?.addEventListener('click', () => switchView('dashboard'));
     document.getElementById('btn-tracking-back')?.addEventListener('click', () => switchView('dashboard'));
     document.getElementById('btn-switch-to-tracking')?.addEventListener('click', () => switchView('tracking'));
+    document.getElementById('active-trip-reminder')?.addEventListener('click', () => switchView('tracking'));
 
     // Hero 掃描按鈕
     document.getElementById('btn-hero-radar-refresh')?.addEventListener('click', () => {

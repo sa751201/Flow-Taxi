@@ -311,8 +311,63 @@ app.get('/api/driver/:driverId/active-trip', async (req, res) => {
       return res.json({ hasActiveTrip: false, order: null });
     }
     const isArrived = activeOrder.status === 'accepted' && (Boolean(activeOrder.note?.includes('[DRIVER_ARRIVED]')) || Boolean((activeOrder as any).driver_arrived));
-    const effectiveOrder = isArrived ? { ...activeOrder, status: 'arrived', is_arrived: true } : activeOrder;
+    const effectiveOrder: any = isArrived ? { ...activeOrder, status: 'arrived', is_arrived: true } : { ...activeOrder };
+
+    // 確保上車地點有正確經緯度
+    let pLat = Number(effectiveOrder.pickup_lat);
+    let pLng = Number(effectiveOrder.pickup_lng);
+    if (!pLat || !pLng || isNaN(pLat) || isNaN(pLng)) {
+      if (effectiveOrder.pickup_address) {
+        try {
+          console.log(`[Active Trip API] 即時解析上車地址座標: "${effectiveOrder.pickup_address}"`);
+          const geo = await geocodeAddress(effectiveOrder.pickup_address);
+          pLat = geo.lat;
+          pLng = geo.lng;
+        } catch (e: any) {
+          console.warn('[Active Trip API] 解析上車地點失敗:', e.message);
+        }
+      }
+    }
+    if (pLat && pLng && !isNaN(pLat) && !isNaN(pLng)) {
+      effectiveOrder.pickup_lat = pLat;
+      effectiveOrder.pickup_lng = pLng;
+    }
+
+    // 確保下車地點有正確經緯度
+    let dLat = Number(effectiveOrder.dropoff_lat);
+    let dLng = Number(effectiveOrder.dropoff_lng);
+    if (!dLat || !dLng || isNaN(dLat) || isNaN(dLng)) {
+      if (effectiveOrder.dropoff_address) {
+        try {
+          console.log(`[Active Trip API] 即時解析下車地址座標: "${effectiveOrder.dropoff_address}"`);
+          const geo = await geocodeAddress(effectiveOrder.dropoff_address);
+          dLat = geo.lat;
+          dLng = geo.lng;
+        } catch (e: any) {
+          console.warn('[Active Trip API] 解析下車地點失敗:', e.message);
+        }
+      }
+    }
+    if (dLat && dLng && !isNaN(dLat) && !isNaN(dLng)) {
+      effectiveOrder.dropoff_lat = dLat;
+      effectiveOrder.dropoff_lng = dLng;
+    }
+
     res.json({ hasActiveTrip: true, order: effectiveOrder });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 地址地理編碼 API (供前端地圖與導航快速取得座標)
+app.get('/api/geocode', async (req, res) => {
+  try {
+    const address = req.query.address as string;
+    if (!address) {
+      return res.status(400).json({ error: '請提供 address 參數' });
+    }
+    const result = await geocodeAddress(address);
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
