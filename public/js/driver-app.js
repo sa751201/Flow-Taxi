@@ -76,10 +76,35 @@
           const oaBtn = document.getElementById('btn-trip-open-oa');
           if (oaBtn) oaBtn.href = config.oaUrl;
         }
+        if (config.googleMapsApiKey) {
+          loadGoogleMapsScript(config.googleMapsApiKey);
+        }
       }
     } catch (e) {
       console.warn('[Driver App] 載入 /api/config 失敗:', e);
     }
+  }
+
+  function loadGoogleMapsScript(apiKey) {
+    if (!apiKey || window.google?.maps || document.getElementById('google-maps-sdk')) return;
+    const script = document.createElement('script');
+    script.id = 'google-maps-sdk';
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}`;
+    script.async = true;
+    script.onload = () => {
+      console.log('[Google Maps SDK] 動態載入完成');
+      if (radarMap && typeof L !== 'undefined' && typeof L.gridLayer?.googleMutant === 'function') {
+        try {
+          const mutantLayer = L.gridLayer.googleMutant({
+            type: 'roadmap',
+            styles: CUSTOM_MAP_STYLES,
+            maxZoom: 20,
+          });
+          mutantLayer.addTo(radarMap);
+        } catch (e) {}
+      }
+    };
+    document.head.appendChild(script);
   }
 
   // -------------------------------------------------------------
@@ -345,12 +370,88 @@
   }
 
   // -------------------------------------------------------------
-  // 4. Leaflet 互動地圖 (絕對尺寸 + OpenStreetMap 瓦片保證 100% 出圖)
+  // 4. 地圖樣式設定 (使用者自訂 Google Maps JavaScript Style Array)
   // -------------------------------------------------------------
-  function initLeafletRadarMap() {
-    const mapContainer = document.getElementById('radar-map-canvas');
-    if (!mapContainer) return;
+  const CUSTOM_MAP_STYLES = [
+    {
+      "featureType": "all",
+      "elementType": "labels.text",
+      "stylers": [
+        {
+          "color": "#878787"
+        }
+      ]
+    },
+    {
+      "featureType": "all",
+      "elementType": "labels.text.stroke",
+      "stylers": [
+        {
+          "visibility": "off"
+        }
+      ]
+    },
+    {
+      "featureType": "landscape",
+      "elementType": "all",
+      "stylers": [
+        {
+          "color": "#f9f5ed"
+        }
+      ]
+    },
+    {
+      "featureType": "road.highway",
+      "elementType": "all",
+      "stylers": [
+        {
+          "color": "#f5f5f5"
+        }
+      ]
+    },
+    {
+      "featureType": "road.highway",
+      "elementType": "geometry.stroke",
+      "stylers": [
+        {
+          "color": "#c9c9c9"
+        }
+      ]
+    },
+    {
+      "featureType": "water",
+      "elementType": "all",
+      "stylers": [
+        {
+          "color": "#aee0f4"
+        }
+      ]
+    }
+  ];
 
+  function createCustomStyledTileLayer() {
+    // 優先使用 Google Mutant (帶入使用者指定之 Google Maps JavaScript Style Array)
+    if (typeof L !== 'undefined' && typeof L.gridLayer?.googleMutant === 'function' && window.google?.maps) {
+      try {
+        return L.gridLayer.googleMutant({
+          type: 'roadmap',
+          styles: CUSTOM_MAP_STYLES,
+          maxZoom: 20,
+        });
+      } catch (err) {
+        console.warn('[Map Layer] Google Mutant 初始化失敗，切換至高相容度暖米色調圖磚:', err);
+      }
+    }
+
+    // 備援圖磚：採用視覺配色相同（米白底色 #f9f5ed、淡水藍 #aee0f4、簡潔灰文字）的 CartoDB Positron
+    return L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      subdomains: 'abcd',
+      attribution: '© OpenStreetMap contributors, © CARTO',
+    });
+  }
+
+  function initLeafletRadarMap() {
     if (typeof L === 'undefined') {
       console.warn('[Map] Leaflet 庫加載中，300ms 後重試...');
       setTimeout(initLeafletRadarMap, 300);
@@ -370,11 +471,8 @@
         attributionControl: false,
       });
 
-      // 採用 OpenStreetMap 全球官方圖磚（保證無驗證阻擋，穩定度 100%）
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '© OpenStreetMap contributors',
-      }).addTo(radarMap);
+      // 套用自訂地圖樣式（Google Maps Style Array / CartoDB 備援）
+      createCustomStyledTileLayer().addTo(radarMap);
 
       // 司機車輛即時呼吸光圈 Marker
       const driverIcon = L.divIcon({
@@ -468,10 +566,8 @@
         attributionControl: false,
       });
 
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '© OpenStreetMap',
-      }).addTo(trackingMap);
+      // 套用自訂地圖樣式（Google Maps Style Array / CartoDB 備援）
+      createCustomStyledTileLayer().addTo(trackingMap);
     }
 
     trackingMarkers.forEach(m => trackingMap.removeLayer(m));

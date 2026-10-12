@@ -13,6 +13,8 @@
   <!-- Leaflet CSS & JS via cdnjs (保證 100% 穩定出圖，無 API Key 授權限制) -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+  <!-- Leaflet.GoogleMutant 插件 (支援自訂 Google Style Array，API Key 由後端 /api/config 動態載入) -->
+  <script src="https://unpkg.com/leaflet.gridlayer.googlemutant@0.14.0/dist/Leaflet.GoogleMutant.js"></script>
   <!-- Transitions.dev Custom Tokens -->
   <link rel="stylesheet" href="/css/transitions.css">
 
@@ -63,7 +65,7 @@
       width: 100% !important;
       height: 100% !important;
       min-height: 480px !important;
-      background-color: #e2e8f0 !important;
+      background-color: #f9f5ed !important;
       z-index: 1 !important;
     }
     #view-tracking {
@@ -78,7 +80,7 @@
       width: 100% !important;
       height: 280px !important;
       min-height: 250px !important;
-      background-color: #e2e8f0 !important;
+      background-color: #f9f5ed !important;
       z-index: 1 !important;
     }
     .map-floating-ctrl {
