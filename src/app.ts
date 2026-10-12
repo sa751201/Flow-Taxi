@@ -7,6 +7,7 @@ import {
   getNearbyOrders,
   getOrdersByDriverId,
   getActiveOrderByDriverId,
+  getScheduledOrdersByDriverId,
   updateOrderStatus,
   markDriverArrived,
 } from './db/queries/orders.js';
@@ -19,8 +20,12 @@ import {
   createGroupOrderWonFlexMessage,
   createDriverOrderCardFlexMessage,
   createGroupOrderAssignedFlexMessage,
+  createPassengerReservationConfirmedFlexMessage,
+  createDriverReservationOrderCardFlexMessage,
 } from './services/flex-messages.js';
 import { linkDriverRichMenu } from './services/rich-menu.js';
+import { isFutureReservation, formatScheduledTime } from './services/reservation.js';
+import { startReservationReminderWorker } from './services/reservation-reminder.js';
 
 import { middleware, webhook, messagingApi } from '@line/bot-sdk';
 import { handleLineEvents } from './handlers/line-webhook.js';
@@ -79,29 +84,58 @@ export const dispatchEngine = new DispatchEngine({
         const etaMinutes = winnerBid?.eta_minutes || Math.max(3, Math.round((result.distanceMeters || 1500) / 500));
 
         if (order) {
-          const assignedFlex = createDriverAssignedFlexMessage({
-            driverName: driver.display_name || '優質司機',
-            carBrand: driver.car_brand || 'TOYOTA',
-            plateNumber: driver.plate_number || '---',
-            carColor: driver.car_color || '黑色',
-            etaMinutes,
-            notes: driver.notes || '🚭 禁菸 🚯 禁食',
-          });
+          const isReservation = isFutureReservation(order);
+          const scheduledText = order.note?.replace('預約時間: ', '').replace('[REMINDER_SENT]', '').trim() ||
+            (order.scheduled_time ? formatScheduledTime(order.scheduled_time) : '');
 
-          // 1. 1:1 推播給乘客 (中單司機資訊 + 到達分鐘數)
+          // 1. 1:1 推播給乘客 (預約單 vs 即時單)
           if (order.customer_id) {
-            console.log(`[Dispatch] 正在推播中單司機卡片至乘客 1:1 OA (${order.customer_id})...`);
-            await lineClient.pushMessage({
-              to: order.customer_id,
-              messages: [
-                {
-                  type: 'text',
-                  text: '🎉 已為您成功媒合到最適合的優質司機！司機正前往接送您：',
-                },
-                assignedFlex,
-              ],
-            });
-            console.log(`[Dispatch] ✅ 成功推播中單資訊至乘客 1:1 OA: ${order.customer_id}`);
+            if (isReservation) {
+              const resFlex = createPassengerReservationConfirmedFlexMessage({
+                orderId: order.id,
+                scheduledTimeText: scheduledText,
+                pickupAddress: order.pickup_address,
+                dropoffAddress: order.dropoff_address,
+                driverName,
+                carBrand: driver.car_brand || 'TOYOTA',
+                plateNumber: driver.plate_number || '---',
+                carColor: driver.car_color || '黑色',
+                estimatedFare: order.fare,
+              });
+
+              await lineClient.pushMessage({
+                to: order.customer_id,
+                messages: [
+                  {
+                    type: 'text',
+                    text: `🎉【預約成功】已為您安排優質司機承接您的預約行程！\n📅 預約乘車時間：${scheduledText}\n📍 上車地點：${order.pickup_address}\n\n⏰ 請於約定時間準時搭車，系統將於【用車前 1 小時】再次發送貼心搭車提醒！✨`,
+                  },
+                  resFlex,
+                ],
+              });
+              console.log(`[Dispatch] ✅ 成功推播預約確認資訊至乘客 1:1 OA: ${order.customer_id}`);
+            } else {
+              const assignedFlex = createDriverAssignedFlexMessage({
+                driverName: driver.display_name || '優質司機',
+                carBrand: driver.car_brand || 'TOYOTA',
+                plateNumber: driver.plate_number || '---',
+                carColor: driver.car_color || '黑色',
+                etaMinutes,
+                notes: driver.notes || '🚭 禁菸 🚯 禁食',
+              });
+
+              await lineClient.pushMessage({
+                to: order.customer_id,
+                messages: [
+                  {
+                    type: 'text',
+                    text: '🎉 已為您成功媒合到最適合的優質司機！司機正前往接送您：',
+                  },
+                  assignedFlex,
+                ],
+              });
+              console.log(`[Dispatch] ✅ 成功推播中單資訊至乘客 1:1 OA: ${order.customer_id}`);
+            }
           } else {
             console.warn(`[Dispatch] ⚠️ 訂單 ${order.id} 沒有 customer_id，無法推播乘客！`);
           }
@@ -125,7 +159,7 @@ export const dispatchEngine = new DispatchEngine({
             }
           }
 
-          // 3. 在接單司機與 OA 的 1:1 chat room 呈現確認接單卡片（含 Google Maps 導航與回報到點按鈕）
+          // 3. 在接單司機與 OA 的 1:1 chat room 呈現確認接單卡片
           if (result.winnerDriverId) {
             try {
               // 接單後切換 1:1 OA 選單為「開啟接單程式」專屬圖文選單
@@ -133,27 +167,51 @@ export const dispatchEngine = new DispatchEngine({
                 console.warn(`[Dispatch] 為中單司機 ${result.winnerDriverId} 綁定專屬選單失敗:`, rmErr.message);
               });
 
-              const driverCardFlex = createDriverOrderCardFlexMessage({
-                driverName,
-                orderId: order.id,
-                pickupAddress: order.pickup_address,
-                dropoffAddress: order.dropoff_address,
-                passengerCount: order.passenger_count || 1,
-                etaMinutes,
-                scheduledTimeText: order.note?.replace('預約時間: ', ''),
-              });
+              if (isReservation) {
+                const driverResCard = createDriverReservationOrderCardFlexMessage({
+                  orderId: order.id,
+                  driverName,
+                  scheduledTimeText: scheduledText,
+                  pickupAddress: order.pickup_address,
+                  dropoffAddress: order.dropoff_address,
+                  passengerCount: order.passenger_count || 1,
+                  estimatedFare: order.fare,
+                });
 
-              await lineClient.pushMessage({
-                to: result.winnerDriverId,
-                messages: [
-                  {
-                    type: 'text',
-                    text: `🚕 恭喜您成功接單！請前往上車地點接送乘客。\n到達後請點擊卡片下方「我已到達上車點」或直接輸入「到」回報。`,
-                  },
-                  driverCardFlex,
-                ],
-              });
-              console.log(`[Dispatch] ✅ 成功向中單司機 1:1 OA (${result.winnerDriverId}) 推播確認接單卡片`);
+                await lineClient.pushMessage({
+                  to: result.winnerDriverId,
+                  messages: [
+                    {
+                      type: 'text',
+                      text: `📅 恭喜您成功承接預約行程！\n乘車時間為 ${scheduledText}，系統將在【出發前 1 小時】發送出車提醒通知。請提早做好準備！祝行車平安！🚕`,
+                    },
+                    driverResCard,
+                  ],
+                });
+                console.log(`[Dispatch] ✅ 成功向中單司機 1:1 OA (${result.winnerDriverId}) 推播預約單卡片`);
+              } else {
+                const driverCardFlex = createDriverOrderCardFlexMessage({
+                  driverName,
+                  orderId: order.id,
+                  pickupAddress: order.pickup_address,
+                  dropoffAddress: order.dropoff_address,
+                  passengerCount: order.passenger_count || 1,
+                  etaMinutes,
+                  scheduledTimeText: order.note?.replace('預約時間: ', ''),
+                });
+
+                await lineClient.pushMessage({
+                  to: result.winnerDriverId,
+                  messages: [
+                    {
+                      type: 'text',
+                      text: `🚕 恭喜您成功接單！請前往上車地點接送乘客。\n到達後請點擊卡片下方「我已到達上車點」或直接輸入「到」回報。`,
+                    },
+                    driverCardFlex,
+                  ],
+                });
+                console.log(`[Dispatch] ✅ 成功向中單司機 1:1 OA (${result.winnerDriverId}) 推播確認接單卡片`);
+              }
             } catch (driverDmErr: any) {
               console.warn(`[Dispatch] 向司機 1:1 OA 推播確認卡片失敗 (司機可能尚未加 OA 好友):`, driverDmErr.message);
             }
@@ -356,6 +414,16 @@ app.get('/api/driver/:driverId/active-trip', async (req, res) => {
     res.json({ hasActiveTrip: true, order: effectiveOrder });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// 司機網頁版：查詢司機已接單之預約行程清單 (尚未到出發時間之預約單)
+app.get('/api/driver/:driverId/scheduled-trips', async (req, res) => {
+  try {
+    const scheduledOrders = await getScheduledOrdersByDriverId(req.params.driverId);
+    res.json({ success: true, count: scheduledOrders.length, scheduledOrders });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message, scheduledOrders: [] });
   }
 });
 
@@ -763,6 +831,7 @@ if (process.env.NODE_ENV !== 'test') {
   // 載入自訂靜默問題清單與啟動定時日報排程器
   loadSilentRulesFromExcel();
   initDailyReportScheduler();
+  startReservationReminderWorker();
 
   app.listen(env.PORT, () => {
     console.log(`[Server] Taxi dispatch system listening on port ${env.PORT}`);

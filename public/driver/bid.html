@@ -34,10 +34,10 @@
         <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
         60秒撮合派單中
       </div>
-      <h1 class="text-2xl font-bold tracking-tight text-slate-900">
+      <h1 id="bid-page-title" class="text-2xl font-bold tracking-tight text-slate-900">
         即時接單
       </h1>
-      <p class="text-xs text-slate-500 mt-1">
+      <p id="bid-page-desc" class="text-xs text-slate-500 mt-1">
         以您目前手機定位計算距離，支援微調到達時間
       </p>
     </div>
@@ -90,17 +90,17 @@
         <div id="bidding-action-section" class="space-y-4">
           <!-- 需求 2 & 3: 刪除抵達時間，改為「距離上車地點」單一跨欄 fit 內框 -->
           <div class="w-full p-4 rounded-xl bg-emerald-50/80 border border-emerald-200 text-center flex flex-col justify-center">
-            <p class="text-xs font-bold text-emerald-800 tracking-wider">距離上車地點</p>
-            <div class="flex items-baseline justify-center gap-1.5 my-1.5">
+            <p id="eta-box-title" class="text-xs font-bold text-emerald-800 tracking-wider">距離上車地點</p>
+            <div id="eta-display-wrap" class="flex items-baseline justify-center gap-1.5 my-1.5">
               <span id="eta-mins" class="text-4xl font-extrabold text-emerald-600">--</span>
-              <span class="text-sm font-bold text-emerald-800">分鐘</span>
+              <span id="eta-unit" class="text-sm font-bold text-emerald-800">分鐘</span>
               <span id="eta-distance-badge" class="ml-2 text-xs font-semibold px-2 py-0.5 bg-emerald-100/80 text-emerald-800 rounded-full">約 1.5 km</span>
             </div>
             <p id="eta-source-note" class="text-[11px] text-emerald-600/90">由司機即時定位測算導航時間</p>
           </div>
 
           <!-- 司機手動微調按鈕 (+1 分鐘 / +5 分鐘) -->
-          <div>
+          <div id="fine-tune-container">
             <div class="flex items-center justify-between mb-2">
               <label class="block text-xs font-bold text-slate-600">手動調整到達時間 (遇紅燈或塞車)：</label>
               <!-- 需求 4: 按加後出現重設按鈕，ghost button 樣式 -->

@@ -9,8 +9,11 @@ let extraMinutes = 0;
 let driverLat = 25.0478;
 let driverLng = 121.5170;
 let hasRealGps = false;
+let isReservationOrder = false;
+let reservationTimeStr = '';
 
 function updateEtaDisplay() {
+  if (isReservationOrder) return;
   const totalEta = baseEtaMinutes + extraMinutes;
   const etaMinsEl = document.getElementById('eta-mins');
   if (etaMinsEl) {
@@ -105,6 +108,54 @@ async function initBidLiff() {
     }
     if (fareDistEl && orderData.distance_km) {
       fareDistEl.textContent = `行程約 ${Number(orderData.distance_km).toFixed(1)} 公里`;
+    }
+
+    // 檢查是否為預約單 (> 1小時)
+    const timeMatch = orderData.note?.match(/預約時間:\s*(.+)/);
+    reservationTimeStr = timeMatch ? timeMatch[1].trim() : (orderData.scheduled_time ? new Date(orderData.scheduled_time).toLocaleString('zh-TW', { hour12: false }) : '');
+    if (orderData.scheduled_time) {
+      const diffMs = new Date(orderData.scheduled_time).getTime() - Date.now();
+      isReservationOrder = diffMs > 60 * 60 * 1000;
+    } else if (reservationTimeStr && !reservationTimeStr.includes('免填')) {
+      isReservationOrder = true;
+    }
+
+    if (isReservationOrder && reservationTimeStr) {
+      const titleEl = document.getElementById('bid-page-title');
+      if (titleEl) titleEl.textContent = '📅 預約接單';
+
+      const descEl = document.getElementById('bid-page-desc');
+      if (descEl) descEl.textContent = `預約乘車時間：${reservationTimeStr}（用車前 1 小時出車）`;
+
+      const boxTitle = document.getElementById('eta-box-title');
+      if (boxTitle) boxTitle.textContent = '📅 預約搭乘時間';
+
+      const etaMinsEl = document.getElementById('eta-mins');
+      if (etaMinsEl) {
+        etaMinsEl.textContent = reservationTimeStr;
+        etaMinsEl.className = 'text-xl sm:text-2xl font-black text-emerald-700';
+      }
+
+      const etaUnit = document.getElementById('eta-unit');
+      if (etaUnit) etaUnit.textContent = '';
+
+      const badgeEl = document.getElementById('eta-distance-badge');
+      if (badgeEl) badgeEl.textContent = '預約行程';
+
+      const sourceNote = document.getElementById('eta-source-note');
+      if (sourceNote) sourceNote.innerHTML = '⏰ 系統將於用車前 1 小時發送前往上車地點通知，屆時再出車接送';
+
+      const fineTuneContainer = document.getElementById('fine-tune-container');
+      if (fineTuneContainer) fineTuneContainer.classList.add('hidden');
+
+      const btnConfirm = document.getElementById('btn-confirm-bid');
+      if (btnConfirm) {
+        btnConfirm.innerHTML = `
+          <span class="t-pro-btn-label text-white font-bold flex items-center justify-center gap-2">
+            <span>📅</span> 確認接單（預約行程）
+          </span>
+        `;
+      }
     }
 
     // 需求 7: 幫我加一個判斷，已經有人的接單，當群組內有人點立刻接單的話，

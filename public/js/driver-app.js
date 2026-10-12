@@ -972,6 +972,82 @@
       }
     } catch (e) {
       console.warn('[Driver App] 查詢活躍任務失敗:', e);
+    } finally {
+      fetchScheduledTrips();
+    }
+  }
+
+  // -------------------------------------------------------------
+  // 8.5 預約行程清單查詢 (Scheduled Trips)
+  // -------------------------------------------------------------
+  async function fetchScheduledTrips() {
+    const driverIdentifier = currentDriver.userId || currentDriver.plateNumber || localStorage.getItem('flow_taxi_driver_id');
+    if (!driverIdentifier || driverIdentifier === 'driver_guest') return;
+
+    try {
+      const res = await fetch(`/api/driver/${encodeURIComponent(driverIdentifier)}/scheduled-trips`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const sec = document.getElementById('scheduled-trips-section');
+      const container = document.getElementById('scheduled-trips-container');
+      const badge = document.getElementById('scheduled-count-badge');
+
+      if (!sec || !container) return;
+
+      const orders = data.scheduledOrders || [];
+      if (badge) badge.textContent = orders.length;
+
+      if (orders.length === 0) {
+        sec.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+      }
+
+      sec.classList.remove('hidden');
+      container.innerHTML = orders.map(ord => {
+        const timeMatch = ord.note?.match(/預約時間:\s*([^\[]+)/);
+        const timeText = timeMatch ? timeMatch[1].trim() : (ord.scheduled_time ? new Date(ord.scheduled_time).toLocaleString('zh-TW', { hour12: false }) : '預約時間');
+        const fareText = ord.fare ? `$${ord.fare}` : '跳錶計費';
+        const mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ord.pickup_address)}&travelmode=driving`;
+
+        return `
+          <div class="rounded-2xl bg-white p-4 shadow-sm border border-blue-200/80 space-y-3 relative overflow-hidden">
+            <div class="flex items-center justify-between">
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-black border border-blue-200">
+                <span>📅</span> ${timeText}
+              </span>
+              <span class="text-xs text-slate-400 font-mono font-bold">#${ord.id.slice(-4)}</span>
+            </div>
+
+            <div class="space-y-1.5 text-xs">
+              <div class="flex items-start gap-2">
+                <span class="text-emerald-600 font-bold shrink-0">🟢 上車</span>
+                <p class="font-bold text-slate-900 leading-snug">${ord.pickup_address}</p>
+              </div>
+              <div class="flex items-start gap-2">
+                <span class="text-rose-500 font-bold shrink-0">🔴 下車</span>
+                <p class="font-medium text-slate-600 leading-snug">${ord.dropoff_address || '乘客上車後說明'}</p>
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+              <span class="text-slate-500">乘客 ${ord.passenger_count || 1} 人</span>
+              <span class="font-black text-amber-600">${fareText}</span>
+            </div>
+
+            <div class="pt-1 flex items-center gap-2">
+              <a href="${mapUrl}" target="_blank" class="flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold text-center transition flex items-center justify-center gap-1">
+                <span>🗺️</span> 路線預覽
+              </a>
+              <span class="text-[11px] text-amber-700 font-medium px-2 py-1 bg-amber-50 rounded-lg">
+                ⏰ 出發前 1 小時提醒出車
+              </span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      console.warn('[Driver App] 查詢預約任務失敗:', e);
     }
   }
 

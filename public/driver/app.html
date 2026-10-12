@@ -296,6 +296,20 @@
           </div>
         </div>
 
+        <!-- 📅 預約行程 Section (讓司機查詢已承接的未來預約單) -->
+        <div id="scheduled-trips-section" class="hidden space-y-3 pt-1">
+          <div class="flex items-center justify-between px-1">
+            <h4 class="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+              <span>📅 我的預約行程</span>
+              <span id="scheduled-count-badge" class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-bold">0</span>
+            </h4>
+          </div>
+
+          <div id="scheduled-trips-container" class="space-y-2.5">
+            <!-- 預約單卡片動態渲染 -->
+          </div>
+        </div>
+
         <!-- Order List Section ("Recent walker" -> "附近叫車訂單") -->
         <div class="space-y-3 pt-1">
           <div class="flex items-center justify-between px-1">

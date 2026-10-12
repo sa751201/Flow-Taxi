@@ -4,6 +4,8 @@ import {
   createGroupOrderWonFlexMessage,
   createDriverOrderCardFlexMessage,
   createGroupOrderCancelledFlexMessage,
+  createPassengerReservationConfirmedFlexMessage,
+  createDriverReservationOrderCardFlexMessage,
 } from '../../src/services/flex-messages.js';
 
 describe('createGroupOrderWonFlexMessage', () => {
@@ -133,4 +135,43 @@ describe('createGroupOrderCancelledFlexMessage', () => {
     expect(reminderText).toContain('⚠️ 乘客已取消此筆叫車，請各位司機夥伴無須搶單。感謝配合！');
   });
 });
+
+describe('Reservation Flex Messages', () => {
+  it('createPassengerReservationConfirmedFlexMessage 應正確呈現預約時間、司機車牌與用車前一小時提醒', () => {
+    const flex = createPassengerReservationConfirmedFlexMessage({
+      orderId: 'res-9999',
+      scheduledTimeText: '2026/10/22 19:20',
+      pickupAddress: '台北科技大學新生門口',
+      dropoffAddress: '桃園機場',
+      driverName: '林大雄',
+      carBrand: 'TOYOTA CAMRY',
+      plateNumber: '8888-TD',
+    });
+
+    expect(flex.type).toBe('flex');
+    expect(flex.altText).toContain('2026/10/22 19:20');
+    const bubble = flex.contents as any;
+    expect(bubble.size).toBe('mega');
+    expect(JSON.stringify(bubble)).toContain('用車前 1 小時');
+    expect(JSON.stringify(bubble)).toContain('台北科技大學新生門口');
+    expect(JSON.stringify(bubble)).toContain('8888-TD');
+  });
+
+  it('createDriverReservationOrderCardFlexMessage 應呈現預約時間、上車點與出發前一小時提醒', () => {
+    const flex = createDriverReservationOrderCardFlexMessage({
+      orderId: 'res-9999',
+      driverName: '林大雄',
+      scheduledTimeText: '2026/10/22 19:20',
+      pickupAddress: '台北科技大學新生門口',
+      dropoffAddress: '桃園機場',
+    });
+
+    expect(flex.type).toBe('flex');
+    expect(flex.altText).toContain('2026/10/22 19:20');
+    const bubble = flex.contents as any;
+    expect(JSON.stringify(bubble)).toContain('出發前 1 小時');
+    expect(JSON.stringify(bubble)).toContain('預先查看路線');
+  });
+});
+
 

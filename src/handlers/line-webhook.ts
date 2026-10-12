@@ -18,9 +18,22 @@ import {
   createOrder,
   getActiveOrderByDriverId,
   getActiveOrderByCustomerId,
+  getActiveOrdersByCustomerId,
+  getScheduledOrdersByDriverId,
+  getOrderById,
   updateOrderStatus,
   markDriverArrived,
+  Order,
 } from '../db/queries/orders.js';
+import {
+  startCustomerChatSession,
+  endCustomerChatSession,
+  getCustomerChatOrderId,
+  isCustomerInChatSession,
+  resolveOrderForCommunication,
+  forwardMessageToDriver,
+  forwardMessageToPassenger,
+} from '../services/order-chat.js';
 import { linkDriverRichMenu, syncUserRichMenuByRole } from '../services/rich-menu.js';
 import { dispatchEngine } from '../app.js';
 import { calculateFare } from '../services/fare-calculator.js';
@@ -28,6 +41,7 @@ import { isGroupAllowed, isAdminGroup } from '../services/group-whitelist.js';
 import { handleAdminGroupCommand, isManualTakeoverActive } from '../services/admin-control.js';
 import { checkSilentQuestion, createSilentAlertForAdmin } from '../services/silent-questions.js';
 import { aggregateDailyStats, createDailyReportFlexMessage } from '../services/daily-reporter.js';
+import { parseScheduledTimeString, isFutureReservation } from '../services/reservation.js';
 
 type WebhookEvent = webhook.Event;
 
@@ -772,14 +786,16 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
             text === '不叫了' ||
             text === '不要了' ||
             text === '不用車了' ||
-            text.toLowerCase() === 'cancel'
+            text.toLowerCase() === 'cancel' ||
+            text.startsWith('取消訂單') ||
+            text.startsWith('確定取消')
           ) {
             const customerId = userSource.userId;
             if (!customerId) continue;
 
-            const activeOrder = await getActiveOrderByCustomerId(customerId);
+            const activeOrders = await getActiveOrdersByCustomerId(customerId);
 
-            if (!activeOrder) {
+            if (activeOrders.length === 0) {
               await lineClient.replyMessage({
                 replyToken,
                 messages: [
@@ -788,6 +804,61 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
                     text: '⚠️ 您目前沒有進行中的叫車訂單喔！\n若有搭車需求，請隨時輸入「上車地點」與「下車地點」，我們將立即為您派單。😊',
                   },
                 ],
+              });
+              continue;
+            }
+
+            // 檢查文字中是否已包含指定單號後碼 (例如 #1234)
+            const idMatch = text.match(/#([a-zA-Z0-9_-]+)/);
+
+            // 需求 7: 若同時有兩單以上且使用者只輸入「取消」或「取消訂單」，以 Quick Reply 詢問指的是哪一單
+            if (activeOrders.length > 1 && !idMatch) {
+              const quickReplyItems: messagingApi.QuickReplyItem[] = activeOrders.map((o) => {
+                const isRes = isFutureReservation(o);
+                const typeLabel = isRes ? '📅 預約單' : '⚡ 即時單';
+                const shortId = o.id.slice(-4);
+                return {
+                  type: 'action',
+                  action: {
+                    type: 'message',
+                    label: `❌ 取消${typeLabel} #${shortId}`,
+                    text: `取消訂單 #${shortId}`,
+                  },
+                };
+              });
+
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [
+                  {
+                    type: 'text',
+                    text: `📋 您目前有 ${activeOrders.length} 筆進行中的行程，請問您想要取消哪一筆呢？`,
+                    quickReply: { items: quickReplyItems },
+                  },
+                ],
+              });
+              continue;
+            }
+
+            // 解析目標訂單
+            let activeOrder: Order | undefined;
+            if (idMatch) {
+              const code = idMatch[1].toLowerCase();
+              activeOrder = activeOrders.find(
+                (o) => o.id.toLowerCase().endsWith(code) || o.id.toLowerCase() === code
+              );
+            }
+            if (!activeOrder && activeOrders.length === 1) {
+              activeOrder = activeOrders[0];
+            }
+            if (!activeOrder) {
+              activeOrder = (await getActiveOrderByCustomerId(customerId)) || undefined;
+            }
+
+            if (!activeOrder) {
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [{ type: 'text', text: '⚠️ 查無此筆訂單或該訂單已結束。' }],
               });
               continue;
             }
@@ -810,6 +881,9 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
             if (activeOrder.status === 'pending' || activeOrder.status === 'dispatching') {
               await dispatchEngine.cancelDispatch(activeOrder.id);
               await updateOrderStatus(activeOrder.id, 'cancelled');
+              if (getCustomerChatOrderId(customerId) === activeOrder.id) {
+                endCustomerChatSession(customerId);
+              }
 
               // 1. 回覆乘客確認訊息
               await lineClient.replyMessage({
@@ -846,30 +920,34 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
             }
 
             // 若已有司機接單 (accepted 或 arrived)：
-            // 若使用者只輸入簡單的「取消」，提供二次確認 Quick Reply 防止誤按
-            const isConfirmed = (text === '確定取消' || text === '確定取消訂單');
+            // 提供二次確認 Quick Reply 防止誤按
+            const isConfirmed = text.startsWith('確定取消');
+            const shortId = activeOrder.id.slice(-4);
+            const isRes = isFutureReservation(activeOrder);
+            const typeLabel = isRes ? '📅 預約單' : '⚡ 即時單';
+
             if (!isConfirmed) {
               await lineClient.replyMessage({
                 replyToken,
                 messages: [
                   {
                     type: 'text',
-                    text: `⚠️ 提醒您：司機夥伴已接單正在前往中（或已抵達）！\n📍 上車地點：${activeOrder.pickup_address}\n\n請問您確認要取消此筆訂單嗎？`,
+                    text: `⚠️ 提醒您：司機夥伴已接下您的${typeLabel}（#${shortId}）！\n📍 上車地點：${activeOrder.pickup_address}\n\n請問您確認要取消此筆訂單嗎？`,
                     quickReply: {
                       items: [
                         {
                           type: 'action',
                           action: {
                             type: 'message',
-                            label: '🔴 確定取消訂單',
-                            text: '確定取消訂單',
+                            label: `🔴 確定取消 #${shortId}`,
+                            text: `確定取消 #${shortId}`,
                           },
                         },
                         {
                           type: 'action',
                           action: {
                             type: 'message',
-                            label: '🟢 繼續等待司機',
+                            label: '🟢 繼續保留行程',
                             text: '繼續等待司機',
                           },
                         },
@@ -883,13 +961,16 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
 
             // 乘客已確認取消司機已接單之訂單
             await updateOrderStatus(activeOrder.id, 'cancelled');
+            if (getCustomerChatOrderId(customerId) === activeOrder.id) {
+              endCustomerChatSession(customerId);
+            }
 
             await lineClient.replyMessage({
               replyToken,
               messages: [
                 {
                   type: 'text',
-                  text: `✅【訂單已取消】\n已為您取消訂單 #${activeOrder.id.slice(-4)}。\n系統已同步通知接單司機停止前往，感謝您的體諒與配合！`,
+                  text: `✅【訂單已取消】\n已為您取消${typeLabel} #${shortId}。\n系統已同步通知接單司機停止前往，感謝您的體諒與配合！`,
                 },
               ],
             });
@@ -902,7 +983,7 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
                   messages: [
                     {
                       type: 'text',
-                      text: `📢【訂單取消通知】\n乘客已取消訂單 #${activeOrder.id.slice(-4)}（上車點：${activeOrder.pickup_address}）。\n\n請您停止前往該上車點，系統已為您重置狀態，可返回司機大廳繼續接單！辛苦了！🚖`,
+                      text: `📢【訂單取消通知】\n乘客已取消${typeLabel} #${shortId}（上車點：${activeOrder.pickup_address}）。\n\n請您停止前往該上車點，系統已為您重置狀態，可返回司機大廳繼續接單！辛苦了！🚖`,
                     },
                   ],
                 });
@@ -912,13 +993,125 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
               }
             }
             continue;
-          } else if (text === '繼續等待司機' || text.includes('繼續等待')) {
+          } else if (text === '繼續等待司機' || text.includes('繼續等待') || text.includes('保留行程')) {
             await lineClient.replyMessage({
               replyToken,
               messages: [
                 {
                   type: 'text',
-                  text: '好的！司機夥伴正在全力為您趕往上車地點，感謝您的耐心等候！🚖✨',
+                  text: '好的！司機夥伴正在全力為您準備與前往上車地點，感謝您的耐心等候！🚖✨',
+                },
+              ],
+            });
+            continue;
+          } else if (
+            text.includes('與司機溝通') ||
+            text.includes('聯絡司機') ||
+            text.includes('聯繫司機') ||
+            text === '溝通'
+          ) {
+            // ==========================================
+            // 需求 5 & 7: 乘客開啟「與司機溝通」雙向傳訊功能
+            // ==========================================
+            const customerId = userSource.userId;
+            if (!customerId) continue;
+
+            const commResult = await resolveOrderForCommunication(customerId, text);
+
+            if (commResult.noOrders) {
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [
+                  {
+                    type: 'text',
+                    text: '⚠️ 您目前沒有進行中的叫車訂單喔！\n若有搭車需求，請隨時輸入上車地點與下車地點叫車。😊',
+                  },
+                ],
+              });
+              continue;
+            }
+
+            if (commResult.pendingOnly) {
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [
+                  {
+                    type: 'text',
+                    text: '⏳ 您的訂單目前正在為您尋找司機中，待司機接單後即可透過 1:1 官方帳號與司機直接對話！',
+                  },
+                ],
+              });
+              continue;
+            }
+
+            if (commResult.needsDisambiguation) {
+              // 需求 7: 多單時以 Quick Reply 詢問指哪一單
+              const quickReplyItems: messagingApi.QuickReplyItem[] = commResult.ordersWithDriver.map((o) => {
+                const isRes = isFutureReservation(o);
+                const typeLabel = isRes ? '📅 預約' : '⚡ 即時';
+                const shortId = o.id.slice(-4);
+                return {
+                  type: 'action',
+                  action: {
+                    type: 'message',
+                    label: `💬 溝通${typeLabel} #${shortId}`,
+                    text: `與司機溝通 #${shortId}`,
+                  },
+                };
+              });
+
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [
+                  {
+                    type: 'text',
+                    text: `💬 您目前有多筆已有司機接單的行程，請問您想與哪一位司機溝通呢？`,
+                    quickReply: { items: quickReplyItems },
+                  },
+                ],
+              });
+              continue;
+            }
+
+            if (commResult.targetOrder) {
+              const target = commResult.targetOrder;
+              startCustomerChatSession(customerId, target.id);
+              const isRes = isFutureReservation(target);
+              const typeLabel = isRes ? '📅 預約單' : '⚡ 即時單';
+              const shortId = target.id.slice(-4);
+
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [
+                  {
+                    type: 'text',
+                    text: `💬【已開啟與司機溝通】\n已為您接通${typeLabel}（#${shortId}）之接單司機！\n📍 上車地點：${target.pickup_address}\n\n您接下來在此輸入的文字訊息，系統將會即時轉發給司機。\n（若需結束對話，請輸入「結束溝通」）`,
+                    quickReply: {
+                      items: [
+                        {
+                          type: 'action',
+                          action: {
+                            type: 'message',
+                            label: '❌ 結束溝通',
+                            text: '結束溝通',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              });
+              continue;
+            }
+          } else if (text === '結束溝通' || text === '結束對話' || text === '停止溝通') {
+            const customerId = userSource.userId;
+            if (customerId) endCustomerChatSession(customerId);
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: '💬 已為您結束與司機的溝通對話。祝您乘車愉快！✨',
                 },
               ],
             });
@@ -1044,6 +1237,12 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
                   console.log('[Line Webhook] 乘客未填下車地點，跳過車資預估計算');
                 }
 
+                // 解析乘車時間是否為未來預約單 (> 1小時)
+                const parsedReservation = parseScheduledTimeString(scheduledTimeText);
+                const scheduledDate = parsedReservation?.date || null;
+                const isReservation = Boolean(parsedReservation?.isReservation);
+                const effectiveScheduledText = parsedReservation?.formattedText || scheduledTimeText;
+
                 // 建立訂單 (status: pending)
                 const newOrder = await createOrder({
                   customer_id: customerId || 'UNKNOWN_CUSTOMER',
@@ -1055,12 +1254,13 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
                   dropoff_lat: dropoffGeo ? dropoffGeo.lat : undefined,
                   dropoff_lng: dropoffGeo ? dropoffGeo.lng : undefined,
                   passenger_count: passengerCount || 1,
+                  scheduled_time: scheduledDate,
                   distance_km: fareResult ? fareResult.distanceKm : undefined,
                   fare: fareResult ? fareResult.estimatedFare : undefined,
-                  note: scheduledTimeText ? `預約時間: ${scheduledTimeText}` : undefined,
+                  note: effectiveScheduledText ? `預約時間: ${effectiveScheduledText}` : undefined,
                 });
 
-                console.log(`[Line Webhook] 訂單 ${newOrder.id} 建立成功！`);
+                console.log(`[Line Webhook] 訂單 ${newOrder.id} 建立成功！(預約單: ${isReservation})`);
 
                 // 司機接單 LIFF 網址
                 const bidUrl = env.LIFF_ID
@@ -1080,7 +1280,8 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
                     pickupAddress: pickupAddr,
                     dropoffAddress: dropoffAddr || undefined,
                     passengerCount: passengerCount || 1,
-                    scheduledTimeText: scheduledTimeText,
+                    scheduledTimeText: effectiveScheduledText,
+                    isReservation: isReservation,
                     estimatedFare: fareResult ? fareResult.estimatedFare : undefined,
                     fareBreakdown: fareResult ? fareResult.fareBreakdown : undefined,
                     distanceKm: fareResult ? fareResult.distanceKm : undefined,
@@ -1145,7 +1346,74 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
               ],
             });
           } else {
-            // 1:1 聊天室預設回覆：發送完整歡迎詞與 6 大服務 Quick Reply 按鈕
+            // 1. 檢查是否為處於「與司機溝通」會話中的乘客
+            if (userSource.userId && isCustomerInChatSession(userSource.userId)) {
+              const customerId = userSource.userId;
+              const chatOrderId = getCustomerChatOrderId(customerId);
+              if (chatOrderId) {
+                const order = await getOrderById(chatOrderId);
+                if (
+                  order &&
+                  order.driver_id &&
+                  ['accepted', 'in_progress', 'arrived', 'picked_up'].includes(order.status)
+                ) {
+                  const forwarded = await forwardMessageToDriver(order, text);
+                  if (forwarded) {
+                    await lineClient.replyMessage({
+                      replyToken,
+                      messages: [
+                        {
+                          type: 'text',
+                          text: '✅ 已將您的訊息轉發給司機夥伴！🚖',
+                          quickReply: {
+                            items: [
+                              {
+                                type: 'action',
+                                action: {
+                                  type: 'message',
+                                  label: '❌ 結束溝通',
+                                  text: '結束溝通',
+                                },
+                              },
+                            ],
+                          },
+                        },
+                      ],
+                    });
+                    continue;
+                  }
+                } else {
+                  endCustomerChatSession(customerId);
+                }
+              }
+            }
+
+            // 2. 檢查是否為已有活躍接單的司機（將文字自動轉發給乘客）
+            if (userSource.userId) {
+              const driver = await getDriverById(userSource.userId);
+              if (driver && driver.registered) {
+                const driverOrder =
+                  (await getActiveOrderByDriverId(userSource.userId)) ||
+                  (await getScheduledOrdersByDriverId(userSource.userId))[0];
+                if (driverOrder && driverOrder.customer_id) {
+                  const forwarded = await forwardMessageToPassenger(driverOrder, userSource.userId, text);
+                  if (forwarded) {
+                    await lineClient.replyMessage({
+                      replyToken,
+                      messages: [
+                        {
+                          type: 'text',
+                          text: `✅ 已將您的訊息轉發給乘客！（訂單 #${driverOrder.id.slice(-4)}）`,
+                        },
+                      ],
+                    });
+                    continue;
+                  }
+                }
+              }
+            }
+
+            // 3. 1:1 聊天室預設回覆：發送完整歡迎詞與 6 大服務 Quick Reply 按鈕
             await lineClient.replyMessage({
               replyToken,
               messages: [createWelcomeServiceMessage()],

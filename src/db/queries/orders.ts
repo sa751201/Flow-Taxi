@@ -2,6 +2,7 @@ import { query } from '../index.js';
 import { env } from '../../config/env.js';
 import { Order, OrderStatus } from '../../types/dispatch.js';
 import { getDriverById, findDriverByPhoneOrPlate } from './drivers.js';
+import { isFutureReservation } from '../../services/reservation.js';
 
 export interface CreateOrderParams {
   id?: string;
@@ -21,8 +22,10 @@ export interface CreateOrderParams {
   fare?: number | null;
 }
 
+export { Order, OrderStatus };
+
 // 記憶體備援快取 (保障在 PostgreSQL 斷線或未設定 DATABASE_URL 時派單不中斷)
-const memoryOrders = new Map<string, Order>();
+export const memoryOrders = new Map<string, Order>();
 
 export async function createOrder(params: CreateOrderParams): Promise<Order> {
   if (env.DATABASE_URL) {
@@ -316,11 +319,12 @@ export async function markDriverArrived(orderId: string): Promise<boolean> {
  * 支援傳入 LINE User ID、車牌號碼 (如 CEQ-7710)、姓名 (如 Mike Wang) 或電話
  */
 export async function getActiveOrderByDriverId(driverId: string): Promise<Order | null> {
-  // 1. 快速先查記憶體快取中是否有直接符合 driver_id 的活躍訂單 (極速回傳)
+  // 1. 快速先查記憶體快取中是否有直接符合 driver_id 的活躍訂單 (過濾未到出車時間之預約單)
   for (const order of memoryOrders.values()) {
     if (
       order.driver_id === driverId &&
-      (order.status === 'accepted' || (order as any).status === 'in_progress' || order.status === 'picked_up')
+      (order.status === 'accepted' || (order as any).status === 'in_progress' || order.status === 'picked_up') &&
+      !isFutureReservation(order)
     ) {
       return order;
     }
@@ -352,11 +356,14 @@ export async function getActiveOrderByDriverId(driverId: string): Promise<Order 
           ST_X(dropoff_geog::geometry) as dropoff_lng
         FROM orders 
         WHERE driver_id = ANY($1::text[]) AND status IN ('accepted', 'in_progress', 'picked_up')
-        ORDER BY created_at DESC 
-        LIMIT 1;
+        ORDER BY created_at DESC;
       `;
       const res = await query<Order>(sql, [idsArray]);
-      if (res.rows[0]) return res.rows[0];
+      for (const row of res.rows) {
+        if (!isFutureReservation(row)) {
+          return row;
+        }
+      }
     } catch {
       // fallback
     }
@@ -367,7 +374,8 @@ export async function getActiveOrderByDriverId(driverId: string): Promise<Order 
     if (
       order.driver_id &&
       searchIds.has(order.driver_id) &&
-      (order.status === 'accepted' || (order as any).status === 'in_progress' || order.status === 'picked_up')
+      (order.status === 'accepted' || (order as any).status === 'in_progress' || order.status === 'picked_up') &&
+      !isFutureReservation(order)
     ) {
       return order;
     }
@@ -377,39 +385,106 @@ export async function getActiveOrderByDriverId(driverId: string): Promise<Order 
 }
 
 /**
- * 查詢乘客目前正在進行中的活躍訂單 (pending / dispatching / accepted / in_progress / picked_up)
+ * 查詢司機目前已接單但尚未到出車時間之「預約行程」清單
  */
-export async function getActiveOrderByCustomerId(customerId: string): Promise<Order | null> {
+export async function getScheduledOrdersByDriverId(driverId: string): Promise<Order[]> {
+  const searchIds = new Set<string>([driverId]);
+  try {
+    const driver = (await getDriverById(driverId)) || (await findDriverByPhoneOrPlate(driverId));
+    if (driver) {
+      if (driver.line_user_id) searchIds.add(driver.line_user_id);
+      if (driver.plate_number) searchIds.add(driver.plate_number);
+      if (driver.display_name) searchIds.add(driver.display_name);
+    }
+  } catch {}
+
+  const idsArray = Array.from(searchIds);
+  const scheduledOrders: Order[] = [];
+
+  if (env.DATABASE_URL) {
+    try {
+      const sql = `
+        SELECT *,
+          ST_Y(pickup_geog::geometry) as pickup_lat,
+          ST_X(pickup_geog::geometry) as pickup_lng,
+          ST_Y(dropoff_geog::geometry) as dropoff_lat,
+          ST_X(dropoff_geog::geometry) as dropoff_lng
+        FROM orders 
+        WHERE driver_id = ANY($1::text[]) AND status = 'accepted'
+        ORDER BY scheduled_time ASC NULLS LAST, created_at DESC;
+      `;
+      const res = await query<Order>(sql, [idsArray]);
+      for (const row of res.rows) {
+        if (isFutureReservation(row)) {
+          scheduledOrders.push(row);
+        }
+      }
+      return scheduledOrders;
+    } catch {}
+  }
+
+  // 記憶體備援
+  for (const order of memoryOrders.values()) {
+    if (
+      order.driver_id &&
+      searchIds.has(order.driver_id) &&
+      order.status === 'accepted' &&
+      isFutureReservation(order)
+    ) {
+      scheduledOrders.push(order);
+    }
+  }
+
+  return scheduledOrders.sort((a, b) => {
+    const timeA = a.scheduled_time ? new Date(a.scheduled_time).getTime() : 0;
+    const timeB = b.scheduled_time ? new Date(b.scheduled_time).getTime() : 0;
+    return timeA - timeB;
+  });
+}
+
+/**
+ * 查詢乘客目前所有進行中的活躍訂單列表
+ */
+export async function getActiveOrdersByCustomerId(customerId: string): Promise<Order[]> {
+  const activeOrders: Order[] = [];
+
   if (env.DATABASE_URL) {
     try {
       const sql = `
         SELECT * FROM orders 
         WHERE customer_id = $1 AND status IN ('pending', 'dispatching', 'accepted', 'in_progress', 'picked_up')
-        ORDER BY created_at DESC 
-        LIMIT 1;
+        ORDER BY created_at DESC;
       `;
       const res = await query<Order>(sql, [customerId]);
-      if (res.rows[0]) return res.rows[0];
-    } catch {
-      // fallback
-    }
+      return res.rows;
+    } catch {}
   }
 
-  // 記憶體備援查詢
   for (const order of memoryOrders.values()) {
     if (
       order.customer_id === customerId &&
-      (order.status === 'pending' ||
-        order.status === 'dispatching' ||
-        order.status === 'accepted' ||
-        (order as any).status === 'in_progress' ||
-        order.status === 'picked_up')
+      ['pending', 'dispatching', 'accepted', 'in_progress', 'picked_up'].includes(order.status)
     ) {
-      return order;
+      activeOrders.push(order);
     }
   }
 
-  return null;
+  return activeOrders;
+}
+
+/**
+ * 查詢乘客目前正在進行中的活躍訂單 (即時單優先原則)
+ */
+export async function getActiveOrderByCustomerId(customerId: string): Promise<Order | null> {
+  const orders = await getActiveOrdersByCustomerId(customerId);
+  if (orders.length === 0) return null;
+  if (orders.length === 1) return orders[0];
+
+  // 即時單優先原則：若有非未來預約單（即時單或已到出車時間之訂單），以即時單優先！
+  const instantOrder = orders.find((o) => !isFutureReservation(o));
+  if (instantOrder) return instantOrder;
+
+  return orders[0];
 }
 
 /**

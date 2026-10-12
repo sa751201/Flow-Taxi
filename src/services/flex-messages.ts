@@ -321,6 +321,7 @@ export function createGroupDispatchOrderFlexMessage(params: {
   dropoffAddress?: string | null;
   passengerCount?: number;
   scheduledTimeText?: string;
+  isReservation?: boolean;
   estimatedFare?: number | null;
   fareBreakdown?: string;
   distanceKm?: number;
@@ -483,7 +484,7 @@ export function createGroupDispatchOrderFlexMessage(params: {
       height: 'md',
       action: {
         type: 'uri',
-        label: '⚡ 立刻接單 (測算時間)',
+        label: params.isReservation ? '📅 立刻接單 (預約行程)' : '⚡ 立刻接單 (測算時間)',
         uri: params.bidUrl,
       },
     }
@@ -522,7 +523,7 @@ export function createGroupDispatchOrderFlexMessage(params: {
           contents: [
             {
               type: 'text',
-              text: '⚡ 新派單廣播 (市區搭乘)',
+              text: params.isReservation ? '📅 預約派單廣播 (市區搭乘)' : '⚡ 新派單廣播 (市區搭乘)',
               color: '#38bdf8',
               weight: 'bold',
               size: 'sm',
@@ -1023,4 +1024,297 @@ export function createGroupOrderCancelledFlexMessage(params: {
  * 相容既有別名
  */
 export const createGroupOrderAssignedFlexMessage = createDriverOrderCardFlexMessage;
+
+/**
+ * 建立「乘客 1:1 OA 預約叫車確認」Flex Message 卡片
+ */
+export function createPassengerReservationConfirmedFlexMessage(params: {
+  orderId: string;
+  scheduledTimeText: string;
+  pickupAddress: string;
+  dropoffAddress?: string | null;
+  driverName: string;
+  carBrand: string;
+  plateNumber: string;
+  carColor?: string;
+  estimatedFare?: number | null;
+}): messagingApi.FlexMessage {
+  const container: messagingApi.FlexBubble = {
+    type: 'bubble',
+    size: 'mega',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#0f172a',
+      paddingAll: '16px',
+      contents: [
+        {
+          type: 'text',
+          text: '🎉【預約叫車已確認】',
+          color: '#38bdf8',
+          weight: 'bold',
+          size: 'md',
+        },
+        {
+          type: 'text',
+          text: `訂單編號 #${params.orderId.slice(-4)}`,
+          color: '#94a3b8',
+          size: 'xs',
+          margin: 'xs',
+        },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#ffffff',
+      paddingAll: '16px',
+      spacing: 'md',
+      contents: [
+        {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#f0fdf4',
+          borderColor: '#bbf7d0',
+          borderWidth: '1px',
+          cornerRadius: '12px',
+          paddingAll: '12px',
+          contents: [
+            {
+              type: 'text',
+              text: '📅 預約搭乘時間',
+              color: '#166534',
+              size: 'xs',
+              weight: 'bold',
+            },
+            {
+              type: 'text',
+              text: params.scheduledTimeText,
+              color: '#15803d',
+              size: 'lg',
+              weight: 'bold',
+              margin: 'xs',
+            },
+          ],
+        },
+        {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'xs',
+          contents: [
+            {
+              type: 'text',
+              text: `🟢 上車：${params.pickupAddress}`,
+              color: '#334155',
+              size: 'sm',
+              weight: 'bold',
+              wrap: true,
+            },
+            ...(params.dropoffAddress ? [
+              {
+                type: 'text' as const,
+                text: `🔴 下車：${params.dropoffAddress}`,
+                color: '#64748b',
+                size: 'sm',
+                wrap: true,
+              }
+            ] : []),
+          ],
+        },
+        {
+          type: 'separator',
+          color: '#f1f5f9',
+        },
+        {
+          type: 'box',
+          layout: 'horizontal',
+          spacing: 'md',
+          contents: [
+            {
+              type: 'text',
+              text: '👤 司機夥伴',
+              color: '#64748b',
+              size: 'xs',
+              flex: 3,
+            },
+            {
+              type: 'text',
+              text: `${params.driverName}（${params.carBrand} ${params.plateNumber}）`,
+              color: '#0f172a',
+              weight: 'bold',
+              size: 'xs',
+              wrap: true,
+              flex: 7,
+            },
+          ],
+        },
+        {
+          type: 'separator',
+          color: '#f1f5f9',
+        },
+        {
+          type: 'text',
+          text: '⏰ 請於約定時間準時搭車。系統將在【用車前 1 小時】再次發送提醒通知！如需傳達訊息給司機，可隨時輸入「與司機溝通」。✨',
+          color: '#0284c7',
+          size: 'xs',
+          wrap: true,
+          lineSpacing: '4px',
+        },
+      ],
+    },
+  };
+
+  return {
+    type: 'flex',
+    altText: `🎉【預約行程已確認】乘車時間：${params.scheduledTimeText}`,
+    contents: container,
+  };
+}
+
+/**
+ * 建立「司機 1:1 OA 預約單任務通知」Flex Message 卡片
+ */
+export function createDriverReservationOrderCardFlexMessage(params: {
+  orderId: string;
+  driverName: string;
+  scheduledTimeText: string;
+  pickupAddress: string;
+  dropoffAddress?: string | null;
+  passengerCount?: number;
+  estimatedFare?: number | null;
+}): messagingApi.FlexMessage {
+  const pickupMapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(params.pickupAddress)}&travelmode=driving`;
+
+  const container: messagingApi.FlexBubble = {
+    type: 'bubble',
+    size: 'mega',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#1e293b',
+      paddingAll: '16px',
+      contents: [
+        {
+          type: 'text',
+          text: '📅【預約單已成立】',
+          color: '#38bdf8',
+          weight: 'bold',
+          size: 'md',
+        },
+        {
+          type: 'text',
+          text: `恭喜 @${params.driverName} 成功承接預約行程！`,
+          color: '#94a3b8',
+          size: 'xs',
+          margin: 'xs',
+        },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#ffffff',
+      paddingAll: '16px',
+      spacing: 'md',
+      contents: [
+        {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#eff6ff',
+          borderColor: '#bfdbfe',
+          borderWidth: '1px',
+          cornerRadius: '12px',
+          paddingAll: '12px',
+          contents: [
+            {
+              type: 'text',
+              text: '⏰ 預約用車時間',
+              color: '#1d4ed8',
+              size: 'xs',
+              weight: 'bold',
+            },
+            {
+              type: 'text',
+              text: params.scheduledTimeText,
+              color: '#1e40af',
+              size: 'lg',
+              weight: 'bold',
+              margin: 'xs',
+            },
+          ],
+        },
+        {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'xs',
+          contents: [
+            {
+              type: 'text',
+              text: `🟢 上車：${params.pickupAddress}`,
+              color: '#334155',
+              size: 'sm',
+              weight: 'bold',
+              wrap: true,
+            },
+            ...(params.dropoffAddress ? [
+              {
+                type: 'text' as const,
+                text: `🔴 下車：${params.dropoffAddress}`,
+                color: '#64748b',
+                size: 'sm',
+                wrap: true,
+              }
+            ] : []),
+          ],
+        },
+        {
+          type: 'separator',
+          color: '#f1f5f9',
+        },
+        {
+          type: 'text',
+          text: '📢 提醒您：此單為預約行程，系統將在【出發前 1 小時】發送出車提醒通知，屆時將引導前往上車地點。請提早做好出車準備！🚕',
+          color: '#d97706',
+          size: 'xs',
+          wrap: true,
+          lineSpacing: '4px',
+        },
+        {
+          type: 'button',
+          style: 'secondary',
+          color: '#f8fafc',
+          height: 'sm',
+          action: {
+            type: 'uri',
+            label: '🗺️ 預先查看路線',
+            uri: pickupMapUrl,
+          },
+        },
+      ],
+    },
+    footer: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#f8fafc',
+      paddingAll: '10px',
+      contents: [
+        {
+          type: 'text',
+          text: '已同步記錄至您的接單程式「預約行程」清單，可隨時查看。',
+          color: '#94a3b8',
+          size: 'xxs',
+          align: 'center',
+          wrap: true,
+        },
+      ],
+    },
+  };
+
+  return {
+    type: 'flex',
+    altText: `📅【預約單已成立】乘車時間：${params.scheduledTimeText}`,
+    contents: container,
+  };
+}
+
 
