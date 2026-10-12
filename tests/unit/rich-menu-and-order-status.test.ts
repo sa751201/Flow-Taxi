@@ -84,5 +84,28 @@ describe('Rich Menu & Order Status Lifecycle Tests', () => {
       activeOrder = await getActiveOrderByDriverId(driverId);
       expect(activeOrder).toBeNull();
     });
+
+    it('乘客取消訂單時，應能正確更新狀態為 cancelled 且活躍訂單清空', async () => {
+      const customerId = 'U_test_cancel_cust_' + Date.now();
+      const order = await createOrder({
+        customer_id: customerId,
+        service_type: 'city',
+        pickup_address: '故宮',
+        dropoff_address: '台大新生校門口',
+      });
+      expect(order.status).toBe('pending');
+
+      let activeForCustomer = await getActiveOrderByCustomerId(customerId);
+      expect(activeForCustomer).not.toBeNull();
+
+      // 乘客取消
+      await updateOrderStatus(order.id, 'cancelled');
+
+      const cancelledOrder = await getOrderById(order.id);
+      expect(cancelledOrder?.status).toBe('cancelled');
+
+      activeForCustomer = await getActiveOrderByCustomerId(customerId);
+      expect(activeForCustomer).toBeNull();
+    });
   });
 });

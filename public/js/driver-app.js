@@ -958,6 +958,14 @@
         renderActiveTripUi(activeTrip);
         renderActiveTripCard(activeTrip);
       } else {
+        if (activeTrip) {
+          console.log('[Driver App] 活躍任務已結束或由乘客取消');
+          activeTrip = null;
+          tripStage = 'idle';
+          switchView('dashboard');
+          fetchNearbyOrders();
+          alert('🔔 此筆訂單已結束或由乘客取消，已為您返回接單大廳！');
+        }
         activeTrip = null;
         if (reminder) reminder.classList.add('hidden');
         if (activeCard) activeCard.classList.add('hidden');

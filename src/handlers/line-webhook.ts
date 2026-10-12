@@ -764,6 +764,144 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
             }
             continue;
           } else if (
+            text === '取消' ||
+            text === '取消訂單' ||
+            text === '確定取消' ||
+            text === '確定取消訂單' ||
+            text === '不叫了' ||
+            text === '不要了' ||
+            text === '不用車了' ||
+            text.toLowerCase() === 'cancel'
+          ) {
+            const customerId = userSource.userId;
+            if (!customerId) continue;
+
+            const activeOrder = await getActiveOrderByCustomerId(customerId);
+
+            if (!activeOrder) {
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [
+                  {
+                    type: 'text',
+                    text: '⚠️ 您目前沒有進行中的叫車訂單喔！\n若有搭車需求，請隨時輸入「上車地點」與「下車地點」，我們將立即為您派單。😊',
+                  },
+                ],
+              });
+              continue;
+            }
+
+            // 若乘客已經在車上 (客上狀態)，不允許線上直接取消，提醒告知司機安全靠邊
+            if (activeOrder.status === 'picked_up') {
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [
+                  {
+                    type: 'text',
+                    text: '⚠️ 您目前已在行程中（客上狀態），無法直接在線上取消。\n若需要提前結束行程或更改目的地，請直接向司機告知，司機將為您於合適地點安全停靠並結單！🚕',
+                  },
+                ],
+              });
+              continue;
+            }
+
+            // 若尚在 60 秒派單媒合中 (尚未有司機接單)，直接秒速取消
+            if (activeOrder.status === 'pending' || activeOrder.status === 'dispatching') {
+              await dispatchEngine.cancelDispatch(activeOrder.id);
+              await updateOrderStatus(activeOrder.id, 'cancelled');
+
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [
+                  {
+                    type: 'text',
+                    text: `✅【叫車已取消】\n您的叫車需求（訂單 #${activeOrder.id.slice(-4)}）已成功取消。\n如需再次用車，歡迎隨時呼叫！✨`,
+                  },
+                ],
+              });
+              console.log(`[Cancel Order] 乘客 ${customerId} 成功取消媒合中訂單: ${activeOrder.id}`);
+              continue;
+            }
+
+            // 若已有司機接單 (accepted 或 arrived)：
+            // 若使用者只輸入簡單的「取消」，提供二次確認 Quick Reply 防止誤按
+            const isConfirmed = (text === '確定取消' || text === '確定取消訂單');
+            if (!isConfirmed) {
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [
+                  {
+                    type: 'text',
+                    text: `⚠️ 提醒您：司機夥伴已接單正在前往中（或已抵達）！\n📍 上車地點：${activeOrder.pickup_address}\n\n請問您確認要取消此筆訂單嗎？`,
+                    quickReply: {
+                      items: [
+                        {
+                          type: 'action',
+                          action: {
+                            type: 'message',
+                            label: '🔴 確定取消訂單',
+                            text: '確定取消訂單',
+                          },
+                        },
+                        {
+                          type: 'action',
+                          action: {
+                            type: 'message',
+                            label: '🟢 繼續等待司機',
+                            text: '繼續等待司機',
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              });
+              continue;
+            }
+
+            // 乘客已確認取消司機已接單之訂單
+            await updateOrderStatus(activeOrder.id, 'cancelled');
+
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: `✅【訂單已取消】\n已為您取消訂單 #${activeOrder.id.slice(-4)}。\n系統已同步通知接單司機停止前往，感謝您的體諒與配合！`,
+                },
+              ],
+            });
+
+            // 即時推播通知接單司機 1:1 OA
+            if (activeOrder.driver_id) {
+              try {
+                await lineClient.pushMessage({
+                  to: activeOrder.driver_id,
+                  messages: [
+                    {
+                      type: 'text',
+                      text: `📢【訂單取消通知】\n乘客已取消訂單 #${activeOrder.id.slice(-4)}（上車點：${activeOrder.pickup_address}）。\n\n請您停止前往該上車點，系統已為您重置狀態，可返回司機大廳繼續接單！辛苦了！🚖`,
+                    },
+                  ],
+                });
+                console.log(`[Cancel Order] ✅ 成功推播訂單取消訊息至司機 1:1 OA: ${activeOrder.driver_id}`);
+              } catch (pushErr: any) {
+                console.warn('[Cancel Order] 推播司機失敗:', pushErr.message);
+              }
+            }
+            continue;
+          } else if (text === '繼續等待司機' || text.includes('繼續等待')) {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: '好的！司機夥伴正在全力為您趕往上車地點，感謝您的耐心等候！🚖✨',
+                },
+              ],
+            });
+            continue;
+          } else if (
             (text.includes('上車') || text.includes('1.')) &&
             (text.includes('下車') || text.includes('2.'))
           ) {
