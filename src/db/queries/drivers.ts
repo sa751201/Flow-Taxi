@@ -182,6 +182,66 @@ export async function getDriverById(lineUserId: string): Promise<Driver | null> 
   return null;
 }
 
+export async function findDriverByPhoneOrPlate(queryKeyword: string): Promise<Driver | null> {
+  const cleanQ = queryKeyword.trim().toUpperCase().replace(/[-\s]/g, '');
+  if (!cleanQ) return null;
+
+  // 1. 查記憶體快取
+  for (const driver of memoryDrivers.values()) {
+    const p = (driver.plate_number || '').toUpperCase().replace(/[-\s]/g, '');
+    const ph = (driver.phone || '').replace(/[-\s]/g, '');
+    const name = (driver.display_name || '').toUpperCase();
+    if (p === cleanQ || ph === cleanQ || name === cleanQ || p.includes(cleanQ)) {
+      return driver;
+    }
+  }
+
+  // 2. 查 Redis 所有司機
+  try {
+    const redis = getRedisClient();
+    if (redis) {
+      const keys = await redis.keys('driver:*');
+      for (const k of keys) {
+        const data = await redis.get(k);
+        if (data) {
+          const d: Driver = JSON.parse(data);
+          const p = (d.plate_number || '').toUpperCase().replace(/[-\s]/g, '');
+          const ph = (d.phone || '').replace(/[-\s]/g, '');
+          const name = (d.display_name || '').toUpperCase();
+          if (p === cleanQ || ph === cleanQ || name === cleanQ || p.includes(cleanQ)) {
+            memoryDrivers.set(d.line_user_id, d);
+            return d;
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Drivers] Redis 搜尋司機失敗:', err.message);
+  }
+
+  // 3. 查 PostgreSQL
+  if (env.DATABASE_URL) {
+    try {
+      const sql = `
+        SELECT * FROM drivers
+        WHERE UPPER(REPLACE(REPLACE(plate_number, '-', ''), ' ', '')) = $1
+           OR REPLACE(REPLACE(phone, '-', ''), ' ', '') = $1
+           OR UPPER(display_name) = $1
+        LIMIT 1
+      `;
+      const res = await query<Driver>(sql, [cleanQ]);
+      if (res.rows[0]) {
+        memoryDrivers.set(res.rows[0].line_user_id, res.rows[0]);
+        return res.rows[0];
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return null;
+}
+
 export async function clearAllDrivers(): Promise<void> {
   memoryDrivers.clear();
   try {

@@ -10,6 +10,9 @@
   <link rel="stylesheet" href="https://seed.line.me/src/css/line-seed-tw.css">
   <!-- LIFF SDK -->
   <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <!-- Leaflet CSS & JS (保證 100% 正常顯示雷達地圖，不受 Google API Key 限制) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <!-- Transitions.dev Custom Tokens -->
   <link rel="stylesheet" href="/css/transitions.css">
 
@@ -27,8 +30,8 @@
     }
     /* Topo Pattern for Hero Card */
     .topo-pattern {
-      background-image: radial-gradient(rgba(255, 255, 255, 0.18) 1.5px, transparent 1.5px),
-                        radial-gradient(rgba(255, 255, 255, 0.12) 1.5px, transparent 1.5px);
+      background-image: radial-gradient(rgba(0, 0, 0, 0.08) 1.5px, transparent 1.5px),
+                        radial-gradient(rgba(0, 0, 0, 0.05) 1.5px, transparent 1.5px);
       background-size: 24px 24px;
       background-position: 0 0, 12px 12px;
     }
@@ -45,12 +48,47 @@
     .sheet-shadow {
       box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.12);
     }
+    /* Leaflet Marker Styling */
+    .driver-pulse-icon {
+      position: relative;
+      width: 24px;
+      height: 24px;
+    }
+    .driver-pulse-ring {
+      position: absolute;
+      inset: -8px;
+      border-radius: 9999px;
+      background: rgba(16, 185, 129, 0.35);
+      animation: ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+    .leaflet-control-attribution {
+      font-size: 9px !important;
+      background: rgba(255, 255, 255, 0.7) !important;
+    }
   </style>
 </head>
 <body class="bg-slate-100 text-slate-900 select-none overflow-x-hidden min-h-screen">
 
   <!-- Mobile Frame Container (Max width 440px on desktop, full on mobile) -->
   <div id="app-container" class="relative max-w-md mx-auto min-h-screen bg-[#f8fafc] flex flex-col shadow-2xl overflow-hidden pb-24">
+
+    <!-- ==============================================================
+         0. Driver Auth Banner (未綁定時顯示一鍵登入指引)
+         ============================================================== -->
+    <div id="auth-reminder-bar" class="hidden bg-slate-900 text-white px-4 py-2.5 text-xs font-semibold flex items-center justify-between border-b border-slate-800 z-30">
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+        <span id="auth-status-text">未驗證司機身分 (使用展示模式)</span>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button id="btn-quick-line-login" type="button" class="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] shadow-sm">
+          LINE 登入
+        </button>
+        <button id="btn-quick-lookup-login" type="button" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-[11px] border border-slate-700">
+          車牌綁定
+        </button>
+      </div>
+    </div>
 
     <!-- ==============================================================
          1. Top Global Navigation Header (Matches Image Left Screen Top)
@@ -143,21 +181,21 @@
            ------------------------------------------------------------ -->
       <section id="view-dashboard" class="flex flex-col p-4 space-y-4">
 
-        <!-- Top Emerald Hero Banner (Dog walking in neighbor -> 1.5km 叫車雷達) -->
-        <div class="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-700 text-white p-6 shadow-lg topo-pattern">
+        <!-- Top Emerald Hero Banner (需求 2 修正：文字全改為黑色 text-slate-950，避免與淺色混淆) -->
+        <div class="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-emerald-200 via-teal-200 to-emerald-300 border border-emerald-400/80 p-6 shadow-md topo-pattern">
           <!-- Geometric wave decorative curves -->
           <div class="absolute -right-8 -bottom-8 w-44 h-44 rounded-full bg-emerald-400/20 blur-xl pointer-events-none"></div>
 
           <div class="relative z-10 flex items-center justify-between">
             <div class="space-y-3 max-w-[62%]">
-              <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/20 text-white text-[11px] font-bold backdrop-blur-sm">
-                <span class="w-2 h-2 rounded-full bg-emerald-300 animate-ping"></span>
+              <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 text-emerald-300 text-[11px] font-black shadow-sm">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
                 半徑 1.5 km 雷達
               </span>
-              <h2 class="text-xl font-extrabold leading-snug tracking-tight">
+              <h2 class="text-xl font-black leading-snug tracking-tight text-slate-950">
                 附近即時訂單<br>60 秒媒合派單
               </h2>
-              <button id="btn-hero-radar-refresh" type="button" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-slate-900 text-white text-xs font-bold shadow-md hover:bg-slate-800 active:scale-95 transition">
+              <button id="btn-hero-radar-refresh" type="button" class="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold shadow-md active:scale-95 transition">
                 <span>重新掃描附近</span>
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
@@ -167,9 +205,9 @@
 
             <!-- Cute Cutout Illustration Badge (Sticker style) -->
             <div class="relative shrink-0 pr-1">
-              <div class="w-24 h-24 rounded-2xl bg-white/10 backdrop-blur-sm border-2 border-white/40 p-2 shadow-inner flex flex-col items-center justify-center transform rotate-2">
+              <div class="w-24 h-24 rounded-2xl bg-white/70 backdrop-blur-sm border-2 border-slate-900/10 p-2 shadow-sm flex flex-col items-center justify-center transform rotate-2">
                 <div class="text-4xl filter drop-shadow">🚖</div>
-                <span class="text-[10px] font-black tracking-widest text-emerald-100 uppercase mt-1">ONLINE</span>
+                <span class="text-[10px] font-black tracking-widest text-slate-950 uppercase mt-1">ONLINE</span>
               </div>
             </div>
           </div>
@@ -248,20 +286,14 @@
       </section>
 
       <!-- ------------------------------------------------------------
-           VIEW B: Radar Map View (全螢幕地圖調度雷達)
+           VIEW B: Radar Map View (全螢幕 Leaflet / OSM 雷達地圖，確保 100% 正常出圖)
            ------------------------------------------------------------ -->
       <section id="view-map" class="hidden flex-1 flex flex-col relative h-[calc(100vh-130px)]">
-        <!-- Interactive Map Container -->
-        <div id="radar-map-canvas" class="w-full h-full bg-slate-200 relative">
-          <!-- Fallback when loading Google Maps -->
-          <div id="map-loading-placeholder" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-100 p-6 text-center space-y-3">
-            <div class="w-12 h-12 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin"></div>
-            <p class="text-sm font-bold text-slate-700">正在載入 Google Maps 雷達地圖...</p>
-          </div>
-        </div>
+        <!-- Leaflet Map Container -->
+        <div id="radar-map-canvas" class="w-full h-full bg-slate-200 relative z-0"></div>
 
         <!-- Floating Quick GPS Control Button on Map -->
-        <button id="btn-recenter-map" type="button" class="absolute top-4 right-4 z-10 w-11 h-11 rounded-2xl bg-white shadow-xl border border-slate-200 flex items-center justify-center text-slate-800 hover:bg-slate-50 active:scale-95 transition" title="重新定位我">
+        <button id="btn-recenter-map" type="button" class="absolute top-4 right-4 z-20 w-11 h-11 rounded-2xl bg-white shadow-xl border border-slate-200 flex items-center justify-center text-slate-800 hover:bg-slate-50 active:scale-95 transition" title="重新定位我">
           <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
@@ -269,7 +301,7 @@
         </button>
 
         <!-- Floating Bottom Drawer on Map (Collapsed preview of nearest orders) -->
-        <div class="absolute bottom-2 left-3 right-3 z-10">
+        <div class="absolute bottom-2 left-3 right-3 z-20">
           <div class="bg-white/95 backdrop-blur-md rounded-2xl p-3.5 shadow-2xl border border-slate-200 flex items-center justify-between">
             <div class="flex items-center gap-2.5">
               <span class="w-3 h-3 rounded-full bg-emerald-500 animate-ping"></span>
@@ -304,9 +336,7 @@
         </div>
 
         <!-- Upper 50%: Interactive Tracking Route Map -->
-        <div id="tracking-map-canvas" class="w-full h-1/2 bg-slate-200 relative">
-          <!-- Fallback or Map renders here -->
-        </div>
+        <div id="tracking-map-canvas" class="w-full h-1/2 bg-slate-200 relative z-0"></div>
 
         <!-- Lower 50%: Bottom Sheet (Matches Image Right Screen: Black Header + White Body) -->
         <div class="w-full flex-1 flex flex-col justify-end z-10 -mt-6">
@@ -468,7 +498,7 @@
             <span id="drawer-avatar-txt">運</span>
           </div>
           <div>
-            <h3 id="drawer-driver-title" class="font-extrabold text-base">陳運將 (司機中心)</h3>
+            <h3 id="drawer-driver-title" class="font-extrabold text-base">司機中心</h3>
             <p id="drawer-driver-status" class="text-xs text-emerald-400 font-semibold">● 權限開通·在線中</p>
           </div>
         </div>
@@ -476,6 +506,14 @@
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
           </svg>
+        </button>
+      </div>
+
+      <!-- Quick Switch Driver Action -->
+      <div class="p-3 bg-amber-50 border-b border-amber-200/80 flex items-center justify-between text-xs">
+        <span class="text-amber-900 font-bold">要更換或重新登入司機身分？</span>
+        <button id="btn-drawer-switch-driver" type="button" class="px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-500 text-slate-950 font-black shadow-sm">
+          切換司機
         </button>
       </div>
 
@@ -534,7 +572,41 @@
     </aside>
 
     <!-- ==============================================================
-         7. Dispatch Phone Modal (中控代撥電話提示視窗)
+         7. Driver Lookup / Login Modal (車牌或電話快速綁定)
+         ============================================================== -->
+    <div id="driver-lookup-modal" class="hidden fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="bg-white rounded-3xl p-6 max-w-xs w-full shadow-2xl text-center space-y-4">
+        <div class="w-14 h-14 rounded-full bg-amber-100 text-amber-700 mx-auto flex items-center justify-center text-2xl">
+          🔑
+        </div>
+        <div>
+          <h4 class="font-extrabold text-lg text-slate-900">司機身分驗證登入</h4>
+          <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+            請輸入您先前登記過的<strong>車牌號碼</strong>或<strong>電話號碼</strong>，系統將自動載入您的資料並記住在本手機！
+          </p>
+        </div>
+        <div class="space-y-2">
+          <input id="input-lookup-query" type="text" placeholder="例：TDC-8888 或 0912345678" class="w-full p-3 rounded-xl border border-slate-300 text-center text-sm font-bold uppercase tracking-wider focus:border-emerald-500 outline-none">
+          <p id="lookup-modal-error" class="hidden text-xs text-rose-500 font-bold"></p>
+        </div>
+        <div class="grid grid-cols-2 gap-2 pt-1">
+          <button id="btn-cancel-lookup" type="button" class="py-2.5 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs hover:bg-slate-200">
+            取消
+          </button>
+          <button id="btn-confirm-lookup" type="button" class="py-2.5 rounded-xl bg-slate-900 text-white font-extrabold text-xs hover:bg-slate-800">
+            確認載入
+          </button>
+        </div>
+        <div class="pt-2 border-t border-slate-100">
+          <button id="btn-modal-line-login" type="button" class="w-full py-2 rounded-xl bg-[#06c755] hover:bg-[#05b34c] text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm">
+            <span>使用 LINE 帳號一鍵登入</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==============================================================
+         8. Dispatch Phone Modal (中控代撥電話提示視窗)
          ============================================================== -->
     <div id="phone-modal" class="hidden fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
       <div class="bg-white rounded-3xl p-6 max-w-xs w-full shadow-2xl text-center space-y-4">
@@ -559,7 +631,6 @@
 
   </div>
 
-  <!-- Audio Chime for New Orders (Web Audio API fallback) -->
   <!-- Main Script -->
   <script src="/js/driver-app.js"></script>
 </body>

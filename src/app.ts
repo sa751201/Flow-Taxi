@@ -10,7 +10,7 @@ import {
   updateOrderStatus,
 } from './db/queries/orders.js';
 import { getBidsByOrderId } from './db/queries/bids.js';
-import { upsertDriver, getDriverById as getDriverProfile, clearAllDrivers } from './db/queries/drivers.js';
+import { upsertDriver, getDriverById as getDriverProfile, clearAllDrivers, findDriverByPhoneOrPlate } from './db/queries/drivers.js';
 import { getLineClient } from './services/line-client.js';
 import { geocodeAddress, calculateDrivingEta } from './services/google-maps.js';
 import {
@@ -258,6 +258,8 @@ console.error = (...args: any[]) => {
 app.get([
   '/driver/app',
   '/driver/app/driver/app',
+  '/driver/bid/driver/app',
+  '/driver/register/driver/app',
 ], (req, res) => {
   res.sendFile('public/driver/app.html', { root: process.cwd() });
 });
@@ -573,6 +575,23 @@ app.post('/api/dispatch/bid', async (req, res) => {
   } catch (err: any) {
     console.error('[Dispatch Bid Error]', err);
     res.status(400).json({ error: err.message });
+  }
+});
+
+// 司機身分反查 (依車牌、電話或姓名)
+app.get('/api/driver/lookup', async (req, res) => {
+  try {
+    const q = (req.query.q as string) || '';
+    if (!q) {
+      return res.status(400).json({ error: '請提供車牌或電話號碼' });
+    }
+    const driver = await findDriverByPhoneOrPlate(q);
+    if (!driver) {
+      return res.status(404).json({ error: '找不到相符的司機登記資料' });
+    }
+    res.json({ success: true, driver });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -1,10 +1,10 @@
 // Flow Taxi 司機全螢幕調度中心 PWA 核心腳本
-// 參照 UI 設計截圖 (Modern Mint Green & Dark Pill Cards)
+// 整合 Leaflet 100% 穩定地圖渲染、LINE 驗證與車牌快速綁定
 
 (function () {
   'use strict';
 
-  // 系統狀態
+  // 系統設定
   let config = {
     googleMapsApiKey: '',
     oaUrl: 'https://lin.ee/AOp42u7',
@@ -12,14 +12,16 @@
     liffId: '',
   };
 
+  // 司機身分狀態
   let currentDriver = {
-    userId: 'driver_default_01',
-    displayName: '陳運將',
-    plateNumber: 'TDC-8888',
-    carBrand: 'TOYOTA RAV4',
-    carColor: '黑色',
-    phone: '0912-345-678',
+    userId: 'driver_guest',
+    displayName: '未登入司機',
+    plateNumber: '---',
+    carBrand: '',
+    carColor: '',
+    phone: '',
     notes: '🚭 禁菸 🚯 禁食',
+    isVerified: false,
   };
 
   let currentGps = {
@@ -31,14 +33,17 @@
   let nearbyOrders = [];
   let knownOrderIds = new Set();
   let activeTrip = null;
-  let tripStage = 'accepted'; // accepted -> arrived -> picked_up -> completed
+  let tripStage = 'accepted';
   let pollTimer = null;
+
+  // Leaflet 地圖物件
   let radarMap = null;
+  let radarDriverMarker = null;
+  let radarCircle = null;
+  let radarOrderMarkers = [];
   let trackingMap = null;
-  let radarMarkers = [];
   let trackingMarkers = [];
-  let driverCircle = null;
-  let googleMapsLoaded = false;
+  let trackingPolyline = null;
 
   // -------------------------------------------------------------
   // 1. 初始化進入點
@@ -47,8 +52,8 @@
     setupDomListeners();
     await fetchConfig();
     await initDriverIdentity();
+    initLeafletRadarMap();
     startGpsTracking();
-    await loadGoogleMaps();
     startPolling();
     checkUrlParams();
   }
@@ -74,67 +79,84 @@
         }
       }
     } catch (e) {
-      console.warn('[Driver App] 載入 /api/config 失敗，使用預設設定:', e);
+      console.warn('[Driver App] 載入 /api/config 失敗:', e);
     }
   }
 
   // -------------------------------------------------------------
-  // 3. 司機身分驗證與快取
+  // 3. 司機身分驗證與登入流程 (LINE 登入 + 車牌電話快速反查)
   // -------------------------------------------------------------
   async function initDriverIdentity() {
-    // 優先讀取 LocalStorage 快取
-    const cachedId = localStorage.getItem('flow_taxi_driver_id');
+    // 步驟 A: 優先讀取 LocalStorage 本機快取
     const cachedProfile = localStorage.getItem('flow_taxi_driver_profile');
-
     if (cachedProfile) {
       try {
-        currentDriver = JSON.parse(cachedProfile);
+        const parsed = JSON.parse(cachedProfile);
+        if (parsed && parsed.isVerified) {
+          currentDriver = parsed;
+          updateDriverUi();
+          checkAuthBar();
+          return;
+        }
       } catch (e) {}
-    } else if (cachedId) {
-      currentDriver.userId = cachedId;
     }
 
-    // 若支援 LIFF 則嘗試讀取 LINE 使用者資訊
+    // 步驟 B: 若支援 LIFF，嘗試自動以 LINE 身分登入
     if (typeof liff !== 'undefined' && config.liffId) {
       try {
         await liff.init({ liffId: config.liffId });
         if (liff.isLoggedIn()) {
           const profile = await liff.getProfile();
           currentDriver.userId = profile.userId;
-          if (profile.displayName && !cachedProfile) {
-            currentDriver.displayName = profile.displayName;
+
+          // 向伺服器查詢該 LINE User ID 的登記紀錄
+          const res = await fetch(`/api/driver/${profile.userId}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.registered) {
+              currentDriver = {
+                userId: data.line_user_id || profile.userId,
+                displayName: data.display_name || profile.displayName,
+                plateNumber: data.plate_number || 'TDC-8888',
+                carBrand: data.car_brand || 'TOYOTA',
+                carColor: data.car_color || '黑色',
+                phone: data.phone || '',
+                notes: data.notes || '',
+                isVerified: true,
+              };
+              saveCurrentDriver();
+              updateDriverUi();
+              checkAuthBar();
+              return;
+            }
           }
         }
-      } catch (e) {
-        console.warn('[Driver App] LIFF 初始化跳過:', e);
+      } catch (liffErr) {
+        console.warn('[Driver App] LIFF 初始化跳過:', liffErr);
       }
     }
 
-    localStorage.setItem('flow_taxi_driver_id', currentDriver.userId);
-    localStorage.setItem('flow_taxi_driver_profile', JSON.stringify(currentDriver));
-
-    // 同步嘗試自後端更新司機即時資料
-    try {
-      const res = await fetch(`/api/driver/${currentDriver.userId}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.display_name) {
-          currentDriver.displayName = data.display_name;
-          currentDriver.plateNumber = data.plate_number || currentDriver.plateNumber;
-          currentDriver.carBrand = data.car_brand || currentDriver.carBrand;
-          currentDriver.carColor = data.car_color || currentDriver.carColor;
-          currentDriver.phone = data.phone || currentDriver.phone;
-          currentDriver.notes = data.notes || currentDriver.notes;
-          localStorage.setItem('flow_taxi_driver_profile', JSON.stringify(currentDriver));
-        }
-      }
-    } catch (e) {}
-
-    updateDriverCardUi();
+    // 步驟 C: 若尚未驗證，使用預設值並顯示驗證導引條
+    updateDriverUi();
+    checkAuthBar();
   }
 
-  function updateDriverCardUi() {
-    // 主畫面司機卡
+  function saveCurrentDriver() {
+    localStorage.setItem('flow_taxi_driver_id', currentDriver.userId);
+    localStorage.setItem('flow_taxi_driver_profile', JSON.stringify(currentDriver));
+  }
+
+  function checkAuthBar() {
+    const authBar = document.getElementById('auth-reminder-bar');
+    if (!authBar) return;
+    if (currentDriver.isVerified) {
+      authBar.classList.add('hidden');
+    } else {
+      authBar.classList.remove('hidden');
+    }
+  }
+
+  function updateDriverUi() {
     const nameEl = document.getElementById('driver-card-name');
     const plateEl = document.getElementById('driver-card-plate');
     const avatarTxt = document.getElementById('driver-card-avatar-text');
@@ -142,12 +164,15 @@
     const drawerTitle = document.getElementById('drawer-driver-title');
     const drawerAvatar = document.getElementById('drawer-avatar-txt');
 
-    if (nameEl) nameEl.textContent = currentDriver.displayName;
-    if (plateEl) plateEl.textContent = currentDriver.plateNumber;
-    const initial = currentDriver.displayName ? currentDriver.displayName.slice(0, 1) : '運';
+    const name = currentDriver.displayName || '司機夥伴';
+    const plate = currentDriver.plateNumber || '未設定車號';
+    const initial = name ? name.slice(0, 1) : '運';
+
+    if (nameEl) nameEl.textContent = name;
+    if (plateEl) plateEl.textContent = plate;
     if (avatarTxt) avatarTxt.textContent = initial;
     if (headerAvatar) headerAvatar.textContent = initial;
-    if (drawerTitle) drawerTitle.textContent = `${currentDriver.displayName} (司機中心)`;
+    if (drawerTitle) drawerTitle.textContent = `${name} (司機中心)`;
     if (drawerAvatar) drawerAvatar.textContent = initial;
 
     // 表單同步
@@ -166,8 +191,216 @@
     if (inputNotes) inputNotes.value = currentDriver.notes || '';
   }
 
+  // 司機車牌 / 電話快速反查綁定
+  async function performDriverLookup(queryStr) {
+    const errorEl = document.getElementById('lookup-modal-error');
+    if (errorEl) errorEl.classList.add('hidden');
+
+    if (!queryStr || queryStr.trim().length < 2) {
+      if (errorEl) {
+        errorEl.textContent = '請輸入至少 2 碼車牌或電話號碼';
+        errorEl.classList.remove('hidden');
+      }
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/driver/lookup?q=${encodeURIComponent(queryStr.trim())}`);
+      const data = await res.json();
+
+      if (!res.ok || !data.driver) {
+        if (errorEl) {
+          errorEl.textContent = data.error || '查無此車牌或電話登記紀錄';
+          errorEl.classList.remove('hidden');
+        }
+        return;
+      }
+
+      const d = data.driver;
+      currentDriver = {
+        userId: d.line_user_id || `driver_${Date.now()}`,
+        displayName: d.display_name || '司機夥伴',
+        plateNumber: d.plate_number || queryStr.toUpperCase(),
+        carBrand: d.car_brand || 'TOYOTA',
+        carColor: d.car_color || '黑色',
+        phone: d.phone || '',
+        notes: d.notes || '',
+        isVerified: true,
+      };
+
+      saveCurrentDriver();
+      updateDriverUi();
+      checkAuthBar();
+      document.getElementById('driver-lookup-modal')?.classList.add('hidden');
+      alert(`🎉 驗證成功！歡迎回來，${currentDriver.displayName}！`);
+
+      fetchNearbyOrders();
+      fetchActiveTrip();
+    } catch (err) {
+      if (errorEl) {
+        errorEl.textContent = '查詢時發生網路錯誤，請稍後重試';
+        errorEl.classList.remove('hidden');
+      }
+    }
+  }
+
+  // LINE 一鍵登入
+  function triggerLineLogin() {
+    if (typeof liff !== 'undefined' && liff.login) {
+      liff.login({ redirectUri: window.location.href });
+    } else {
+      alert('請在支援 LINE 的環境中開啟此連結進行授權。');
+    }
+  }
+
   // -------------------------------------------------------------
-  // 4. GPS 司機即時定位追蹤
+  // 4. Leaflet 互動地圖 (確保 100% 正常載入，解決白畫面問題)
+  // -------------------------------------------------------------
+  function initLeafletRadarMap() {
+    const mapContainer = document.getElementById('radar-map-canvas');
+    if (!mapContainer || typeof L === 'undefined') return;
+
+    if (radarMap) return;
+
+    try {
+      // 建立地圖實例
+      radarMap = L.map('radar-map-canvas', {
+        center: [currentGps.lat, currentGps.lng],
+        zoom: 15,
+        zoomControl: false,
+        attributionControl: false,
+      });
+
+      // 使用 CartoDB Positron 極簡高對比灰色向量圖磚（最符合現代手機 UI）
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        subdomains: 'abcd',
+      }).addTo(radarMap);
+
+      // 自訂司機即時定位脈衝光圈圖標
+      const driverIcon = L.divIcon({
+        className: 'custom-driver-pin',
+        html: `
+          <div class="relative w-8 h-8 flex items-center justify-center">
+            <span class="absolute inset-0 rounded-full bg-emerald-500/30 animate-ping"></span>
+            <div class="w-8 h-8 rounded-full bg-slate-900 ring-2 ring-emerald-400 shadow-xl flex items-center justify-center text-sm font-bold text-amber-400">
+              🚖
+            </div>
+          </div>
+        `,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      });
+
+      radarDriverMarker = L.marker([currentGps.lat, currentGps.lng], { icon: driverIcon }).addTo(radarMap);
+
+      // 1.5km 半徑覆蓋光圈
+      radarCircle = L.circle([currentGps.lat, currentGps.lng], {
+        radius: 1500, // 1.5 km
+        color: '#10b981',
+        weight: 1.5,
+        opacity: 0.8,
+        fillColor: '#10b981',
+        fillOpacity: 0.08,
+      }).addTo(radarMap);
+
+      console.log('[Leaflet Map] 雷達地圖初始化完成！');
+    } catch (e) {
+      console.error('[Leaflet Map Error]', e);
+    }
+  }
+
+  function updateRadarDriverGps(lat, lng) {
+    if (!radarMap) return;
+    if (radarDriverMarker) radarDriverMarker.setLatLng([lat, lng]);
+    if (radarCircle) radarCircle.setLatLng([lat, lng]);
+  }
+
+  function updateRadarOrderMarkers(orders) {
+    if (!radarMap || typeof L === 'undefined') return;
+
+    // 清除舊標記
+    radarOrderMarkers.forEach(m => radarMap.removeLayer(m));
+    radarOrderMarkers = [];
+
+    orders.forEach(ord => {
+      const lat = ord.pickup_lat || (currentGps.lat + (Math.random() - 0.5) * 0.015);
+      const lng = ord.pickup_lng || (currentGps.lng + (Math.random() - 0.5) * 0.015);
+
+      const orderIcon = L.divIcon({
+        className: 'custom-order-pin',
+        html: `
+          <div class="px-2.5 py-1 rounded-full bg-slate-900 text-white text-[11px] font-black shadow-xl ring-2 ring-emerald-400 flex items-center gap-1 cursor-pointer transform hover:scale-110 transition">
+            <span class="text-xs">📍</span>
+            <span>搶單</span>
+          </div>
+        `,
+        iconSize: [60, 24],
+        iconAnchor: [30, 12],
+      });
+
+      const marker = L.marker([lat, lng], { icon: orderIcon }).addTo(radarMap);
+      marker.bindPopup(`
+        <div class="text-xs space-y-1 p-1">
+          <p class="font-extrabold text-slate-900">${escapeHtml(ord.pickup_address || '上車點')}</p>
+          <p class="text-[11px] text-slate-500">距您約 ${ord.distance_km ? ord.distance_km.toFixed(1) : 1.2} km</p>
+          <a href="/driver/bid?orderId=${ord.id}&source=web" class="inline-block mt-1 px-3 py-1 bg-emerald-600 text-white rounded-lg font-bold text-center w-full">前往接單</a>
+        </div>
+      `);
+
+      radarOrderMarkers.push(marker);
+    });
+  }
+
+  function initTrackingMap(order) {
+    const mapContainer = document.getElementById('tracking-map-canvas');
+    if (!mapContainer || typeof L === 'undefined') return;
+
+    if (!trackingMap) {
+      trackingMap = L.map('tracking-map-canvas', {
+        center: [currentGps.lat, currentGps.lng],
+        zoom: 15,
+        zoomControl: false,
+        attributionControl: false,
+      });
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        subdomains: 'abcd',
+      }).addTo(trackingMap);
+    }
+
+    // 清除舊標記
+    trackingMarkers.forEach(m => trackingMap.removeLayer(m));
+    trackingMarkers = [];
+    if (trackingPolyline) trackingMap.removeLayer(trackingPolyline);
+
+    const pickupLat = currentGps.lat + 0.003;
+    const pickupLng = currentGps.lng + 0.003;
+
+    // 司機點
+    const dMarker = L.marker([currentGps.lat, currentGps.lng]).addTo(trackingMap);
+    trackingMarkers.push(dMarker);
+
+    // 上車點
+    const pMarker = L.marker([pickupLat, pickupLng]).addTo(trackingMap);
+    trackingMarkers.push(pMarker);
+
+    // 連接虛線
+    trackingPolyline = L.polyline([
+      [currentGps.lat, currentGps.lng],
+      [pickupLat, pickupLng]
+    ], {
+      color: '#10b981',
+      weight: 4,
+      dashArray: '6, 8',
+    }).addTo(trackingMap);
+
+    trackingMap.fitBounds([[currentGps.lat, currentGps.lng], [pickupLat, pickupLng]], { padding: [40, 40] });
+  }
+
+  // -------------------------------------------------------------
+  // 5. GPS 定位追蹤
   // -------------------------------------------------------------
   function startGpsTracking() {
     if ('geolocation' in navigator) {
@@ -177,19 +410,16 @@
         { enableHighAccuracy: true, timeout: 8000, maximumAge: 5000 }
       );
 
-      // 持續背景監聽位置更新
       navigator.geolocation.watchPosition(
         (pos) => {
           currentGps.lat = pos.coords.latitude;
           currentGps.lng = pos.coords.longitude;
           currentGps.hasRealGps = true;
-          updateRadarMapDriverPos();
+          updateRadarDriverGps(currentGps.lat, currentGps.lng);
         },
         null,
         { enableHighAccuracy: true, maximumAge: 10000 }
       );
-    } else {
-      console.warn('[Driver App] 瀏覽器不支援 Geolocation');
     }
   }
 
@@ -197,25 +427,24 @@
     currentGps.lat = pos.coords.latitude;
     currentGps.lng = pos.coords.longitude;
     currentGps.hasRealGps = true;
-    console.log(`[GPS] 取得司機目前座標: ${currentGps.lat}, ${currentGps.lng}`);
-    updateRadarMapDriverPos();
+    updateRadarDriverGps(currentGps.lat, currentGps.lng);
+    if (radarMap) radarMap.panTo([currentGps.lat, currentGps.lng]);
     fetchNearbyOrders();
   }
 
   function onGpsError(err) {
-    console.warn('[GPS] 無法取得真實座標，使用預設台北座標:', err.message);
+    console.warn('[GPS] 瀏覽器回報定位超時，使用預設座標:', err.message);
     fetchNearbyOrders();
   }
 
   // -------------------------------------------------------------
-  // 5. 輪詢 1.5km 訂單與活躍任務
+  // 6. 輪詢 1.5km 訂單與活躍任務
   // -------------------------------------------------------------
   function startPolling() {
     fetchNearbyOrders();
     fetchActiveTrip();
 
     if (pollTimer) clearInterval(pollTimer);
-    // 每 4 秒自動掃描一次附近派單
     pollTimer = setInterval(() => {
       fetchNearbyOrders();
       fetchActiveTrip();
@@ -232,10 +461,9 @@
       const orders = data.orders || [];
       nearbyOrders = orders;
 
-      // 檢查是否有新訂單進入
       checkNewOrdersNotification(orders);
       renderOrdersList(orders);
-      updateRadarMapOrders(orders);
+      updateRadarOrderMarkers(orders);
 
       const countBadge = document.getElementById('orders-count-badge');
       if (countBadge) countBadge.textContent = orders.length;
@@ -264,17 +492,14 @@
     }
   }
 
-  // 新單警報音效與頂部橫幅 (Web Audio API 柔和嗶嗶聲)
   function triggerNewOrderAlert(order) {
     playChime();
 
-    // 顯示紅點
     const bellDot = document.getElementById('bell-dot');
     const navDot = document.getElementById('nav-dashboard-badge');
     if (bellDot) bellDot.classList.remove('hidden');
     if (navDot) navDot.classList.remove('hidden');
 
-    // 頂部彈出通知橫幅
     const banner = document.getElementById('new-order-banner');
     const addrEl = document.getElementById('banner-address');
     const distEl = document.getElementById('banner-distance');
@@ -296,7 +521,6 @@
         banner.classList.remove('-translate-y-full');
       });
 
-      // 6 秒後自動收起橫幅
       setTimeout(() => {
         banner.classList.add('-translate-y-full');
         setTimeout(() => banner.classList.add('hidden'), 300);
@@ -312,8 +536,8 @@
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12); // A5
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.12);
       gain.gain.setValueAtTime(0.15, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
       osc.connect(gain);
@@ -324,7 +548,7 @@
   }
 
   // -------------------------------------------------------------
-  // 6. 渲染訂單清單 (參照圖片截圖 Recent Walker 列表)
+  // 7. 渲染訂單清單 (參照圖片截圖 Recent Walker 列表)
   // -------------------------------------------------------------
   function renderOrdersList(orders) {
     const container = document.getElementById('orders-list-container');
@@ -352,7 +576,6 @@
 
       return `
         <div class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition flex items-center justify-between gap-3">
-          <!-- Left: Circular Taxi/Passenger Avatar -->
           <div class="flex items-center gap-3 min-w-0">
             <div class="w-11 h-11 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-base flex items-center justify-center shrink-0 border border-emerald-200/60">
               🚖
@@ -380,7 +603,6 @@
             </div>
           </div>
 
-          <!-- Right: Outlined Pill "Book" button -> "搶單" -->
           <div class="shrink-0">
             <a href="/driver/bid?orderId=${ord.id}&source=web"
                class="inline-block px-4 py-2 rounded-full border border-slate-300 hover:border-slate-900 bg-white hover:bg-slate-900 text-slate-900 hover:text-white font-extrabold text-xs shadow-sm transition active:scale-95">
@@ -393,9 +615,10 @@
   }
 
   // -------------------------------------------------------------
-  // 7. 活躍任務查詢與狀態控制 (Tracking Mode)
+  // 8. 活躍任務查詢與狀態控制 (Tracking Mode)
   // -------------------------------------------------------------
   async function fetchActiveTrip() {
+    if (!currentDriver.userId) return;
     try {
       const res = await fetch(`/api/driver/${currentDriver.userId}/active-trip`);
       if (!res.ok) return;
@@ -434,15 +657,13 @@
     if (dropoffEl) dropoffEl.textContent = order.dropoff_address || '---';
     if (passengerName) passengerName.textContent = `乘客 (訂單 #${order.id.slice(-4)})`;
 
-    // 導航目標設定：未上車導往上車點，已上車導往下車點
     const targetAddr = (tripStage === 'picked_up') ? order.dropoff_address : order.pickup_address;
     if (extNavBtn) {
       extNavBtn.href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(targetAddr || '台北車站')}&travelmode=driving`;
     }
 
-    // 更新進度條與大按鈕
     updateTripProgressAndAction(order);
-    updateTrackingMap(order);
+    initTrackingMap(order);
   }
 
   function updateTripProgressAndAction(order) {
@@ -452,7 +673,6 @@
     const actionText = document.getElementById('trip-main-action-text');
     const actionIcon = document.getElementById('trip-main-action-icon');
 
-    // 進度條階段
     if (tripStage === 'accepted') {
       if (fillEl) fillEl.style.width = '25%';
       if (knobEl) knobEl.style.left = '25%';
@@ -474,7 +694,6 @@
     }
   }
 
-  // 執行任務動作 (到點 / 客上 / 下車結單)
   async function performTripAction() {
     if (!activeTrip) return;
     const btn = document.getElementById('btn-trip-main-action');
@@ -530,181 +749,6 @@
   }
 
   // -------------------------------------------------------------
-  // 8. Google Maps 載入與互動
-  // -------------------------------------------------------------
-  async function loadGoogleMaps() {
-    if (window.google && window.google.maps) {
-      googleMapsLoaded = true;
-      initRadarMap();
-      return;
-    }
-
-    if (!config.googleMapsApiKey) {
-      console.warn('[Google Maps] 無 API Key，啟用備用 Canvas 地圖渲染');
-      renderCanvasMapFallback();
-      return;
-    }
-
-    try {
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${config.googleMapsApiKey}&libraries=geometry`;
-      script.async = true;
-      script.defer = true;
-      script.onload = () => {
-        googleMapsLoaded = true;
-        initRadarMap();
-      };
-      script.onerror = () => {
-        console.warn('[Google Maps] 載入失敗，使用備用 Canvas 渲染');
-        renderCanvasMapFallback();
-      };
-      document.head.appendChild(script);
-    } catch (e) {
-      renderCanvasMapFallback();
-    }
-  }
-
-  function initRadarMap() {
-    const mapEl = document.getElementById('radar-map-canvas');
-    if (!mapEl || !window.google) return;
-
-    const placeholder = document.getElementById('map-loading-placeholder');
-    if (placeholder) placeholder.remove();
-
-    radarMap = new google.maps.Map(mapEl, {
-      center: { lat: currentGps.lat, lng: currentGps.lng },
-      zoom: 15,
-      disableDefaultUI: true,
-      zoomControl: false,
-      styles: [
-        { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-        { featureType: 'transit', stylers: [{ visibility: 'simplified' }] }
-      ],
-    });
-
-    // 司機自身光環圓形 (1.5km)
-    driverCircle = new google.maps.Circle({
-      strokeColor: '#10b981',
-      strokeOpacity: 0.8,
-      strokeWeight: 2,
-      fillColor: '#10b981',
-      fillOpacity: 0.12,
-      map: radarMap,
-      center: { lat: currentGps.lat, lng: currentGps.lng },
-      radius: 1500, // 1.5km
-    });
-
-    updateRadarMapOrders(nearbyOrders);
-  }
-
-  function updateRadarMapDriverPos() {
-    if (radarMap && driverCircle) {
-      const pos = { lat: currentGps.lat, lng: currentGps.lng };
-      driverCircle.setCenter(pos);
-    }
-  }
-
-  function updateRadarMapOrders(orders) {
-    if (!radarMap || !window.google) return;
-
-    // 清除舊標記
-    radarMarkers.forEach(m => m.setMap(null));
-    radarMarkers = [];
-
-    orders.forEach(ord => {
-      // 若訂單有經緯度或隨機散佈在附近
-      const lat = ord.pickup_lat || (currentGps.lat + (Math.random() - 0.5) * 0.015);
-      const lng = ord.pickup_lng || (currentGps.lng + (Math.random() - 0.5) * 0.015);
-
-      const marker = new google.maps.Marker({
-        position: { lat, lng },
-        map: radarMap,
-        title: ord.pickup_address,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 9,
-          fillColor: '#0f172a',
-          fillOpacity: 1,
-          strokeColor: '#34d399',
-          strokeWeight: 3,
-        },
-      });
-
-      marker.addListener('click', () => {
-        window.location.href = `/driver/bid?orderId=${ord.id}&source=web`;
-      });
-
-      radarMarkers.push(marker);
-    });
-  }
-
-  function updateTrackingMap(order) {
-    const mapEl = document.getElementById('tracking-map-canvas');
-    if (!mapEl || !window.google) {
-      renderTrackingCanvasFallback(order);
-      return;
-    }
-
-    if (!trackingMap) {
-      trackingMap = new google.maps.Map(mapEl, {
-        center: { lat: currentGps.lat, lng: currentGps.lng },
-        zoom: 15,
-        disableDefaultUI: true,
-        styles: [
-          { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-        ],
-      });
-    }
-
-    // 建立上車點與下車點標記
-    trackingMarkers.forEach(m => m.setMap(null));
-    trackingMarkers = [];
-
-    const pickupMarker = new google.maps.Marker({
-      position: { lat: currentGps.lat + 0.003, lng: currentGps.lng + 0.003 },
-      map: trackingMap,
-      title: '上車點',
-      label: '起',
-    });
-    trackingMarkers.push(pickupMarker);
-  }
-
-  function renderCanvasMapFallback() {
-    const mapEl = document.getElementById('radar-map-canvas');
-    if (!mapEl) return;
-    mapEl.innerHTML = `
-      <div class="relative w-full h-full bg-[#e2e8f0] flex items-center justify-center overflow-hidden">
-        <div class="w-64 h-64 rounded-full border-4 border-emerald-500/40 bg-emerald-500/10 flex items-center justify-center radar-pulse-anim">
-          <div class="w-36 h-36 rounded-full border-2 border-emerald-500/60 flex items-center justify-center">
-            <div class="w-12 h-12 rounded-full bg-slate-900 text-amber-400 flex items-center justify-center text-xl shadow-lg ring-4 ring-emerald-400">
-              🚖
-            </div>
-          </div>
-        </div>
-        <div class="absolute bottom-16 text-center">
-          <span class="px-3 py-1.5 rounded-full bg-slate-900/90 text-white text-xs font-bold shadow-lg">
-            📍 1.5km 雷達覆蓋區 (司機定位就緒)
-          </span>
-        </div>
-      </div>
-    `;
-  }
-
-  function renderTrackingCanvasFallback(order) {
-    const mapEl = document.getElementById('tracking-map-canvas');
-    if (!mapEl) return;
-    mapEl.innerHTML = `
-      <div class="relative w-full h-full bg-[#e2e8f0] flex flex-col items-center justify-center p-4">
-        <div class="w-full max-w-xs bg-white/90 backdrop-blur-md rounded-2xl p-4 shadow-lg border border-slate-300 text-center space-y-2">
-          <div class="text-2xl">🗺️</div>
-          <p class="text-xs font-bold text-slate-800">地圖導航路徑追蹤模式</p>
-          <p class="text-[11px] text-slate-500 truncate">目前前往：${escapeHtml(order.pickup_address || '上車地點')}</p>
-        </div>
-      </div>
-    `;
-  }
-
-  // -------------------------------------------------------------
   // 9. 畫面視圖切換 (Dashboard / Map / Tracking)
   // -------------------------------------------------------------
   function switchView(viewName) {
@@ -728,15 +772,21 @@
     } else if (viewName === 'map') {
       if (viewMap) viewMap.classList.remove('hidden');
       if (navMap) navMap.className = 'flex flex-col items-center justify-center text-emerald-400 active:scale-95 transition';
-      if (radarMap && window.google) {
-        google.maps.event.trigger(radarMap, 'resize');
-        radarMap.setCenter({ lat: currentGps.lat, lng: currentGps.lng });
-      }
+
+      // 關鍵修復：切換至地圖時，延遲 100ms 觸發 Leaflet 重繪，徹底根絕白畫面！
+      setTimeout(() => {
+        if (radarMap) {
+          radarMap.invalidateSize();
+          radarMap.panTo([currentGps.lat, currentGps.lng]);
+        } else {
+          initLeafletRadarMap();
+        }
+      }, 120);
     } else if (viewName === 'tracking') {
       if (viewTracking) viewTracking.classList.remove('hidden');
-      if (trackingMap && window.google) {
-        google.maps.event.trigger(trackingMap, 'resize');
-      }
+      setTimeout(() => {
+        if (trackingMap) trackingMap.invalidateSize();
+      }, 120);
     }
   }
 
@@ -801,7 +851,7 @@
   // 11. 監聽與綁定事件
   // -------------------------------------------------------------
   function setupDomListeners() {
-    // 底部導覽按鈕
+    // 底部導覽列
     document.getElementById('nav-btn-dashboard')?.addEventListener('click', () => switchView('dashboard'));
     document.getElementById('nav-btn-map')?.addEventListener('click', () => switchView('map'));
     document.getElementById('nav-btn-menu')?.addEventListener('click', openSideDrawer);
@@ -809,23 +859,23 @@
     document.getElementById('btn-close-drawer')?.addEventListener('click', closeSideDrawer);
     document.getElementById('drawer-backdrop')?.addEventListener('click', closeSideDrawer);
 
-    // 切換地圖按鈕
+    // 切換地圖捷徑
     document.getElementById('btn-toggle-map-shortcut')?.addEventListener('click', () => switchView('map'));
     document.getElementById('btn-map-show-list')?.addEventListener('click', () => switchView('dashboard'));
     document.getElementById('btn-tracking-back')?.addEventListener('click', () => switchView('dashboard'));
     document.getElementById('btn-switch-to-tracking')?.addEventListener('click', () => switchView('tracking'));
 
-    // Hero 刷新
+    // Hero 掃描按鈕
     document.getElementById('btn-hero-radar-refresh')?.addEventListener('click', () => {
       fetchNearbyOrders();
       alert('已重新掃描半徑 1.5km 內叫車訂單！');
     });
 
-    // 地圖重定位按鈕
+    // 地圖重置中心點按鈕
     document.getElementById('btn-recenter-map')?.addEventListener('click', () => {
       startGpsTracking();
-      if (radarMap && window.google) {
-        radarMap.panTo({ lat: currentGps.lat, lng: currentGps.lng });
+      if (radarMap) {
+        radarMap.panTo([currentGps.lat, currentGps.lng]);
       }
     });
 
@@ -838,6 +888,29 @@
     });
     document.getElementById('btn-cancel-phone-modal')?.addEventListener('click', () => {
       document.getElementById('phone-modal')?.classList.add('hidden');
+    });
+
+    // 司機身分登入 Modal
+    document.getElementById('btn-quick-line-login')?.addEventListener('click', triggerLineLogin);
+    document.getElementById('btn-modal-line-login')?.addEventListener('click', triggerLineLogin);
+    document.getElementById('btn-quick-lookup-login')?.addEventListener('click', () => {
+      document.getElementById('driver-lookup-modal')?.classList.remove('hidden');
+    });
+    document.getElementById('btn-drawer-switch-driver')?.addEventListener('click', () => {
+      closeSideDrawer();
+      document.getElementById('driver-lookup-modal')?.classList.remove('hidden');
+    });
+    document.getElementById('btn-cancel-lookup')?.addEventListener('click', () => {
+      document.getElementById('driver-lookup-modal')?.classList.add('hidden');
+    });
+    document.getElementById('btn-confirm-lookup')?.addEventListener('click', () => {
+      const q = document.getElementById('input-lookup-query')?.value;
+      performDriverLookup(q);
+    });
+    document.getElementById('input-lookup-query')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        performDriverLookup(e.target.value);
+      }
     });
 
     // 側邊 Drawer 分頁切換
@@ -889,8 +962,10 @@
         });
 
         if (res.ok) {
-          localStorage.setItem('flow_taxi_driver_profile', JSON.stringify(currentDriver));
-          updateDriverCardUi();
+          currentDriver.isVerified = true;
+          saveCurrentDriver();
+          updateDriverUi();
+          checkAuthBar();
           if (statusEl) {
             statusEl.textContent = '✅ 司機資料已成功更新！';
             statusEl.classList.remove('hidden');
@@ -913,7 +988,6 @@
     }
   }
 
-  // 工具函式
   function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/[&<>"']/g, function (m) {
@@ -930,7 +1004,6 @@
     }
   }
 
-  // 啟動應用
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
