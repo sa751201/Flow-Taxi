@@ -283,6 +283,35 @@ export async function markOrderDispatching(orderId: string): Promise<boolean> {
 }
 
 /**
+ * 標記司機已到達上車點 (記錄至備援記憶體與 orders.note)
+ */
+export async function markDriverArrived(orderId: string): Promise<boolean> {
+  const cached = memoryOrders.get(orderId);
+  if (cached) {
+    (cached as any).driver_arrived = true;
+    if (!cached.note?.includes('[DRIVER_ARRIVED]')) {
+      cached.note = (cached.note ? cached.note + ' ' : '') + '[DRIVER_ARRIVED]';
+    }
+  }
+
+  if (env.DATABASE_URL) {
+    try {
+      const sql = `
+        UPDATE orders 
+        SET note = COALESCE(note, '') || ' [DRIVER_ARRIVED]'
+        WHERE id = $1 AND (note IS NULL OR note NOT LIKE '%[DRIVER_ARRIVED]%');
+      `;
+      await query(sql, [orderId]);
+      return true;
+    } catch (e: any) {
+      console.warn('[Orders DB] 標記司機已到達失敗:', e.message);
+    }
+  }
+
+  return true;
+}
+
+/**
  * 查詢司機目前正在執行的活躍訂單 (accepted / in_progress / picked_up)
  * 支援傳入 LINE User ID、車牌號碼 (如 CEQ-7710)、姓名 (如 Mike Wang) 或電話
  */

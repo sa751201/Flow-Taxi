@@ -18,6 +18,7 @@ import {
   getActiveOrderByDriverId,
   getActiveOrderByCustomerId,
   updateOrderStatus,
+  markDriverArrived,
 } from '../db/queries/orders.js';
 import { linkDriverRichMenu, syncUserRichMenuByRole } from '../services/rich-menu.js';
 import { dispatchEngine } from '../app.js';
@@ -366,6 +367,9 @@ export async function handleLineEvents(events: WebhookEvent[]) {
           }
 
           console.log(`[Driver Arrival] 司機 ${senderUserId} 已到達訂單 ${activeOrder.id} 上車地！通知乘客: ${activeOrder.customer_id}`);
+
+          // 持久化記錄司機已到點狀態
+          await markDriverArrived(activeOrder.id);
 
           // 透過 1:1 OA 通知乘客，附帶 Quick Reply 按鈕 (「準時」、「晚1-5分鐘」、「📞 電話聯繫」)
           if (activeOrder.customer_id) {

@@ -8,6 +8,7 @@ import {
   getOrdersByDriverId,
   getActiveOrderByDriverId,
   updateOrderStatus,
+  markDriverArrived,
 } from './db/queries/orders.js';
 import { getBidsByOrderId } from './db/queries/bids.js';
 import { upsertDriver, getDriverById as getDriverProfile, clearAllDrivers, findDriverByPhoneOrPlate } from './db/queries/drivers.js';
@@ -309,7 +310,9 @@ app.get('/api/driver/:driverId/active-trip', async (req, res) => {
     if (!activeOrder) {
       return res.json({ hasActiveTrip: false, order: null });
     }
-    res.json({ hasActiveTrip: true, order: activeOrder });
+    const isArrived = activeOrder.status === 'accepted' && (Boolean(activeOrder.note?.includes('[DRIVER_ARRIVED]')) || Boolean((activeOrder as any).driver_arrived));
+    const effectiveOrder = isArrived ? { ...activeOrder, status: 'arrived', is_arrived: true } : activeOrder;
+    res.json({ hasActiveTrip: true, order: effectiveOrder });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -342,7 +345,8 @@ app.post('/api/driver/trip-action', async (req, res) => {
     const customerId = order.customer_id;
 
     if (action === 'arrived') {
-      // 司機回報到達上車點
+      // 司機回報到達上車點：持久化記錄到達狀態
+      await markDriverArrived(orderId);
       if (customerId && customerId !== 'UNKNOWN_CUSTOMER') {
         await lineClient.pushMessage({
           to: customerId,

@@ -731,6 +731,11 @@
 
       if (data.hasActiveTrip && data.order) {
         activeTrip = data.order;
+        // 優先尊重後端或本地暫存之 arrived 狀態
+        const localStage = localStorage.getItem(`active_trip_stage_${activeTrip.id}`);
+        if (localStage && activeTrip.status === 'accepted') {
+          activeTrip.status = localStage;
+        }
         tripStage = activeTrip.status || 'accepted';
 
         if (reminder) {
@@ -826,23 +831,36 @@
     const actionText = document.getElementById('trip-main-action-text');
     const actionIcon = document.getElementById('trip-main-action-icon');
 
+    const startLabel = document.getElementById('trip-stage-start-label');
+    const midLabel = document.getElementById('trip-stage-mid-label');
+    const endLabel = document.getElementById('trip-stage-end-label');
+
     if (tripStage === 'accepted') {
       if (fillEl) fillEl.style.width = '25%';
       if (knobEl) knobEl.style.left = '25%';
       if (actionIcon) actionIcon.textContent = '🔔';
       if (actionText) actionText.textContent = '我已抵達上車地點（到點通知）';
+      if (startLabel) startLabel.className = 'text-emerald-600 font-extrabold';
+      if (midLabel) midLabel.className = 'text-slate-400 font-bold';
+      if (endLabel) endLabel.className = 'text-slate-400 font-bold';
       mainActionBtn.className = 'w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm shadow-lg shadow-emerald-600/30 active:scale-98 transition flex items-center justify-center gap-2';
     } else if (tripStage === 'arrived') {
       if (fillEl) fillEl.style.width = '60%';
       if (knobEl) knobEl.style.left = '60%';
       if (actionIcon) actionIcon.textContent = '🚕';
       if (actionText) actionText.textContent = '乘客已上車（出發前往目的地）';
+      if (startLabel) startLabel.className = 'text-slate-400 font-bold';
+      if (midLabel) midLabel.className = 'text-amber-600 font-extrabold';
+      if (endLabel) endLabel.className = 'text-slate-400 font-bold';
       mainActionBtn.className = 'w-full py-3.5 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-sm shadow-lg shadow-amber-500/30 active:scale-98 transition flex items-center justify-center gap-2';
     } else if (tripStage === 'picked_up') {
       if (fillEl) fillEl.style.width = '90%';
       if (knobEl) knobEl.style.left = '90%';
       if (actionIcon) actionIcon.textContent = '🏁';
       if (actionText) actionText.textContent = '到達目的地（完成結單）';
+      if (startLabel) startLabel.className = 'text-slate-400 font-bold';
+      if (midLabel) midLabel.className = 'text-slate-400 font-bold';
+      if (endLabel) endLabel.className = 'text-slate-900 font-extrabold';
       mainActionBtn.className = 'w-full py-3.5 px-4 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-sm shadow-lg shadow-slate-900/30 active:scale-98 transition flex items-center justify-center gap-2';
     }
   }
@@ -887,11 +905,14 @@
       if (action === 'arrived') {
         tripStage = 'arrived';
         if (activeTrip) activeTrip.status = 'arrived';
+        localStorage.setItem(`active_trip_stage_${activeTrip.id}`, 'arrived');
       } else if (action === 'picked_up') {
         tripStage = 'picked_up';
         if (activeTrip) activeTrip.status = 'picked_up';
+        localStorage.removeItem(`active_trip_stage_${activeTrip.id}`);
       } else if (action === 'completed') {
         tripStage = 'completed';
+        localStorage.removeItem(`active_trip_stage_${activeTrip.id}`);
         activeTrip = null;
         const activeCard = document.getElementById('active-trip-card');
         if (activeCard) activeCard.classList.add('hidden');
