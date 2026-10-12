@@ -9,11 +9,50 @@ export interface ParsedReservation {
 }
 
 /**
+ * 輔助解析時間字串中的小時與分鐘
+ * 支援格式：上午9點, 9點, 9點半, 9點30分, 19:20, 下午3點, 晚上8點45分, 9:00 等
+ */
+function parseTimeComponents(timeStr: string): { hour: number; minute: number } | null {
+  if (!timeStr) return null;
+  const cleaned = timeStr.trim();
+  const isHalf = cleaned.includes('半');
+  const isPm = cleaned.includes('下午') || cleaned.includes('晚上');
+  const isAm = cleaned.includes('上午') || cleaned.includes('早上');
+
+  // 比對小時與可選的分鐘
+  // 例 1: "9點30分", "9點30", "9:30", "9：30"
+  // 例 2: "9點", "9點半", "9時"
+  const m = cleaned.match(/(\d{1,2})(?:[:：點時]\s*(\d{1,2})?|分)?/);
+  if (!m) return null;
+
+  let hour = parseInt(m[1], 10);
+  let minute = 0;
+
+  if (m[2]) {
+    minute = parseInt(m[2], 10);
+  } else if (isHalf) {
+    minute = 30;
+  }
+
+  // 若字串中有額外分，例如 "9點30分" 或 "30分"
+  const minMatch = cleaned.match(/(\d{1,2})\s*分/);
+  if (minMatch && !m[2]) {
+    minute = parseInt(minMatch[1], 10);
+  }
+
+  if (isPm && hour < 12) hour += 12;
+  if (isAm && hour === 12) hour = 0;
+
+  return { hour, minute };
+}
+
+/**
  * 解析使用者輸入的乘車時間字串
  * 支援格式：
- * - 2026/10/22 19:20 / 2026-10-22 19:20
- * - 10/22 19:20 / 10-22 19:20 / 10月22日 19:20
- * - 19:20 / 晚上 7:20 / 下午 7:20
+ * - 2026/10/14 上午9點 / 2026/10/14 9點 / 2026/10/22 19:20
+ * - 10/14 上午9點 / 10月14日 9點半 / 10-22 19:20
+ * - 明天上午9點 / 今天下午3點
+ * - 上午9點 / 19:20 / 9點半
  */
 export function parseScheduledTimeString(rawText?: string | null, referenceNow: Date = new Date()): ParsedReservation | null {
   if (!rawText || typeof rawText !== 'string') return null;
@@ -24,85 +63,71 @@ export function parseScheduledTimeString(rawText?: string | null, referenceNow: 
 
   const now = referenceNow;
   const currentYear = now.getFullYear();
-
   let targetDate: Date | null = null;
 
-  // 1. 完整西元年格式：2026/10/22 19:20 或 2026-10-22 19:20 或 2026.10.22 19:20
-  const fullYearMatch = cleaned.match(/(\d{4})[\/\-\.年](\d{1,2})[\/\-\.月](\d{1,2})[日號\s]+(?:[上下]午\s*)?(\d{1,2})[:：點](\d{1,2})/);
+  // 1. 包含完整西元年格式：2026/10/14 上午9點 或 2026-10-22 19:20 或 2026年10月14日 9點
+  const fullYearMatch = cleaned.match(/(\d{4})[\/\-\.年](\d{1,2})[\/\-\.月](\d{1,2})[日號\s]*(.*)/);
   if (fullYearMatch) {
-    let year = parseInt(fullYearMatch[1], 10);
-    let month = parseInt(fullYearMatch[2], 10) - 1;
-    let day = parseInt(fullYearMatch[3], 10);
-    let hour = parseInt(fullYearMatch[4], 10);
-    let minute = parseInt(fullYearMatch[5], 10);
+    const year = parseInt(fullYearMatch[1], 10);
+    const month = parseInt(fullYearMatch[2], 10) - 1;
+    const day = parseInt(fullYearMatch[3], 10);
+    const timePart = fullYearMatch[4] ? fullYearMatch[4].trim() : '';
 
-    if (cleaned.includes('下午') || cleaned.includes('晚上')) {
-      if (hour < 12) hour += 12;
-    } else if (cleaned.includes('上午') || cleaned.includes('早上')) {
-      if (hour === 12) hour = 0;
+    const timeComp = timePart ? parseTimeComponents(timePart) : { hour: 9, minute: 0 };
+    if (timeComp) {
+      targetDate = new Date(year, month, day, timeComp.hour, timeComp.minute, 0);
     }
-
-    targetDate = new Date(year, month, day, hour, minute, 0);
   }
 
-  // 2. 無年份的月日格式：10/22 19:20 或 10-22 19:20 或 10月22日 19:20
+  // 2. 無年份的月日格式：10/14 上午9點 或 10月14日 9點半 或 10-22 19:20
   if (!targetDate) {
-    const monthDayMatch = cleaned.match(/(\d{1,2})[\/\-\.月](\d{1,2})[日號\s]+(?:[上下]午\s*)?(\d{1,2})[:：點](\d{1,2})/);
+    const monthDayMatch = cleaned.match(/(\d{1,2})[\/\-\.月](\d{1,2})[日號\s]*(.*)/);
     if (monthDayMatch) {
-      let month = parseInt(monthDayMatch[1], 10) - 1;
-      let day = parseInt(monthDayMatch[2], 10);
-      let hour = parseInt(monthDayMatch[3], 10);
-      let minute = parseInt(monthDayMatch[4], 10);
+      const month = parseInt(monthDayMatch[1], 10) - 1;
+      const day = parseInt(monthDayMatch[2], 10);
+      const timePart = monthDayMatch[3] ? monthDayMatch[3].trim() : '';
 
-      if (cleaned.includes('下午') || cleaned.includes('晚上')) {
-        if (hour < 12) hour += 12;
-      } else if (cleaned.includes('上午') || cleaned.includes('早上')) {
-        if (hour === 12) hour = 0;
-      }
-
-      let year = currentYear;
-      const candidate = new Date(year, month, day, hour, minute, 0);
-      // 若計算出的日期在過去超過 7 天，可能指明年的此時
-      if (candidate.getTime() < now.getTime() - 7 * 86400000) {
-        year += 1;
-      }
-      targetDate = new Date(year, month, day, hour, minute, 0);
-    }
-  }
-
-  // 3. 只有時間格式：今天/明天 19:20 或 19:20
-  if (!targetDate) {
-    const timeOnlyMatch = cleaned.match(/(?:(今天|明天|後天)\s*)?(?:([上下]午|晚上|早上)\s*)?(\d{1,2})[:：點](\d{1,2})/);
-    if (timeOnlyMatch) {
-      const dayOffsetStr = timeOnlyMatch[1];
-      const periodStr = timeOnlyMatch[2];
-      let hour = parseInt(timeOnlyMatch[3], 10);
-      let minute = parseInt(timeOnlyMatch[4], 10);
-
-      if ((periodStr === '下午' || periodStr === '晚上' || cleaned.includes('下午') || cleaned.includes('晚上')) && hour < 12) {
-        hour += 12;
-      } else if ((periodStr === '上午' || periodStr === '早上') && hour === 12) {
-        hour = 0;
-      }
-
-      let baseDay = new Date(now);
-      if (dayOffsetStr === '明天') {
-        baseDay.setDate(baseDay.getDate() + 1);
-      } else if (dayOffsetStr === '後天') {
-        baseDay.setDate(baseDay.getDate() + 2);
-      } else if (!dayOffsetStr) {
-        // 若只寫 19:20 且比現在早，推測為明天
-        const testDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0);
-        if (testDate.getTime() < now.getTime() - 15 * 60000) {
-          baseDay.setDate(baseDay.getDate() + 1);
+      const timeComp = timePart ? parseTimeComponents(timePart) : { hour: 9, minute: 0 };
+      if (timeComp) {
+        let year = currentYear;
+        const candidate = new Date(year, month, day, timeComp.hour, timeComp.minute, 0);
+        if (candidate.getTime() < now.getTime() - 7 * 86400000) {
+          year += 1;
         }
+        targetDate = new Date(year, month, day, timeComp.hour, timeComp.minute, 0);
       }
-
-      targetDate = new Date(baseDay.getFullYear(), baseDay.getMonth(), baseDay.getDate(), hour, minute, 0);
     }
   }
 
-  // 4. 原生 Date.parse 兜底
+  // 3. 今天 / 明天 / 後天
+  if (!targetDate) {
+    const relMatch = cleaned.match(/(今天|明天|後天)\s*(.*)/);
+    if (relMatch) {
+      const dayOffset = relMatch[1] === '明天' ? 1 : relMatch[1] === '後天' ? 2 : 0;
+      const timePart = relMatch[2] ? relMatch[2].trim() : '';
+      const timeComp = timePart ? parseTimeComponents(timePart) : null;
+      if (timeComp) {
+        const base = new Date(now);
+        base.setDate(base.getDate() + dayOffset);
+        targetDate = new Date(base.getFullYear(), base.getMonth(), base.getDate(), timeComp.hour, timeComp.minute, 0);
+      }
+    }
+  }
+
+  // 4. 純時間格式 (例如 上午9點 / 9點半 / 19:20 / 下午3點)
+  if (!targetDate) {
+    const timeComp = parseTimeComponents(cleaned);
+    if (timeComp) {
+      const base = new Date(now);
+      const testDate = new Date(base.getFullYear(), base.getMonth(), base.getDate(), timeComp.hour, timeComp.minute, 0);
+      if (testDate.getTime() < now.getTime() - 15 * 60000) {
+        base.setDate(base.getDate() + 1);
+      }
+      targetDate = new Date(base.getFullYear(), base.getMonth(), base.getDate(), timeComp.hour, timeComp.minute, 0);
+    }
+  }
+
+  // 5. 原生 Date.parse 兜底
   if (!targetDate || isNaN(targetDate.getTime())) {
     const parsed = new Date(cleaned);
     if (!isNaN(parsed.getTime())) {
@@ -152,8 +177,9 @@ export function isFutureReservation(order: {
   let schDate: Date | null = null;
   if (order.scheduled_time) {
     schDate = new Date(order.scheduled_time);
-  } else if (order.note && order.note.includes('預約時間:')) {
-    const parsed = parseScheduledTimeString(order.note.replace('預約時間:', '').trim(), now);
+  } else if (order.note) {
+    const raw = order.note.replace('預約時間:', '').replace('[REMINDER_SENT]', '').trim();
+    const parsed = parseScheduledTimeString(raw, now);
     schDate = parsed?.date || null;
   }
 

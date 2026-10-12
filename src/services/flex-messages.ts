@@ -480,7 +480,7 @@ export function createGroupDispatchOrderFlexMessage(params: {
     {
       type: 'button',
       style: 'primary',
-      color: '#06c755',
+      color: params.isReservation ? '#059669' : '#06c755',
       height: 'md',
       action: {
         type: 'uri',
@@ -512,7 +512,7 @@ export function createGroupDispatchOrderFlexMessage(params: {
     header: {
       type: 'box',
       layout: 'vertical',
-      backgroundColor: '#1e293b', // 深藍色沉穩高級
+      backgroundColor: params.isReservation ? '#064e3b' : '#1e293b', // 預約單改為墨綠色 #064e3b，即時單為深藍色 #1e293b
       paddingAll: '16px',
       contents: [
         {
@@ -523,8 +523,8 @@ export function createGroupDispatchOrderFlexMessage(params: {
           contents: [
             {
               type: 'text',
-              text: params.isReservation ? '📅 預約派單廣播 (市區搭乘)' : '⚡ 新派單廣播 (市區搭乘)',
-              color: '#38bdf8',
+              text: params.isReservation ? '📅 預約單' : '⚡ 新派單廣播 (市區搭乘)',
+              color: params.isReservation ? '#6ee7b7' : '#38bdf8',
               weight: 'bold',
               size: 'sm',
             },
@@ -566,7 +566,9 @@ export function createGroupDispatchOrderFlexMessage(params: {
 
   return {
     type: 'flex',
-    altText: `⚡ 新派單需求：${params.pickupAddress}`,
+    altText: params.isReservation
+      ? `📅 預約單：${params.pickupAddress}`
+      : `⚡ 新派單需求：${params.pickupAddress}`,
     contents: container,
   };
 }

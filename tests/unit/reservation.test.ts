@@ -16,6 +16,28 @@ describe('Reservation Service', () => {
     expect(result!.formattedText).toBe('2026/10/22 19:20');
   });
 
+  it('應能正確解析使用者截圖的無分鐘中文格式：2026/10/14 上午9點', () => {
+    const result = parseScheduledTimeString('2026/10/14 上午9點', mockNow);
+    expect(result).not.toBeNull();
+    expect(result!.isReservation).toBe(true);
+    expect(result!.date?.getFullYear()).toBe(2026);
+    expect(result!.date?.getMonth()).toBe(9); // 10月
+    expect(result!.date?.getDate()).toBe(14);
+    expect(result!.date?.getHours()).toBe(9);
+    expect(result!.date?.getMinutes()).toBe(0);
+    expect(result!.formattedText).toBe('2026/10/14 09:00');
+  });
+
+  it('支援中文時間格式：10/14 下午3點半', () => {
+    const result = parseScheduledTimeString('10/14 下午3點半', mockNow);
+    expect(result).not.toBeNull();
+    expect(result!.isReservation).toBe(true);
+    expect(result!.date?.getMonth()).toBe(9);
+    expect(result!.date?.getDate()).toBe(14);
+    expect(result!.date?.getHours()).toBe(15);
+    expect(result!.date?.getMinutes()).toBe(30);
+  });
+
   it('若時間在現在起 1 小時內，應判定為非預約單 (即時單)', () => {
     // 現在是 16:00，預約 16:30 (30 分鐘後)
     const result = parseScheduledTimeString('2026/10/12 16:30', mockNow);
