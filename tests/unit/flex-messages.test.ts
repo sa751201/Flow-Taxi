@@ -13,6 +13,7 @@ import {
   createGroupOrderCompletedFlexMessage,
   createDriverShortTripPendingFlexMessage,
   createAdminShortTripVerifyFlexMessage,
+  createPassengerArrivalReplyFlexMessage,
   buildDispatchCopyText,
 } from '../../src/services/flex-messages.js';
 import {
@@ -500,6 +501,66 @@ describe('客上金額確認與群組結單回報 Flex Messages', () => {
     expect(evalRes.distanceKm).toBe(2.4);
   });
 });
+
+describe('createPassengerArrivalReplyFlexMessage', () => {
+  it('收到客人回報時應轉化為 Flex Message，主按鈕顯示前往乘客目的地且開啟 Google Maps 導航', () => {
+    const pickup = '台北車站東三門';
+    const dropoff = '台北 101 購物中心';
+    const flexMsg = createPassengerArrivalReplyFlexMessage({
+      orderId: 'order-arr-9988',
+      replyText: '【準時前來】正在前往上車點！',
+      pickupAddress: pickup,
+      dropoffAddress: dropoff,
+      passengerCount: 2,
+    });
+
+    expect(flexMsg.type).toBe('flex');
+    expect(flexMsg.altText).toContain('【收到乘客回報】');
+    expect(flexMsg.altText).toContain('【準時前來】正在前往上車點！');
+    expect(flexMsg.altText).toContain('#9988');
+
+    const bubble = flexMsg.contents as any;
+    expect(bubble.size).toBe('mega');
+    expect(bubble.header.contents[0].text).toBe('📢【收到乘客回報】');
+
+    const json = JSON.stringify(bubble);
+    expect(json).toContain('【準時前來】正在前往上車點！');
+    expect(json).toContain(pickup);
+    expect(json).toContain(dropoff);
+    expect(json).toContain('2 人');
+
+    // 檢查主按鈕：前往乘客目的地
+    const bodyButtons = bubble.body.contents.filter((c: any) => c.type === 'button');
+    const mainNavBtn = bodyButtons[0];
+    expect(mainNavBtn.action.type).toBe('uri');
+    expect(mainNavBtn.action.label).toBe('📍 前往乘客目的地');
+    expect(mainNavBtn.action.uri).toBe(
+      `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dropoff)}&travelmode=driving&openExternalBrowser=1`
+    );
+
+    // 次按鈕：客上
+    const pickedUpBtn = bodyButtons[1];
+    expect(pickedUpBtn.action.type).toBe('message');
+    expect(pickedUpBtn.action.label).toBe('🚕 客上 (乘客已上車)');
+    expect(pickedUpBtn.action.text).toBe('客上');
+  });
+
+  it('若乘客未填寫下車地點，主按鈕應優雅相容並包含 openExternalBrowser 參數', () => {
+    const flexMsg = createPassengerArrivalReplyFlexMessage({
+      orderId: 'order-arr-no-drop',
+      replyText: '【稍候片刻】約晚 1-5 分鐘抵達！',
+      pickupAddress: '台北故宮博物院',
+      dropoffAddress: null,
+    });
+
+    const bubble = flexMsg.contents as any;
+    const bodyButtons = bubble.body.contents.filter((c: any) => c.type === 'button');
+    const mainNavBtn = bodyButtons[0];
+    expect(mainNavBtn.action.label).toBe('📍 前往目的地 (待上車確認)');
+    expect(mainNavBtn.action.uri).toContain('openExternalBrowser=1');
+  });
+});
+
 
 
 

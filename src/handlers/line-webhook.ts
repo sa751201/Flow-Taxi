@@ -16,6 +16,7 @@ import {
   CustomerReservationStatusItem,
   createDriverBoardedFareConfirmFlexMessage,
   createGroupOrderCompletedFlexMessage,
+  createPassengerArrivalReplyFlexMessage,
 } from '../services/flex-messages.js';
 import { geocodeAddress } from '../services/google-maps.js';
 import {
@@ -1216,41 +1217,44 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
               ],
             });
 
-            // 2. 同步將乘客的動態轉發至接單司機的 1:1 OA（不發到群組）
+            // 2. 同步將乘客的動態以 Flex Message 轉發至接單司機的 1:1 OA（附前往乘客目的地 Google Maps 導航按鈕，不發到群組）
             try {
               const activeOrder = userSource.userId ? await getActiveOrderByCustomerId(userSource.userId) : null;
               if (activeOrder?.driver_id) {
                 const replyBrief = text.includes('準時') ? '【準時前來】正在前往上車點！' : '【稍候片刻】約晚 1-5 分鐘抵達！';
-                await lineClient.pushMessage({
-                  to: activeOrder.driver_id,
-                  messages: [
+                const passengerReplyFlex = createPassengerArrivalReplyFlexMessage({
+                  orderId: activeOrder.id,
+                  replyText: replyBrief,
+                  pickupAddress: activeOrder.pickup_address,
+                  dropoffAddress: activeOrder.dropoff_address,
+                  passengerCount: activeOrder.passenger_count,
+                });
+                passengerReplyFlex.quickReply = {
+                  items: [
                     {
-                      type: 'text',
-                      text: `📢 乘客回覆：${replyBrief}\n（乘客已收到您到達的通知，請稍候乘客）`,
-                      quickReply: {
-                        items: [
-                          {
-                            type: 'action',
-                            action: {
-                              type: 'message',
-                              label: '🚕 客上 (乘客已上車)',
-                              text: '客上',
-                            },
-                          },
-                          {
-                            type: 'action',
-                            action: {
-                              type: 'message',
-                              label: '🚫 客人未出現',
-                              text: '客人未出現',
-                            },
-                          },
-                        ],
+                      type: 'action',
+                      action: {
+                        type: 'message',
+                        label: '🚕 客上 (乘客已上車)',
+                        text: '客上',
+                      },
+                    },
+                    {
+                      type: 'action',
+                      action: {
+                        type: 'message',
+                        label: '🚫 客人未出現',
+                        text: '客人未出現',
                       },
                     },
                   ],
+                };
+
+                await lineClient.pushMessage({
+                  to: activeOrder.driver_id,
+                  messages: [passengerReplyFlex],
                 });
-                console.log(`[Passenger Reply] ✅ 已將乘客回覆轉發至司機 1:1 OA (${activeOrder.driver_id})`);
+                console.log(`[Passenger Reply] ✅ 已將乘客回覆以 Flex Message 轉發至司機 1:1 OA (${activeOrder.driver_id})`);
               } else {
                 console.log('[Passenger Reply] 未找到接單司機或訂單已結束，無需轉發');
               }

@@ -2389,5 +2389,171 @@ export function createAdminShortTripVerifyFlexMessage(params: {
   };
 }
 
+/**
+ * 乘客收到到點通知後回覆（例如「準時，正在前往」或「稍候片刻」），轉發給接單司機 1:1 OA 的 Flex Message 卡片
+ * 主按鈕顯示「前往乘客目的地」，點擊後開啟 Google Maps 語音導航前往下車地點（附帶 openExternalBrowser=1）
+ */
+export function createPassengerArrivalReplyFlexMessage(params: {
+  orderId: string;
+  replyText: string;
+  pickupAddress: string;
+  dropoffAddress?: string | null;
+  passengerCount?: number;
+}): messagingApi.FlexMessage {
+  const shortId = params.orderId.slice(-4);
+  const targetDropoff = params.dropoffAddress?.trim();
+  const hasDropoff = Boolean(targetDropoff && isDetailedDropoffAddress(targetDropoff));
+
+  // 主按鈕：開啟 Google Maps 導航前往下車地點（附 openExternalBrowser=1 避免 LINE 內嵌瀏覽器定位問題）
+  const dropoffMapUrl = hasDropoff
+    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(targetDropoff!)}&travelmode=driving&openExternalBrowser=1`
+    : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(params.pickupAddress)}&travelmode=driving&openExternalBrowser=1`;
+
+  const container: messagingApi.FlexBubble = {
+    type: 'bubble',
+    size: 'mega',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#0f172a',
+      paddingAll: '16px',
+      contents: [
+        {
+          type: 'text',
+          text: '📢【收到乘客回報】',
+          color: '#38bdf8',
+          weight: 'bold',
+          size: 'md',
+        },
+        {
+          type: 'text',
+          text: `訂單 #${shortId}・乘客已收到您到達的通知`,
+          color: '#94a3b8',
+          size: 'xs',
+          margin: 'xs',
+        },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#ffffff',
+      paddingAll: '16px',
+      spacing: 'md',
+      contents: [
+        // 乘客回覆醒目區塊
+        {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#eff6ff',
+          borderColor: '#bfdbfe',
+          borderWidth: '1px',
+          cornerRadius: '12px',
+          paddingAll: '12px',
+          contents: [
+            {
+              type: 'text',
+              text: '💬 乘客最新回覆',
+              color: '#1d4ed8',
+              size: 'xs',
+              weight: 'bold',
+            },
+            {
+              type: 'text',
+              text: params.replyText,
+              color: '#1e40af',
+              size: 'md',
+              weight: 'bold',
+              margin: 'xs',
+              wrap: true,
+            },
+          ],
+        },
+        // 行程上下車地點
+        {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'sm',
+          contents: [
+            {
+              type: 'box',
+              layout: 'horizontal',
+              spacing: 'sm',
+              contents: [
+                { type: 'text', text: '🟢 上車：', color: '#16a34a', size: 'sm', weight: 'bold', flex: 2 },
+                { type: 'text', text: params.pickupAddress, color: '#334155', size: 'sm', flex: 8, wrap: true },
+              ],
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              spacing: 'sm',
+              contents: [
+                { type: 'text', text: '🔴 下車：', color: '#dc2626', size: 'sm', weight: 'bold', flex: 2 },
+                {
+                  type: 'text',
+                  text: targetDropoff || '乘客上車後說明',
+                  color: hasDropoff ? '#334155' : '#94a3b8',
+                  size: 'sm',
+                  flex: 8,
+                  wrap: true,
+                },
+              ],
+            },
+            ...(params.passengerCount ? [
+              {
+                type: 'box' as const,
+                layout: 'horizontal' as const,
+                spacing: 'sm' as const,
+                contents: [
+                  { type: 'text' as const, text: '👥 人數：', color: '#64748b' as const, size: 'sm' as const, flex: 2 },
+                  { type: 'text' as const, text: `${params.passengerCount} 人`, color: '#334155' as const, size: 'sm' as const, flex: 8 },
+                ],
+              },
+            ] : []),
+          ],
+        },
+        {
+          type: 'separator',
+          color: '#f1f5f9',
+          margin: 'md',
+        },
+        // 主按鈕：前往乘客目的地 (開 Google Map 導航前往下車地點)
+        {
+          type: 'button',
+          style: 'primary',
+          color: '#2563eb',
+          height: 'md',
+          action: {
+            type: 'uri',
+            label: hasDropoff ? '📍 前往乘客目的地' : '📍 前往目的地 (待上車確認)',
+            uri: dropoffMapUrl,
+          },
+        },
+        // 次按鈕：客上
+        {
+          type: 'button',
+          style: 'secondary',
+          color: '#f8fafc',
+          height: 'md',
+          margin: 'sm',
+          action: {
+            type: 'message',
+            label: '🚕 客上 (乘客已上車)',
+            text: '客上',
+          },
+        },
+      ],
+    },
+  };
+
+  return {
+    type: 'flex',
+    altText: `📢【收到乘客回報】${params.replyText}（訂單 #${shortId}）`,
+    contents: container,
+  };
+}
+
+
 
 
