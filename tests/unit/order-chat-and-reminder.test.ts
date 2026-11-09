@@ -1,4 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// 模擬 LINE Client，防止單元測試期間向真實司機/管理員群組與使用者推播訊息
+vi.mock('../../src/services/line-client.js', () => ({
+  getLineClient: vi.fn(() => ({
+    pushMessage: vi.fn().mockResolvedValue({}),
+    replyMessage: vi.fn().mockResolvedValue({}),
+    broadcast: vi.fn().mockResolvedValue({}),
+    getProfile: vi.fn().mockResolvedValue({ displayName: '測試用戶' }),
+    getGroupMemberProfile: vi.fn().mockResolvedValue({ displayName: '測試司機' }),
+  })),
+}));
+
 import {
   startCustomerChatSession,
   endCustomerChatSession,
@@ -21,6 +33,7 @@ import {
   processReservationLifecycle,
   reopenReservationOrder,
 } from '../../src/services/reservation-reminder.js';
+import { formatScheduledTime } from '../../src/services/reservation.js';
 
 describe('Order Chat & Reservation Reminder Tests', () => {
   beforeEach(() => {
@@ -225,6 +238,7 @@ describe('Order Chat & Reservation Reminder Tests', () => {
 
     it('預約單排程邏輯：前 10 小時跳出、每 30 分鐘重跳一次、出發前 1 小時無人接單則轉為 no_driver', async () => {
       const scheduledTime = new Date(Date.now() + 12 * 60 * 60 * 1000);
+      const scheduledText = formatScheduledTime(scheduledTime);
       const order = await createOrder({
         id: 'ord-lifecycle-10h',
         customer_id: 'U_cust_10h',
@@ -232,7 +246,7 @@ describe('Order Chat & Reservation Reminder Tests', () => {
         pickup_lat: 25.063,
         pickup_lng: 121.551,
         scheduled_time: scheduledTime,
-        note: '預約時間: 2026/11/03 10:00',
+        note: `預約時間: ${scheduledText}`,
       });
 
       // 1. 距離上車 11 小時 (> 10h)：不廣播
@@ -271,6 +285,7 @@ describe('Order Chat & Reservation Reminder Tests', () => {
     it('司機接預約單後須按「我知道了」才於前 1 小時發送出車通知；逾 1 小時未按則管理員可重啟找其他司機', async () => {
       const now = new Date();
       const scheduledTime = new Date(now.getTime() + 3 * 60 * 60 * 1000); // 3 小時後出發
+      const scheduledText = formatScheduledTime(scheduledTime);
       const order = await createOrder({
         id: 'ord-ack-reopen',
         customer_id: 'U_cust_ack',
@@ -278,7 +293,7 @@ describe('Order Chat & Reservation Reminder Tests', () => {
         pickup_lat: 25.047,
         pickup_lng: 121.517,
         scheduled_time: scheduledTime,
-        note: '預約時間: 2026/11/02 18:00',
+        note: `預約時間: ${scheduledText}`,
       });
       order.driver_id = 'D_driver_unacked';
       order.status = 'accepted';
@@ -330,14 +345,16 @@ describe('Order Chat & Reservation Reminder Tests', () => {
         pickup_lng: 121.551,
       });
 
+      const resTime = new Date(Date.now() + 5 * 60 * 60 * 1000);
+      const resText = formatScheduledTime(resTime);
       await createOrder({
         id: 'ord-my-res-1',
         customer_id: custId,
         pickup_address: '預約單上車點',
         pickup_lat: 25.047,
         pickup_lng: 121.517,
-        scheduled_time: new Date(Date.now() + 5 * 60 * 60 * 1000),
-        note: '預約時間: 2026/11/03 09:00',
+        scheduled_time: resTime,
+        note: `預約時間: ${resText}`,
       });
 
       const myReservations = await getActiveReservationOrdersByCustomerId(custId);
