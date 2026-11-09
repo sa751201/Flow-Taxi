@@ -166,6 +166,192 @@ export function formatScheduledTime(dateInput: Date | string): string {
 }
 
 /**
+ * 預約單排程時間常數
+ */
+export const RESERVATION_FIRST_BROADCAST_BEFORE_MS = 10 * 60 * 60 * 1000; // 上車前 10 小時首次跳出派單 Flex Message
+export const RESERVATION_REBROADCAST_INTERVAL_MS = 30 * 60 * 1000; // 無人接單且未取消時，每 30 分鐘重跳一次
+export const RESERVATION_NO_DRIVER_CUTOFF_BEFORE_MS = 60 * 60 * 1000; // 出發前 1 小時若仍無司機接單，通知客人無司機接單
+export const RESERVATION_DRIVER_ACK_TIMEOUT_MS = 60 * 60 * 1000; // 司機接預約單後 1 小時內未按「我知道了」，管理員可重啟派單
+
+/**
+ * 萃取乾淨的預約乘車時間顯示文字（移除系統內部標記 tag）
+ */
+export function extractScheduledTimeText(order: {
+  scheduled_time?: Date | string | null;
+  note?: string | null;
+}): string {
+  if (order.note) {
+    const cleaned = order.note
+      .replace(/\[[^\]]*\]/g, '')
+      .replace('預約時間:', '')
+      .trim();
+    if (cleaned) return cleaned;
+  }
+  if (order.scheduled_time) {
+    return formatScheduledTime(order.scheduled_time);
+  }
+  return '';
+}
+
+/**
+ * 取得訂單的預約時間 Date 物件
+ */
+export function getScheduledDate(
+  order: {
+    scheduled_time?: Date | string | null;
+    note?: string | null;
+  },
+  now: Date = new Date()
+): Date | null {
+  if (order.scheduled_time) {
+    const d = new Date(order.scheduled_time);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (order.note) {
+    const raw = extractScheduledTimeText(order);
+    if (raw) {
+      const parsed = parseScheduledTimeString(raw, now);
+      if (parsed?.date && !isNaN(parsed.date.getTime())) {
+        return parsed.date;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * 判斷訂單是否為預約單（包含未來預約或已進入出車階段之預約單）
+ */
+export function isReservationOrder(
+  order: {
+    scheduled_time?: Date | string | null;
+    note?: string | null;
+  },
+  now: Date = new Date()
+): boolean {
+  const schDate = getScheduledDate(order, now);
+  return Boolean(schDate);
+}
+
+/**
+ * 判斷司機是否已按下「我知道了」確認承接預約單
+ */
+export function hasDriverAck(order: {
+  note?: string | null;
+  driver_acknowledged?: boolean | null;
+}): boolean {
+  if ((order as any).driver_acknowledged === true) return true;
+  if (order.note && order.note.includes('[DRIVER_ACK]')) return true;
+  return false;
+}
+
+/**
+ * 判斷預約單是否處於需要司機按下「我知道了」的追蹤狀態
+ */
+export function requiresDriverAck(order: {
+  note?: string | null;
+  wait_driver_ack?: boolean | null;
+}): boolean {
+  if ((order as any).wait_driver_ack === true) return true;
+  if (order.note && order.note.includes('[WAIT_DRIVER_ACK]')) return true;
+  return false;
+}
+
+/**
+ * 取得司機接下預約單的時間戳 (ms)
+ */
+export function getOrderAcceptedAtMs(order: {
+  note?: string | null;
+  accepted_at?: Date | string | number | null;
+}): number | null {
+  const propVal = (order as any).accepted_at;
+  if (propVal) {
+    const ms = typeof propVal === 'number' ? propVal : new Date(propVal).getTime();
+    if (!isNaN(ms)) return ms;
+  }
+  if (order.note) {
+    const m = order.note.match(/\[ACCEPTED_AT:(\d+)\]/);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+/**
+ * 取得預約單上次在司機群組廣播的時間戳 (ms)
+ */
+export function getLastBroadcastAtMs(order: {
+  note?: string | null;
+  last_broadcast_at?: Date | string | number | null;
+}): number | null {
+  const propVal = (order as any).last_broadcast_at;
+  if (propVal) {
+    const ms = typeof propVal === 'number' ? propVal : new Date(propVal).getTime();
+    if (!isNaN(ms)) return ms;
+  }
+  if (order.note) {
+    const m = order.note.match(/\[LAST_BROADCAST:(\d+)\]/);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+/**
+ * 判斷預約單是否因司機接單後超過 1 小時未按「我知道了」，而可由管理員重啟派單
+ */
+export function canAdminReopenUnacknowledgedReservation(
+  order: {
+    status?: string;
+    driver_id?: string | null;
+    note?: string | null;
+    accepted_at?: Date | string | number | null;
+    driver_acknowledged?: boolean | null;
+  },
+  now: Date = new Date()
+): boolean {
+  if (order.status !== 'accepted' || !order.driver_id) return false;
+  if (hasDriverAck(order)) return false;
+  const acceptedAtMs = getOrderAcceptedAtMs(order);
+  if (!acceptedAtMs) return false;
+  return now.getTime() - acceptedAtMs >= RESERVATION_DRIVER_ACK_TIMEOUT_MS;
+}
+
+/**
+ * 判斷未接單之預約單在當前時間點的排程動作：
+ * - 'wait_for_10h': 距離上車時間 > 10 小時，尚不廣播
+ * - 'broadcast_now': 距離上車時間介於 1~10 小時，且（尚未廣播過 或 距離上次廣播已滿 30 分鐘）
+ * - 'wait_next_30m': 距離上車時間介於 1~10 小時，但距離上次廣播未滿 30 分鐘
+ * - 'cutoff_no_driver': 距離上車時間 <= 1 小時且仍無司機接單，應結單並通知客人無司機接單
+ */
+export function evaluateReservationDispatchAction(
+  order: {
+    scheduled_time?: Date | string | null;
+    note?: string | null;
+    last_broadcast_at?: Date | string | number | null;
+  },
+  now: Date = new Date()
+): 'wait_for_10h' | 'broadcast_now' | 'wait_next_30m' | 'cutoff_no_driver' | 'not_reservation' {
+  const schDate = getScheduledDate(order, now);
+  if (!schDate) return 'not_reservation';
+
+  const diffMs = schDate.getTime() - now.getTime();
+
+  if (diffMs <= RESERVATION_NO_DRIVER_CUTOFF_BEFORE_MS) {
+    return 'cutoff_no_driver';
+  }
+
+  if (diffMs > RESERVATION_FIRST_BROADCAST_BEFORE_MS) {
+    return 'wait_for_10h';
+  }
+
+  const lastBroadcastMs = getLastBroadcastAtMs(order);
+  if (!lastBroadcastMs || now.getTime() - lastBroadcastMs >= RESERVATION_REBROADCAST_INTERVAL_MS) {
+    return 'broadcast_now';
+  }
+
+  return 'wait_next_30m';
+}
+
+/**
  * 判斷訂單是否為「未來未到出車時間」的預約單
  * (距離預約時間 > 60 分鐘且尚未發送出車提醒)
  */
@@ -174,15 +360,7 @@ export function isFutureReservation(order: {
   note?: string | null;
   reminder_sent?: boolean | null;
 }, now: Date = new Date()): boolean {
-  let schDate: Date | null = null;
-  if (order.scheduled_time) {
-    schDate = new Date(order.scheduled_time);
-  } else if (order.note) {
-    const raw = order.note.replace('預約時間:', '').replace('[REMINDER_SENT]', '').trim();
-    const parsed = parseScheduledTimeString(raw, now);
-    schDate = parsed?.date || null;
-  }
-
+  const schDate = getScheduledDate(order, now);
   if (!schDate || isNaN(schDate.getTime())) return false;
 
   // 若已發送 1 小時出車提醒，視為進入常態行程，不再屬於 future reservation

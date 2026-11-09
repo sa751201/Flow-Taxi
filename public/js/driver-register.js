@@ -60,7 +60,13 @@ async function checkExistingDriver(userId) {
         if (driver.car_color) document.getElementById('carColor').value = driver.car_color;
         if (driver.car_brand) document.getElementById('carBrand').value = driver.car_brand;
         if (driver.phone) document.getElementById('phone').value = driver.phone;
-        if (driver.notes) document.getElementById('driverNotes').value = driver.notes;
+        if (driver.notes) {
+          const notesEl = document.getElementById('driverNotes');
+          if (notesEl) {
+            notesEl.value = driver.notes;
+            updateRegisterNotesCount();
+          }
+        }
       }
     }
   } catch {
@@ -68,13 +74,46 @@ async function checkExistingDriver(userId) {
   }
 }
 
-function setQuickNote(text) {
+function updateRegisterNotesCount() {
   const noteInput = document.getElementById('driverNotes');
-  if (noteInput) {
-    noteInput.value = text;
+  const countEl = document.getElementById('notesCharCount');
+  if (noteInput && countEl) {
+    countEl.textContent = `${noteInput.value.length} / 150`;
   }
 }
+
+function appendQuickNote(text) {
+  const noteInput = document.getElementById('driverNotes');
+  if (!noteInput) return;
+  const current = noteInput.value.trim();
+  if (!current || current === '🚭 禁菸 🚯 禁食') {
+    noteInput.value = text;
+  } else if (!current.includes(text)) {
+    if ((current + ' ' + text).length <= 150) {
+      noteInput.value = current + ' ' + text;
+    }
+  }
+  updateRegisterNotesCount();
+  noteInput.focus();
+}
+window.appendQuickNote = appendQuickNote;
+
+function clearNotes() {
+  const noteInput = document.getElementById('driverNotes');
+  if (noteInput) {
+    noteInput.value = '';
+    updateRegisterNotesCount();
+    noteInput.focus();
+  }
+}
+window.clearNotes = clearNotes;
+
+function setQuickNote(text) {
+  appendQuickNote(text);
+}
 window.setQuickNote = setQuickNote;
+
+document.getElementById('driverNotes')?.addEventListener('input', updateRegisterNotesCount);
 
 function triggerShake(wrapId) {
   const wrap = document.getElementById(wrapId);

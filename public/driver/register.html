@@ -142,23 +142,31 @@
             <label class="block text-xs font-bold uppercase tracking-wider text-slate-700" for="driverNotes">
               6. 車內備註 / 提醒事項 (選填)
             </label>
-            <span class="text-[11px] text-slate-400">乘客中單後可見</span>
+            <div class="flex items-center gap-2">
+              <span id="notesCharCount" class="text-[10px] font-mono text-slate-400 font-semibold">0 / 150</span>
+              <span class="text-[11px] text-slate-400">乘客中單後可見</span>
+            </div>
           </div>
-          <div class="t-input custom-input-box">
-            <input type="text" id="driverNotes" value="🚭 禁菸 🚯 禁食" placeholder="例如：🚭 禁菸 🚯 禁食、可載小型寵物"
-                   class="w-full bg-transparent px-4 py-3 text-sm text-slate-900 placeholder-slate-400 outline-none rounded-xl">
+          <div class="t-input custom-input-box p-1">
+            <textarea id="driverNotes" rows="3" maxlength="150" placeholder="例如：🚭 全車禁菸 🚯 禁食、後車廂可放大行李、提供手機充電..."
+                   class="w-full bg-transparent px-3 py-2 text-sm text-slate-900 placeholder-slate-400 outline-none rounded-xl leading-relaxed resize-none">🚭 禁菸 🚯 禁食</textarea>
           </div>
-          <!-- 快捷標籤 -->
-          <div class="flex flex-wrap gap-1.5 mt-2">
-            <button type="button" onclick="setQuickNote('🚭 禁菸 🚯 禁食')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition">
-              🚭 禁菸 🚯 禁食
-            </button>
-            <button type="button" onclick="setQuickNote('🚭 全車禁菸')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition">
-              🚭 全車禁菸
-            </button>
-            <button type="button" onclick="setQuickNote('🐾 寵物友善車 (需籠推車)')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition">
-              🐾 寵物友善
-            </button>
+          <!-- 快捷標籤與清空 -->
+          <div class="mt-2 space-y-1.5">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] text-slate-500 font-bold">⚡ 常用注意事項標籤 (點擊直接追加)：</span>
+              <button type="button" onclick="clearNotes()" class="text-[10px] text-rose-500 hover:text-rose-600 font-bold transition">清空</button>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <button type="button" onclick="appendQuickNote('🚭 全車禁菸')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-100 text-slate-700 font-medium transition active:scale-95">🚭 全車禁菸</button>
+              <button type="button" onclick="appendQuickNote('🚯 車內禁食')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-100 text-slate-700 font-medium transition active:scale-95">🚯 車內禁食</button>
+              <button type="button" onclick="appendQuickNote('🐾 寵物友善車 (需籠推車)')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-100 text-slate-700 font-medium transition active:scale-95">🐾 寵物友善</button>
+              <button type="button" onclick="appendQuickNote('🧳 後車廂空間大 (可載大行李)')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-100 text-slate-700 font-medium transition active:scale-95">🧳 後車廂大空間</button>
+              <button type="button" onclick="appendQuickNote('⚡ 備有手機充電線 (Type-C / Lightning)')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-100 text-slate-700 font-medium transition active:scale-95">⚡ 手機充電</button>
+              <button type="button" onclick="appendQuickNote('❄️ 冷氣適中可調整')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-100 text-slate-700 font-medium transition active:scale-95">❄️ 冷氣可調</button>
+              <button type="button" onclick="appendQuickNote('👶 可配合兒童安全座椅')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-100 text-slate-700 font-medium transition active:scale-95">👶 兒童座椅</button>
+              <button type="button" onclick="appendQuickNote('🧹 車內定期清消殺菌')" class="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-100 text-slate-700 font-medium transition active:scale-95">🧹 定期消毒</button>
+            </div>
           </div>
         </div>
 

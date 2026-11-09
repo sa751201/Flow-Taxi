@@ -31,6 +31,8 @@ create table drivers (
     plate_number text,                              -- 車號
     car_color    text,                              -- 車色
     car_brand    text,                              -- 廠牌
+    notes        text default '🚭 禁菸 🚯 禁食',    -- 車內注意事項 / 備註 (選填，乘客中單可見)
+    compensation_points integer not null default 0, -- 補單點數(接單後遇乘客取消或未出現時 +1，搶單使用可立即結單)
     status       text not null default 'inactive'
                  check (status in ('inactive','active','online')),
     registered   boolean not null default false,    -- 是否完成註冊(接單 gate)

@@ -31,6 +31,7 @@ export interface Order {
   scheduled_time?: Date | null;
   region?: string | null;
   note?: string | null;
+  fixed_route?: string | null;
   distance_km?: number | null;
   fare?: number | null;
   coupon_id?: string | null;
@@ -50,6 +51,8 @@ export interface DispatchBid {
   driver_id: string;
   distance_to_pickup_km?: number | null;
   eta_minutes?: number | null;
+  used_compensation_point?: boolean;
+  instantWon?: boolean;
   bid_at: Date;
 }
 
@@ -61,9 +64,10 @@ export interface DriverCandidate {
 
 export interface DispatchWinnerResult {
   orderId: string;
-  status: 'assigned' | 'no_driver' | 'conflict_or_cancelled';
+  status: 'assigned' | 'extended' | 'no_driver' | 'conflict_or_cancelled';
   winnerDriverId?: string;
   distanceMeters?: number;
   hasPriority?: boolean;
+  usedCompensationPoint?: boolean;
   totalBidsCount: number;
 }

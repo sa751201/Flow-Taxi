@@ -28,7 +28,7 @@ const envSchema = z.object({
   REDIS_URL: z.string().optional().default('redis://localhost:6379'),
 
   // Business Parameters
-  DISPATCH_WINDOW_SECONDS: z.coerce.number().default(60),
+  DISPATCH_WINDOW_SECONDS: z.coerce.number().default(30),
   NO_DRIVER_EXPAND_SECONDS: z.coerce.number().default(30),
 
   // Server

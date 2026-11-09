@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flow Taxi 管理後台 — 常客與費率管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-900 font-sans">
+  <!-- Header -->
+  <header class="bg-slate-900 text-white shadow-md">
+    <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="text-2xl">🚕</span>
+        <div>
+          <h1 class="text-lg font-extrabold tracking-tight">Flow Taxi 派單管理後台</h1>
+          <p class="text-xs text-slate-400">常客固定上下車地點、固定金額與指定路線設定</p>
+        </div>
+      </div>
+      <a href="/driver/app" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 transition">
+        前往司機調度中心 ➔
+      </a>
+    </div>
+
+    <!-- 後台頁籤 (Tabs) -->
+    <div class="max-w-5xl mx-auto px-4 flex gap-6 border-t border-slate-800 text-sm font-bold">
+      <button id="admin-tab-regular" type="button" class="py-3 border-b-2 border-emerald-400 text-emerald-400 font-extrabold flex items-center gap-1.5">
+        <span>⭐</span>
+        <span>常客</span>
+      </button>
+      <button id="admin-tab-tester" type="button" class="py-3 border-b-2 border-transparent text-slate-400 hover:text-white flex items-center gap-1.5">
+        <span>🧪</span>
+        <span>常客比對與費率測試</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+    <!-- 頁籤 1：常客管理 -->
+    <section id="admin-panel-regular" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <!-- 左側：新增 / 編輯常客表單 -->
+      <div class="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4 h-fit">
+        <div class="border-b border-slate-100 pb-3">
+          <h2 id="form-title" class="text-base font-extrabold text-slate-900">➕ 新增固定上下車地點常客</h2>
+          <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+            當客人叫車時判斷上下車地點：若與設定完全相符，即套用<strong>固定金額</strong>與<strong>固定路線</strong>；若上下車地點有任一不符合，則自動以正常費率計算。
+          </p>
+        </div>
+
+        <form id="admin-regular-form" class="space-y-3.5 text-sm">
+          <input type="hidden" id="admin-reg-id" value="">
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">客人姓名 / 稱呼 *</label>
+            <input id="admin-reg-name" type="text" required placeholder="例如：陳小姐 / 王老闆" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">客人 LINE User ID（選填）</label>
+            <input id="admin-reg-customer-id" type="text" placeholder="若填寫則僅限該 LINE 帳號套用；留空則比對地點即可套用" class="w-full px-3 py-2 rounded-xl border border-slate-300 font-mono text-xs focus:border-emerald-500 outline-none">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">🟢 固定上車地點 *</label>
+            <input id="admin-reg-pickup" type="text" required placeholder="例如：迪化街水門" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 outline-none">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">🔴 固定下車地點 *</label>
+            <input id="admin-reg-dropoff" type="text" required placeholder="例如：南港展覽館" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 outline-none">
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">💰 固定金額 (NT$) *</label>
+              <input id="admin-reg-fare" type="number" min="1" required placeholder="例如：300" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-bold focus:border-emerald-500 outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">🛣️ 固定路線（指定路線）</label>
+              <input id="admin-reg-route" type="text" placeholder="例如：走市民高架" class="w-full px-3 py-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 outline-none">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">📝 備註（選填）</label>
+            <input id="admin-reg-note" type="text" placeholder="例如：平日早班固定通勤常客" class="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs focus:border-emerald-500 outline-none">
+          </div>
+
+          <div class="flex gap-2 pt-2">
+            <button type="submit" id="admin-btn-submit" class="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold shadow-sm transition">
+              儲存常客設定
+            </button>
+            <button type="button" id="admin-btn-cancel" class="hidden px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold transition">
+              取消
+            </button>
+          </div>
+          <p id="admin-form-status" class="hidden text-center text-xs font-bold text-emerald-600"></p>
+        </form>
+      </div>
+
+      <!-- 右側：常客列表 -->
+      <div class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div>
+            <h2 class="text-base font-extrabold text-slate-900">📋 常客固定路線清單</h2>
+            <p class="text-xs text-slate-500">點擊「複製派單資訊」可直接複製含上車、下車與指定路線之文字</p>
+          </div>
+          <span id="admin-reg-total" class="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-extrabold border border-emerald-200">0 筆</span>
+        </div>
+
+        <div id="admin-regular-list" class="space-y-3">
+          <p class="text-sm text-slate-400 text-center py-10">載入常客資料中...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 頁籤 2：比對測試器 -->
+    <section id="admin-panel-tester" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200 p-6 max-w-2xl mx-auto space-y-4">
+      <h2 class="text-base font-extrabold text-slate-900">🧪 常客叫車地點比對測試</h2>
+      <p class="text-xs text-slate-500">
+        模擬客人叫車時輸入的上車地點與下車地點，驗證是否命中常客固定金額與固定路線，或因任一地點不符而改以正常費率計算。
+      </p>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+        <input id="test-customer-id" type="text" placeholder="客人 LINE ID (選填)" class="px-3 py-2 rounded-xl border border-slate-300">
+        <input id="test-pickup" type="text" placeholder="輸入上車地點" class="px-3 py-2 rounded-xl border border-slate-300">
+        <input id="test-dropoff" type="text" placeholder="輸入下車地點" class="px-3 py-2 rounded-xl border border-slate-300">
+      </div>
+      <button id="btn-run-match-test" type="button" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold">
+        執行比對判斷
+      </button>
+      <div id="test-match-result" class="hidden p-4 rounded-xl text-xs font-bold"></div>
+    </section>
+  </main>
+
+  <!-- 複製成功 Tooltip -->
+  <div id="global-copy-tooltip" class="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-slate-900 text-white text-xs font-extrabold shadow-lg opacity-0 pointer-events-none transition-opacity duration-200 z-50">
+    ✅ 已複製
+  </div>
+
+  <script src="/js/admin.js"></script>
+</body>
+</html>
+

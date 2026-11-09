@@ -262,6 +262,36 @@
       }
     }
 
+    // 車型車色標籤
+    const modelTagEl = document.getElementById('driver-card-model-tag');
+    if (modelTagEl) {
+      if (currentDriver.carBrand || currentDriver.carColor) {
+        modelTagEl.textContent = [currentDriver.carBrand, currentDriver.carColor].filter(Boolean).join(' · ');
+        modelTagEl.classList.remove('hidden');
+      } else {
+        modelTagEl.classList.add('hidden');
+      }
+    }
+
+    // 首頁車卡備註 / 注意事項顯示
+    const cardNotesEl = document.getElementById('driver-card-notes-display');
+    if (cardNotesEl) {
+      cardNotesEl.textContent = currentDriver.notes?.trim() || '🚭 禁菸 🚯 禁食';
+    }
+
+    // 即時車卡預覽 (乘客視角)
+    const prevName = document.getElementById('preview-card-name');
+    const prevPlate = document.getElementById('preview-card-plate');
+    const prevBrand = document.getElementById('preview-card-brand');
+    const prevColor = document.getElementById('preview-card-color');
+    const prevNotes = document.getElementById('preview-card-notes');
+
+    if (prevName) prevName.textContent = currentDriver.displayName || '未登入';
+    if (prevPlate) prevPlate.textContent = currentDriver.plateNumber && currentDriver.plateNumber !== '點此驗證車牌' ? currentDriver.plateNumber : 'TDC-8888';
+    if (prevBrand) prevBrand.textContent = currentDriver.carBrand || 'TOYOTA';
+    if (prevColor) prevColor.textContent = currentDriver.carColor || '黑色';
+    if (prevNotes) prevNotes.textContent = currentDriver.notes?.trim() || '🚭 禁菸 🚯 禁食';
+
     // 表單同步
     const inputName = document.getElementById('input-display-name');
     const inputPlate = document.getElementById('input-plate-number');
@@ -275,7 +305,41 @@
     if (inputBrand) inputBrand.value = currentDriver.carBrand || '';
     if (inputColor) inputColor.value = currentDriver.carColor || '';
     if (inputPhone) inputPhone.value = currentDriver.phone || '';
-    if (inputNotes) inputNotes.value = currentDriver.notes || '';
+    if (inputNotes) {
+      inputNotes.value = currentDriver.notes || '';
+      updateNotesCountAndPreview();
+    }
+  }
+
+  function updateNotesCountAndPreview() {
+    const inputNotes = document.getElementById('input-driver-notes');
+    const countEl = document.getElementById('notes-char-count');
+    const prevNotes = document.getElementById('preview-card-notes');
+    const cardNotes = document.getElementById('driver-card-notes-display');
+
+    if (!inputNotes) return;
+    const val = inputNotes.value;
+    if (countEl) countEl.textContent = `${val.length} / 150`;
+
+    const displayVal = val.trim() ? val : '🚭 禁菸 🚯 禁食';
+    if (prevNotes) prevNotes.textContent = displayVal;
+    if (cardNotes) cardNotes.textContent = displayVal;
+  }
+
+  function appendQuickNote(tag) {
+    const inputNotes = document.getElementById('input-driver-notes');
+    if (!inputNotes) return;
+
+    const currentVal = inputNotes.value.trim();
+    if (!currentVal || currentVal === '🚭 禁菸 🚯 禁食') {
+      inputNotes.value = tag;
+    } else if (!currentVal.includes(tag)) {
+      if ((currentVal + ' ' + tag).length <= 150) {
+        inputNotes.value = currentVal + ' ' + tag;
+      }
+    }
+    updateNotesCountAndPreview();
+    inputNotes.focus();
   }
 
   // 司機車牌 / 電話快速反查與登入
@@ -1020,7 +1084,7 @@
                 </div>
                 <div class="flex items-center gap-2 mt-1.5 text-[11px] font-semibold text-emerald-600">
                   <span>📍 距您約 ${distText}</span>
-                  <span>· 60秒媒合</span>
+                  <span>· 30秒媒合</span>
                 </div>
               </div>
             </div>
@@ -1122,7 +1186,7 @@
       container.innerHTML = orders.map(ord => {
         const timeMatch = ord.note?.match(/預約時間:\s*([^\[]+)/);
         const timeText = timeMatch ? timeMatch[1].trim() : (ord.scheduled_time ? new Date(ord.scheduled_time).toLocaleString('zh-TW', { hour12: false }) : '預約時間');
-        const fareText = ord.fare ? `$${ord.fare}` : '跳錶計費';
+        const fareText = ord.fare && Number(ord.fare) > 0 ? `$${ord.fare}` : '';
         const mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ord.pickup_address)}&travelmode=driving`;
 
         return `
@@ -1182,13 +1246,22 @@
     const actionIcon = document.getElementById('active-card-action-icon');
     const actionText = document.getElementById('active-card-action-text');
     const navBtn = document.getElementById('btn-active-card-nav');
+    const noShowCardBtn = document.getElementById('btn-active-card-no-show');
 
     if (orderIdEl) orderIdEl.textContent = `#${order.id ? order.id.slice(-4) : '----'}`;
     if (pickupEl) pickupEl.textContent = order.pickup_address || '未提供上車地址';
     if (dropoffEl) dropoffEl.textContent = order.dropoff_address || '未提供下車地址';
     const passCount = order.passenger_count || order.passengers || 1;
     if (passengerEl) passengerEl.textContent = `乘客 ${passCount} 人`;
-    if (fareEl) fareEl.textContent = order.fare ? `$${order.fare} 元` : '跳錶計費';
+    if (fareEl) {
+      if (order.fare && Number(order.fare) > 0) {
+        fareEl.textContent = `$${order.fare} 元`;
+        fareEl.classList.remove('hidden');
+      } else {
+        fareEl.textContent = '';
+        fareEl.classList.add('hidden');
+      }
+    }
 
     const stage = order.status || tripStage || 'accepted';
     if (stage === 'accepted') {
@@ -1196,16 +1269,22 @@
       if (actionIcon) actionIcon.textContent = '📍';
       if (actionText) actionText.textContent = '我已抵達上車點';
       if (actionBtn) actionBtn.className = 'w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-md transition flex items-center justify-center gap-1.5 active:scale-95';
+      if (noShowCardBtn) noShowCardBtn.classList.add('hidden');
     } else if (stage === 'arrived') {
       if (stageBadge) stageBadge.textContent = '🚕 司機已到點・等待乘客上車';
       if (actionIcon) actionIcon.textContent = '👥';
       if (actionText) actionText.textContent = '乘客已上車';
       if (actionBtn) actionBtn.className = 'w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black shadow-md transition flex items-center justify-center gap-1.5 active:scale-95';
+      if (noShowCardBtn) {
+        noShowCardBtn.classList.remove('hidden');
+        noShowCardBtn.onclick = () => performNoShowAction();
+      }
     } else if (stage === 'picked_up') {
       if (stageBadge) stageBadge.textContent = '🏁 行程進行中・前往目的地';
       if (actionIcon) actionIcon.textContent = '✅';
       if (actionText) actionText.textContent = '到達目的地（完成結單）';
       if (actionBtn) actionBtn.className = 'w-full py-2.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black shadow-md transition flex items-center justify-center gap-1.5 active:scale-95';
+      if (noShowCardBtn) noShowCardBtn.classList.add('hidden');
     }
 
     if (navBtn) {
@@ -1288,6 +1367,7 @@
     const startLabel = document.getElementById('trip-stage-start-label');
     const midLabel = document.getElementById('trip-stage-mid-label');
     const endLabel = document.getElementById('trip-stage-end-label');
+    const noShowTripBtn = document.getElementById('btn-trip-no-show');
 
     if (tripStage === 'accepted') {
       if (fillEl) fillEl.style.width = '25%';
@@ -1298,6 +1378,7 @@
       if (midLabel) midLabel.className = 'text-slate-400 font-bold';
       if (endLabel) endLabel.className = 'text-slate-400 font-bold';
       mainActionBtn.className = 'w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm shadow-lg shadow-emerald-600/30 active:scale-98 transition flex items-center justify-center gap-2';
+      if (noShowTripBtn) noShowTripBtn.classList.add('hidden');
     } else if (tripStage === 'arrived') {
       if (fillEl) fillEl.style.width = '60%';
       if (knobEl) knobEl.style.left = '60%';
@@ -1307,6 +1388,10 @@
       if (midLabel) midLabel.className = 'text-amber-600 font-extrabold';
       if (endLabel) endLabel.className = 'text-slate-400 font-bold';
       mainActionBtn.className = 'w-full py-3.5 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-sm shadow-lg shadow-amber-500/30 active:scale-98 transition flex items-center justify-center gap-2';
+      if (noShowTripBtn) {
+        noShowTripBtn.classList.remove('hidden');
+        noShowTripBtn.onclick = () => performNoShowAction();
+      }
     } else if (tripStage === 'picked_up') {
       if (fillEl) fillEl.style.width = '90%';
       if (knobEl) knobEl.style.left = '90%';
@@ -1316,6 +1401,41 @@
       if (midLabel) midLabel.className = 'text-slate-400 font-bold';
       if (endLabel) endLabel.className = 'text-slate-900 font-extrabold';
       mainActionBtn.className = 'w-full py-3.5 px-4 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-sm shadow-lg shadow-slate-900/30 active:scale-98 transition flex items-center justify-center gap-2';
+      if (noShowTripBtn) noShowTripBtn.classList.add('hidden');
+    }
+  }
+
+  async function performNoShowAction() {
+    if (!activeTrip) return;
+    if (!confirm('確定回報「客人未出現」並取消本趟訂單嗎？\n取消後系統將自動為您補償 +1 點【補單點數】！')) {
+      return;
+    }
+    const driverId = currentDriver.userId || currentDriver.plateNumber || localStorage.getItem('flow_taxi_driver_id') || 'driver_guest';
+    try {
+      const res = await fetch('/api/driver/trip-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: activeTrip.id,
+          driverId,
+          action: 'no_show',
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        alert(`回報失敗: ${result.error || '伺服器錯誤'}`);
+        return;
+      }
+      alert(result.message || '已回報客人未出現，並補償 +1 點補單點數！');
+      localStorage.removeItem(`active_trip_stage_${activeTrip.id}`);
+      activeTrip = null;
+      const activeCard = document.getElementById('active-trip-card');
+      if (activeCard) activeCard.classList.add('hidden');
+      switchView('dashboard');
+      fetchNearbyOrders();
+      loadHistoryOrders();
+    } catch (e) {
+      alert(`網路異常: ${e.message}`);
     }
   }
 
@@ -1334,6 +1454,11 @@
         action = 'picked_up';
       } else if (tripStage === 'picked_up') {
         action = 'completed';
+        // 若訂單無詳細下車地址 / 無預估金額，回報下車時填寫金額為必填，導向金額填寫頁
+        if (!activeTrip.fare || Number(activeTrip.fare) <= 0) {
+          window.location.href = `/driver/adjust-fare?orderId=${encodeURIComponent(activeTrip.id)}`;
+          return;
+        }
       }
 
       const driverId = currentDriver.userId || currentDriver.plateNumber || localStorage.getItem('flow_taxi_driver_id') || 'driver_guest';
@@ -1503,6 +1628,96 @@
   }
 
   // -------------------------------------------------------------
+  // 10.5 常客管理 (固定上下車地點、固定金額、固定路線)
+  // -------------------------------------------------------------
+  let regularCustomersCache = [];
+
+  async function loadRegularCustomers() {
+    const listEl = document.getElementById('regular-customers-list');
+    const countBadge = document.getElementById('reg-cust-count-badge');
+    if (!listEl) return;
+
+    listEl.innerHTML = '<p class="text-slate-400 text-center py-6">載入常客清單中...</p>';
+    try {
+      const res = await fetch('/api/admin/regular-customers');
+      if (!res.ok) throw new Error('讀取失敗');
+      const data = await res.json();
+      regularCustomersCache = data.customers || [];
+
+      if (countBadge) countBadge.textContent = `${regularCustomersCache.length} 筆`;
+
+      if (regularCustomersCache.length === 0) {
+        listEl.innerHTML = '<p class="text-slate-400 text-center py-6">尚未新增常客設定，請於上方表單新增</p>';
+        return;
+      }
+
+      listEl.innerHTML = regularCustomersCache
+        .map((c) => {
+          const routeLabel = c.fixed_route ? `🛣️ 指定路線：${escapeHtml(c.fixed_route)}` : '🛣️ 指定路線：依導航最佳路線';
+          const lineIdLabel = c.customer_id ? `<span class="font-mono text-[10px] text-slate-400">(${escapeHtml(c.customer_id)})</span>` : '';
+          return `
+            <div class="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-1.5">
+              <div class="flex items-center justify-between">
+                <div class="font-extrabold text-slate-900 flex items-center gap-1">
+                  <span>👤 ${escapeHtml(c.customer_name)}</span>
+                  ${lineIdLabel}
+                </div>
+                <span class="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-800 font-black text-xs">$${c.fixed_fare}</span>
+              </div>
+              <p class="text-xs font-bold text-slate-800">🟢 上車：${escapeHtml(c.pickup_address)}</p>
+              <p class="text-xs font-bold text-slate-800">🔴 下車：${escapeHtml(c.dropoff_address)}</p>
+              <p class="text-[11px] font-bold text-indigo-700">${routeLabel}</p>
+              <div class="flex justify-end gap-2 pt-1.5 border-t border-slate-100">
+                <button type="button" data-edit-reg="${escapeHtml(c.id)}" class="btn-edit-reg-item px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px]">✏️ 編輯</button>
+                <button type="button" data-del-reg="${escapeHtml(c.id)}" class="btn-del-reg-item px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-[11px]">🗑️ 刪除</button>
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+
+      listEl.querySelectorAll('.btn-edit-reg-item').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-edit-reg');
+          const found = regularCustomersCache.find((x) => x.id === id);
+          if (!found) return;
+          document.getElementById('reg-cust-edit-id').value = found.id;
+          document.getElementById('reg-cust-name').value = found.customer_name || '';
+          document.getElementById('reg-cust-line-id').value = found.customer_id || '';
+          document.getElementById('reg-cust-pickup').value = found.pickup_address || '';
+          document.getElementById('reg-cust-dropoff').value = found.dropoff_address || '';
+          document.getElementById('reg-cust-fare').value = found.fixed_fare || '';
+          document.getElementById('reg-cust-route').value = found.fixed_route || '';
+          const saveBtn = document.getElementById('btn-save-reg-cust');
+          if (saveBtn) saveBtn.textContent = '💾 儲存常客修改';
+          document.getElementById('btn-cancel-edit-reg-cust')?.classList.remove('hidden');
+        });
+      });
+
+      listEl.querySelectorAll('.btn-del-reg-item').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-del-reg');
+          if (!id || !confirm('確定要刪除此筆常客設定嗎？')) return;
+          await fetch(`/api/admin/regular-customers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+          loadRegularCustomers();
+        });
+      });
+    } catch (err) {
+      listEl.innerHTML = '<p class="text-rose-500 text-center py-6">無法載入常客清單</p>';
+    }
+  }
+
+  function resetRegularCustomerForm() {
+    const editId = document.getElementById('reg-cust-edit-id');
+    if (editId) editId.value = '';
+    const form = document.getElementById('regular-customer-form');
+    if (form) form.reset();
+    const saveBtn = document.getElementById('btn-save-reg-cust');
+    if (saveBtn) saveBtn.textContent = '➕ 新增常客設定';
+    document.getElementById('btn-cancel-edit-reg-cust')?.classList.add('hidden');
+  }
+
+  // -------------------------------------------------------------
   // 11. 監聽與綁定事件
   // -------------------------------------------------------------
   function setupDomListeners() {
@@ -1581,25 +1796,132 @@
       }
     });
 
-    // 側邊 Drawer 分頁切換
+    // 側邊 Drawer 分頁切換 (個人與車輛資料 / 歷史接單紀錄 / 常客)
     const tabProfileBtn = document.getElementById('tab-btn-profile');
     const tabHistoryBtn = document.getElementById('tab-btn-history');
+    const tabRegCustomersBtn = document.getElementById('tab-btn-regular-customers');
     const tabProfileContent = document.getElementById('tab-content-profile');
     const tabHistoryContent = document.getElementById('tab-content-history');
+    const tabRegCustomersContent = document.getElementById('tab-content-regular-customers');
+
+    function setActiveDrawerTab(tab) {
+      const inactiveCls = 'flex-1 py-3 border-b-2 border-transparent hover:text-slate-900';
+      const activeCls = 'flex-1 py-3 border-b-2 border-emerald-600 text-emerald-600 font-extrabold';
+      if (tabProfileBtn) tabProfileBtn.className = tab === 'profile' ? activeCls : inactiveCls;
+      if (tabHistoryBtn) tabHistoryBtn.className = tab === 'history' ? activeCls : inactiveCls;
+      if (tabRegCustomersBtn) tabRegCustomersBtn.className = tab === 'regular' ? activeCls : inactiveCls;
+
+      tabProfileContent?.classList.toggle('hidden', tab !== 'profile');
+      tabHistoryContent?.classList.toggle('hidden', tab !== 'history');
+      tabRegCustomersContent?.classList.toggle('hidden', tab !== 'regular');
+    }
 
     tabProfileBtn?.addEventListener('click', () => {
-      tabProfileBtn.className = 'flex-1 py-3 border-b-2 border-emerald-600 text-emerald-600 font-extrabold';
-      tabHistoryBtn.className = 'flex-1 py-3 border-b-2 border-transparent hover:text-slate-900';
-      tabProfileContent?.classList.remove('hidden');
-      tabHistoryContent?.classList.add('hidden');
+      setActiveDrawerTab('profile');
     });
 
     tabHistoryBtn?.addEventListener('click', () => {
-      tabHistoryBtn.className = 'flex-1 py-3 border-b-2 border-emerald-600 text-emerald-600 font-extrabold';
-      tabProfileBtn.className = 'flex-1 py-3 border-b-2 border-transparent hover:text-slate-900';
-      tabHistoryContent?.classList.remove('hidden');
-      tabProfileContent?.classList.add('hidden');
+      setActiveDrawerTab('history');
       loadHistoryOrders();
+    });
+
+    tabRegCustomersBtn?.addEventListener('click', () => {
+      setActiveDrawerTab('regular');
+      loadRegularCustomers();
+    });
+
+    document.getElementById('btn-cancel-edit-reg-cust')?.addEventListener('click', resetRegularCustomerForm);
+
+    document.getElementById('regular-customer-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const editId = document.getElementById('reg-cust-edit-id')?.value?.trim();
+      const customer_name = document.getElementById('reg-cust-name')?.value?.trim();
+      const customer_id = document.getElementById('reg-cust-line-id')?.value?.trim();
+      const pickup_address = document.getElementById('reg-cust-pickup')?.value?.trim();
+      const dropoff_address = document.getElementById('reg-cust-dropoff')?.value?.trim();
+      const fixed_fare = Number(document.getElementById('reg-cust-fare')?.value);
+      const fixed_route = document.getElementById('reg-cust-route')?.value?.trim();
+      const statusEl = document.getElementById('reg-cust-save-status');
+
+      try {
+        const res = await fetch('/api/admin/regular-customers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: editId || undefined,
+            customer_name,
+            customer_id: customer_id || null,
+            pickup_address,
+            dropoff_address,
+            fixed_fare,
+            fixed_route,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || '儲存常客設定失敗');
+          return;
+        }
+        resetRegularCustomerForm();
+        await loadRegularCustomers();
+        if (statusEl) {
+          statusEl.textContent = '✅ 常客固定路線與固定金額已儲存！';
+          statusEl.classList.remove('hidden');
+          setTimeout(() => statusEl.classList.add('hidden'), 3000);
+        }
+      } catch (err) {
+        alert('儲存常客設定時發生網路錯誤');
+      }
+    });
+
+    // 編輯車卡快捷入口 (首頁卡片直通抽屜注意事項區)
+    document.getElementById('btn-edit-notes-card')?.addEventListener('click', () => {
+      openSideDrawer();
+      tabProfileBtn?.click();
+      setTimeout(() => {
+        const notesInput = document.getElementById('input-driver-notes');
+        notesInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        notesInput?.focus();
+      }, 350);
+    });
+
+    // 表單各輸入格與即時車卡預覽連動
+    document.getElementById('input-display-name')?.addEventListener('input', (e) => {
+      const prev = document.getElementById('preview-card-name');
+      if (prev) prev.textContent = e.target.value.trim() || '未登入';
+    });
+    document.getElementById('input-plate-number')?.addEventListener('input', (e) => {
+      const prev = document.getElementById('preview-card-plate');
+      if (prev) prev.textContent = e.target.value.trim().toUpperCase() || 'TDC-8888';
+    });
+    document.getElementById('input-car-brand')?.addEventListener('input', (e) => {
+      const prev = document.getElementById('preview-card-brand');
+      if (prev) prev.textContent = e.target.value.trim() || 'TOYOTA';
+    });
+    document.getElementById('input-car-color')?.addEventListener('input', (e) => {
+      const prev = document.getElementById('preview-card-color');
+      if (prev) prev.textContent = e.target.value.trim() || '黑色';
+    });
+    document.getElementById('input-driver-notes')?.addEventListener('input', () => {
+      updateNotesCountAndPreview();
+    });
+
+    // 快捷標籤點選追加
+    document.querySelectorAll('.quick-note-tag').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tag = btn.getAttribute('data-tag');
+        if (tag) appendQuickNote(tag);
+      });
+    });
+
+    // 清空注意事項
+    document.getElementById('btn-clear-notes')?.addEventListener('click', () => {
+      const notesInput = document.getElementById('input-driver-notes');
+      if (notesInput) {
+        notesInput.value = '';
+        updateNotesCountAndPreview();
+        notesInput.focus();
+      }
     });
 
     // 司機資料更新表單
@@ -1635,9 +1957,9 @@
           updateDriverUi();
           checkAuthBar();
           if (statusEl) {
-            statusEl.textContent = '✅ 司機資料已成功更新！';
+            statusEl.textContent = '✅ 車卡資料與乘車注意事項已成功更新！';
             statusEl.classList.remove('hidden');
-            setTimeout(() => statusEl.classList.add('hidden'), 2500);
+            setTimeout(() => statusEl.classList.add('hidden'), 3000);
           }
         }
       } catch (err) {
@@ -1650,7 +1972,7 @@
     const params = new URLSearchParams(window.location.search);
     const submittedOrder = params.get('submittedOrder');
     if (submittedOrder) {
-      alert(`已成功送出接單出價！\n系統正進行 60 秒媒合評選，請留意即時推播結果！`);
+      alert(`已成功送出接單出價！\n系統正進行 30 秒媒合評選，請留意即時推播結果！`);
       fetchNearbyOrders();
       fetchActiveTrip();
     }

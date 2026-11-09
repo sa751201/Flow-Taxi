@@ -4,6 +4,7 @@ import { MemoryDispatchTimer } from '../../src/services/timer/memory-timer.js';
 import * as orderQueries from '../../src/db/queries/orders.js';
 import * as bidQueries from '../../src/db/queries/bids.js';
 import * as dispatchQueries from '../../src/db/queries/dispatch.js';
+import * as driverQueries from '../../src/db/queries/drivers.js';
 
 describe('DispatchEngine Unit Tests', () => {
   let timer: MemoryDispatchTimer;
@@ -34,11 +35,11 @@ describe('DispatchEngine Unit Tests', () => {
       const markDispatchingSpy = vi.spyOn(orderQueries, 'markOrderDispatching').mockResolvedValue(true);
       const timerStartSpy = vi.spyOn(timer, 'startWindow');
 
-      const result = await engine.startDispatch('order-1', 60);
+      const result = await engine.startDispatch('order-1', 30);
 
       expect(result.success).toBe(true);
       expect(markDispatchingSpy).toHaveBeenCalledWith('order-1');
-      expect(timerStartSpy).toHaveBeenCalledWith('order-1', 60, expect.any(Function));
+      expect(timerStartSpy).toHaveBeenCalledWith('order-1', 30, expect.any(Function));
     });
 
     it('若訂單非 pending 狀態，應拒絕發起派單', async () => {
@@ -90,6 +91,74 @@ describe('DispatchEngine Unit Tests', () => {
       expect(bid.driver_id).toBe('driver-1');
     });
 
+    it('當司機勾選使用補單點數 (useCompensationPoint: true) 喊單時，應於當下立即結單指派並觸發 onOrderResolved，免等 30 秒', async () => {
+      const onOrderResolved = vi.fn().mockResolvedValue(undefined);
+      const instantEngine = new DispatchEngine({
+        timer,
+        windowDurationSeconds: 30,
+        onOrderResolved,
+      });
+
+      vi.spyOn(orderQueries, 'getOrderById').mockResolvedValue({
+        id: 'order-comp-1',
+        customer_id: 'cust-1',
+        service_type: 'city',
+        pickup_address: '台北車站',
+        passenger_count: 1,
+        status: 'dispatching',
+        created_at: new Date(),
+      });
+
+      vi.spyOn(bidQueries, 'insertBid').mockResolvedValue({
+        id: 'bid-comp-1',
+        order_id: 'order-comp-1',
+        driver_id: 'driver-vip',
+        distance_to_pickup_km: 1.0,
+        bid_at: new Date(),
+      });
+      vi.spyOn(bidQueries, 'getBidsByOrderId').mockResolvedValue([
+        {
+          id: 'bid-comp-1',
+          order_id: 'order-comp-1',
+          driver_id: 'driver-vip',
+          distance_to_pickup_km: 1.0,
+          bid_at: new Date(),
+        },
+      ]);
+
+      const assignSpy = vi.spyOn(dispatchQueries, 'atomicallyAssignDriver').mockResolvedValue(true);
+      const consumeSpy = vi.spyOn(driverQueries, 'consumeDriverCompensationPoint').mockResolvedValue({
+        success: true,
+        remainingPoints: 0,
+      });
+      const cancelWindowSpy = vi.spyOn(timer, 'cancelWindow');
+
+      const bidResult = await instantEngine.submitBid({
+        orderId: 'order-comp-1',
+        driverId: 'driver-vip',
+        lat: 25.0478,
+        lng: 121.517,
+        etaMinutes: 5,
+        useCompensationPoint: true,
+      });
+
+      expect(bidResult.instantWon).toBe(true);
+      expect(bidResult.used_compensation_point).toBe(true);
+      expect(cancelWindowSpy).toHaveBeenCalledWith('order-comp-1');
+      expect(assignSpy).toHaveBeenCalledWith('order-comp-1', 'driver-vip');
+      expect(consumeSpy).toHaveBeenCalledWith('driver-vip');
+      expect(onOrderResolved).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderId: 'order-comp-1',
+          status: 'assigned',
+          winnerDriverId: 'driver-vip',
+          usedCompensationPoint: true,
+        })
+      );
+
+      await instantEngine.close();
+    });
+
     it('若訂單非 dispatching 狀態，應拋出錯誤', async () => {
       vi.spyOn(orderQueries, 'getOrderById').mockResolvedValue({
         id: 'order-1',
@@ -113,15 +182,44 @@ describe('DispatchEngine Unit Tests', () => {
   });
 
   describe('closeDispatchWindow', () => {
-    it('若無人投標，應將訂單標記為 no_driver', async () => {
+    it('若無人投標，應不結單且自動延後視窗繼續等待，直到司機接單或客人取消訂單', async () => {
+      vi.spyOn(orderQueries, 'getOrderById').mockResolvedValue({
+        id: 'order-empty',
+        customer_id: 'cust-1',
+        service_type: 'city',
+        pickup_address: '台北車站',
+        passenger_count: 1,
+        status: 'dispatching',
+        created_at: new Date(),
+      });
       vi.spyOn(bidQueries, 'getBidsByOrderId').mockResolvedValue([]);
-      const noDriverSpy = vi.spyOn(dispatchQueries, 'markOrderNoDriver').mockResolvedValue(true);
+      const noDriverSpy = vi.spyOn(dispatchQueries, 'markOrderNoDriver');
+      const timerStartSpy = vi.spyOn(timer, 'startWindow');
 
       const result = await engine.closeDispatchWindow('order-empty');
 
-      expect(result.status).toBe('no_driver');
+      expect(result.status).toBe('extended');
       expect(result.totalBidsCount).toBe(0);
-      expect(noDriverSpy).toHaveBeenCalledWith('order-empty');
+      expect(noDriverSpy).not.toHaveBeenCalled();
+      expect(timerStartSpy).toHaveBeenCalledWith('order-empty', 2, expect.any(Function));
+    });
+
+    it('若無人投標期間客人取消訂單，到期檢查時應停止延後並回傳 conflict_or_cancelled', async () => {
+      vi.spyOn(orderQueries, 'getOrderById').mockResolvedValue({
+        id: 'order-cancelled',
+        customer_id: 'cust-1',
+        service_type: 'city',
+        pickup_address: '台北車站',
+        passenger_count: 1,
+        status: 'cancelled',
+        created_at: new Date(),
+      });
+      const timerStartSpy = vi.spyOn(timer, 'startWindow');
+
+      const result = await engine.closeDispatchWindow('order-cancelled');
+
+      expect(result.status).toBe('conflict_or_cancelled');
+      expect(timerStartSpy).not.toHaveBeenCalled();
     });
 
     it('多位司機投標時，應依演算法挑選中單者並原子指派 (長單優先權加權或最近距離)', async () => {

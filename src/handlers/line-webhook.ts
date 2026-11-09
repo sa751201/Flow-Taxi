@@ -3,7 +3,7 @@ import { getLineClient } from '../services/line-client.js';
 import { query } from '../db/index.js';
 import { env } from '../config/env.js';
 import { parseDriverRegistrationText } from '../services/driver-parser.js';
-import { upsertDriver, getDriverById } from '../db/queries/drivers.js';
+import { upsertDriver, getDriverById, addDriverCompensationPoint } from '../db/queries/drivers.js';
 import {
   createDriverRegisterFlexMessage,
   createWelcomeServiceMessage,
@@ -12,6 +12,10 @@ import {
   createGroupDispatchOrderFlexMessage,
   createDriverOrderCardFlexMessage,
   createGroupOrderCancelledFlexMessage,
+  createCustomerReservationStatusFlexMessage,
+  CustomerReservationStatusItem,
+  createDriverBoardedFareConfirmFlexMessage,
+  createGroupOrderCompletedFlexMessage,
 } from '../services/flex-messages.js';
 import { geocodeAddress } from '../services/google-maps.js';
 import {
@@ -19,12 +23,25 @@ import {
   getActiveOrderByDriverId,
   getActiveOrderByCustomerId,
   getActiveOrdersByCustomerId,
+  getActiveReservationOrdersByCustomerId,
   getScheduledOrdersByDriverId,
   getOrderById,
   updateOrderStatus,
+  updateOrderNote,
   markDriverArrived,
+  markReservationBroadcasted,
+  acknowledgeReservationOrder,
+  isDetailedDropoffAddress,
+  getOrderDefaultFare,
+  completeOrderWithFare,
+  extractFixedRoute,
   Order,
 } from '../db/queries/orders.js';
+import { matchRegularCustomerRoute } from '../db/queries/regular-customers.js';
+import {
+  evaluateShortTripOnCompletion,
+  notifyShortTripForVerification,
+} from '../services/short-trip-verifier.js';
 import {
   startCustomerChatSession,
   endCustomerChatSession,
@@ -41,7 +58,17 @@ import { isGroupAllowed, isAdminGroup } from '../services/group-whitelist.js';
 import { handleAdminGroupCommand, isManualTakeoverActive } from '../services/admin-control.js';
 import { checkSilentQuestion, createSilentAlertForAdmin } from '../services/silent-questions.js';
 import { aggregateDailyStats, createDailyReportFlexMessage } from '../services/daily-reporter.js';
-import { parseScheduledTimeString, isFutureReservation } from '../services/reservation.js';
+import {
+  parseScheduledTimeString,
+  isFutureReservation,
+  extractScheduledTimeText,
+  hasDriverAck,
+  evaluateReservationDispatchAction,
+} from '../services/reservation.js';
+import {
+  checkAndSendReservationReminders,
+  reopenReservationOrder,
+} from '../services/reservation-reminder.js';
 
 type WebhookEvent = webhook.Event;
 
@@ -116,6 +143,296 @@ export async function handleLineEvents(events: WebhookEvent[]) {
             replyToken,
             messages: [createAirportRidePromptMessage()],
           });
+          continue;
+        }
+
+        // 司機點擊預約單「✅ 我知道了」確認按鈕
+        if (data.startsWith('action=ack_reservation')) {
+          const params = new URLSearchParams(data);
+          const ackOrderId = params.get('orderId') || '';
+          if (!ackOrderId) continue;
+
+          const ackRes = await acknowledgeReservationOrder(ackOrderId, senderUserId);
+          if (!ackRes.success) {
+            if (ackRes.reason === 'not_winner') {
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [
+                  {
+                    type: 'text',
+                    text: `⚠️ 此筆預約單（#${ackOrderId.slice(-4)}）是由其他司機夥伴承接，僅接單司機本人可點擊「我知道了」確認喔！`,
+                  },
+                ],
+              });
+            } else {
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [{ type: 'text', text: '⚠️ 找不到該筆預約訂單或已結束。' }],
+              });
+            }
+            continue;
+          }
+
+          const scheduledText = ackRes.order ? extractScheduledTimeText(ackRes.order) : '';
+          await lineClient.replyMessage({
+            replyToken,
+            messages: [
+              {
+                type: 'text',
+                text: `✅【已收到「我知道了」確認】\n您已確認承接預約訂單 #${ackOrderId.slice(-4)}（預約時間：${scheduledText}）。\n系統將於預約單前 1 小時，在您的 1:1 官方帳號通知您前往上車地點載客（並附完整訂單資訊 Flex Message）！🚖`,
+              },
+            ],
+          });
+
+          // 若預約時間已進入前 1 小時內，立即觸發檢查發送出車通知
+          checkAndSendReservationReminders().catch(() => {});
+          continue;
+        }
+
+        // 管理員點擊「🔄 重啟預約單」按鈕（針對超過 1 小時未按我知道了之預約單）
+        if (data.startsWith('action=admin_reopen_reservation')) {
+          const params = new URLSearchParams(data);
+          const reopenOrderId = params.get('orderId') || '';
+          if (!reopenOrderId) continue;
+
+          const reopenRes = await reopenReservationOrder(reopenOrderId);
+          if (!reopenRes.success) {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: `⚠️ 無法重啟預約單 #${reopenOrderId.slice(-4)}：${reopenRes.error}`,
+                },
+              ],
+            });
+            continue;
+          }
+
+          await lineClient.replyMessage({
+            replyToken,
+            messages: [
+              {
+                type: 'text',
+                text: `🔄【已重啟預約單 #${reopenOrderId.slice(-4)}】\n已解除原司機指派並重新於司機群組廣播派單，尋找其他司機處理！`,
+              },
+            ],
+          });
+          continue;
+        }
+
+        // 司機點擊「確認金額並回報」按鈕：視同回報結單，並傳送至 chatroom 群組顯示訂單已完結與金額
+        if (data.startsWith('action=confirm_fare_complete')) {
+          const params = new URLSearchParams(data);
+          const completeOrderId = params.get('orderId') || '';
+          const rawFare = params.get('fare');
+          if (!completeOrderId) continue;
+
+          const existingOrder = await getOrderById(completeOrderId);
+          if (!existingOrder) {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [{ type: 'text', text: '⚠️ 找不到該筆訂單。' }],
+            });
+            continue;
+          }
+
+          if (senderUserId && existingOrder.driver_id && existingOrder.driver_id !== senderUserId) {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [{ type: 'text', text: '⚠️ 僅本筆訂單之接單司機可回報結單。' }],
+            });
+            continue;
+          }
+
+          const finalFare = rawFare && Number(rawFare) > 0
+            ? Math.round(Number(rawFare))
+            : getOrderDefaultFare(existingOrder);
+
+          if (finalFare === null || finalFare <= 0) {
+            const requiredFareCard = createDriverBoardedFareConfirmFlexMessage({
+              orderId: existingOrder.id,
+              pickupAddress: existingOrder.pickup_address,
+              dropoffAddress: existingOrder.dropoff_address,
+              passengerCount: existingOrder.passenger_count || 1,
+              fare: null,
+            });
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: '⚠️ 此筆訂單乘客未提供詳細下車地址，回報下車時「填寫金額」為必填！請點選下方按鈕填寫本趟實際金額以完成結單回報：',
+                },
+                requiredFareCard,
+              ],
+            });
+            continue;
+          }
+
+          const completedOrder = await completeOrderWithFare(completeOrderId, finalFare);
+          if (!completedOrder) continue;
+
+          if (completedOrder.customer_id && getCustomerChatOrderId(completedOrder.customer_id) === completedOrder.id) {
+            endCustomerChatSession(completedOrder.customer_id);
+          }
+
+          const effectiveDriverId = completedOrder.driver_id || senderUserId || 'UNKNOWN_DRIVER';
+          const driverProfile = effectiveDriverId !== 'UNKNOWN_DRIVER'
+            ? await getDriverById(effectiveDriverId)
+            : null;
+          const driverName = driverProfile?.display_name || '司機夥伴';
+
+          // 偵測上車地點與下車地點距離，若小於 5 公里即算短程單
+          const shortTripEval = await evaluateShortTripOnCompletion({
+            order: completedOrder,
+          });
+
+          // 1. 推播至司機群組 (chatroom)：這筆訂單已完結，並顯示金額
+          const targetGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
+          if (targetGroupId) {
+            try {
+              const groupCompletedFlex = createGroupOrderCompletedFlexMessage({
+                orderId: completedOrder.id,
+                driverName,
+                pickupAddress: completedOrder.pickup_address,
+                dropoffAddress: completedOrder.dropoff_address,
+                fare: finalFare,
+                isAdjusted: false,
+              });
+              await lineClient.pushMessage({
+                to: targetGroupId,
+                messages: [groupCompletedFlex],
+              });
+              console.log(`[Confirm Fare Complete] ✅ 已向司機群組推播訂單 #${completedOrder.id.slice(-4)} 完結與金額 $${finalFare}`);
+            } catch (gErr: any) {
+              console.warn('[Confirm Fare Complete] 推播司機群組結單失敗:', gErr.message);
+            }
+          }
+
+          // 2. 推播給乘客抵達與感謝通知
+          if (completedOrder.customer_id) {
+            try {
+              await lineClient.pushMessage({
+                to: completedOrder.customer_id,
+                messages: [
+                  {
+                    type: 'text',
+                    text: `🏁 您已順利抵達目的地，感謝搭乘！（本趟車資：$${finalFare}）\n請記得攜帶隨身物品，祝您有美好的一天，歡迎再次預約用車！😊\n${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`,
+                  },
+                ],
+              });
+            } catch (custErr: any) {
+              console.warn('[Confirm Fare Complete] 推播乘客結單失敗:', custErr.message);
+            }
+          }
+
+          // 3. 回覆司機 1:1 OA 結單確認（若偵測為短程單，附上短程單提示 Flex Message 並發送管理群組核實 Flex Message）
+          const replyMessages: messagingApi.Message[] = [
+            {
+              type: 'text',
+              text: `🎉【訂單已完結並回報群組】\n\n🧾 訂單編號：#${completedOrder.id.slice(-4)}\n🟢 上車：${completedOrder.pickup_address}\n🔴 下車：${completedOrder.dropoff_address || '乘客指定地點'}\n💰 結單金額：$${finalFare}\n\n已同步將完結與金額回報至聊天室群組！辛苦司機夥伴了，祝行車平安！🚖`,
+            },
+          ];
+
+          if (shortTripEval.isShortTrip && shortTripEval.dropoffAddress && shortTripEval.distanceKm !== null) {
+            const { driverFlex } = await notifyShortTripForVerification({
+              order: completedOrder,
+              driverId: effectiveDriverId,
+              driverName,
+              dropoffAddress: shortTripEval.dropoffAddress,
+              distanceKm: shortTripEval.distanceKm,
+              fare: finalFare,
+              pushToDriver: false,
+            });
+            replyMessages.push(driverFlex);
+          }
+
+          await lineClient.replyMessage({
+            replyToken,
+            messages: replyMessages,
+          });
+          continue;
+        }
+
+        // 管理員於管理群組點擊「核實通過 / 駁回」短程單補單點數
+        if (data.startsWith('action=admin_verify_short_trip')) {
+          const params = new URLSearchParams(data);
+          const verifyOrderId = params.get('orderId') || '';
+          const verifyDriverId = params.get('driverId') || '';
+          const approved = params.get('approved') === '1';
+          if (!verifyOrderId || !verifyDriverId) continue;
+
+          const targetOrder = await getOrderById(verifyOrderId);
+          if (
+            targetOrder?.note?.includes('[SHORT_TRIP_VERIFIED]') ||
+            targetOrder?.note?.includes('[SHORT_TRIP_REJECTED]')
+          ) {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: `ℹ️ 短程單 #${verifyOrderId.slice(-4)} 先前已由管理員完成核實處理，無須重複操作。`,
+                },
+              ],
+            });
+            continue;
+          }
+
+          const driverProfile = await getDriverById(verifyDriverId);
+          const driverName = driverProfile?.display_name || '司機夥伴';
+
+          if (approved) {
+            const newPoints = await addDriverCompensationPoint(verifyDriverId, 1);
+            if (targetOrder) {
+              const nextNote = `${targetOrder.note || ''} [SHORT_TRIP_VERIFIED]`.trim();
+              targetOrder.note = nextNote;
+              await updateOrderNote(verifyOrderId, nextNote);
+            }
+
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: `✅【短程單核實通過】\n訂單 #${verifyOrderId.slice(-4)} 已核實為短程單，系統已為司機【${driverName}】發放 +1 點補單點數（目前可用：${newPoints} 點）！`,
+                },
+              ],
+            });
+
+            if (!verifyDriverId.startsWith('DEV_DRIVER_')) {
+              try {
+                await lineClient.pushMessage({
+                  to: verifyDriverId,
+                  messages: [
+                    {
+                      type: 'text',
+                      text: `🎁【短程單核實通過・獲得補單點數】\n管理員已核實您的短程單（訂單 #${verifyOrderId.slice(-4)}），系統已為您發放 +1 點【補單點數】（目前可用：${newPoints} 點）！\n下次接單時勾選「使用補單點數」，喊單當下即可立即結單中單，不用再等 30 秒規則！🚖`,
+                    },
+                  ],
+                });
+              } catch (dErr: any) {
+                console.warn('[Admin Verify Short Trip] 推播司機補單點數通知失敗:', dErr.message);
+              }
+            }
+          } else {
+            if (targetOrder) {
+              const nextNote = `${targetOrder.note || ''} [SHORT_TRIP_REJECTED]`.trim();
+              targetOrder.note = nextNote;
+              await updateOrderNote(verifyOrderId, nextNote);
+            }
+
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: `❌【已駁回短程單 #${verifyOrderId.slice(-4)}】\n本筆訂單不發放補單點數。`,
+                },
+              ],
+            });
+          }
           continue;
         }
       }
@@ -311,7 +628,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
               messages: [
                 {
                   type: 'text',
-                  text: `📋 您目前登記的資料如下：\n\n👤 駕駛姓名：${driver.display_name || '未填'}\n🔢 車牌號碼：${driver.plate_number || '未填'}\n🎨 車輛顏色：${driver.car_color || '未填'}\n🚙 車輛廠牌：${driver.car_brand || '未填'}\n📞 聯絡電話：${driver.phone || '未填'}\n\n若需修改，請點擊下方專屬頁面直接更新：\n${registerUrl}`,
+                  text: `📋 您目前登記的車卡資料如下：\n\n👤 駕駛姓名：${driver.display_name || '未填'}\n🔢 車牌號碼：${driver.plate_number || '未填'}\n🎨 車輛顏色：${driver.car_color || '未填'}\n🚙 車輛廠牌：${driver.car_brand || '未填'}\n📞 聯絡電話：${driver.phone || '未填'}\n📝 車內注意事項：${driver.notes || '🚭 禁菸 🚯 禁食'}\n\n若需修改，請點擊下方專屬頁面直接更新：\n${registerUrl}`,
                 },
               ],
             });
@@ -331,6 +648,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
             car_color: parsedDriver.carColor,
             car_brand: parsedDriver.carBrand,
             phone: parsedDriver.phone,
+            notes: parsedDriver.notes,
             registered: true,
             status: 'active',
           });
@@ -345,7 +663,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
             messages: [
               {
                 type: 'text',
-                text: `✅【${saved.display_name || '夥伴'}】你的司機資料已經建立完成！\n\n🚙 車型：${saved.car_brand || '未填'}\n🔢 車號：${saved.plate_number || '未填'}\n🎨 車色：${saved.car_color || '未填'}\n\n已為您正式開通派單接單權限！若日後需變更資料，隨時輸入「修改資料」即可調整。`,
+                text: `✅【${saved.display_name || '夥伴'}】你的司機車卡資料已經建立完成！\n\n🚙 車型：${saved.car_brand || '未填'}\n🔢 車號：${saved.plate_number || '未填'}\n🎨 車色：${saved.car_color || '未填'}\n📝 注意事項：${saved.notes || '🚭 禁菸 🚯 禁食'}\n\n已為您正式開通派單接單權限！若日後需變更資料，隨時輸入「修改資料」即可調整。`,
               },
             ],
           });
@@ -428,7 +746,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
                 messages: [
                   {
                     type: 'text',
-                    text: '🚖 司機已抵達指定上車地，請確認車號車色後上車！',
+                    text: '🚖 司機已抵達指定上車地，請確認車號車色後上車！\n\n⏳ 溫馨提醒：司機等待時間為您選擇的時間加上 5 分鐘緩衝（例如選「準時」，司機可等候 5 分鐘）。超過緩衝 5 分鐘後，將按每分鐘計費。',
                     quickReply: {
                       items: quickReplyItems,
                     },
@@ -441,7 +759,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
             }
           }
 
-          // 1:1 回覆司機確認訊息，下方附帶 Quick Reply 按鈕「客上」
+          // 1:1 回覆司機確認訊息，下方附帶 Quick Reply 按鈕「客上」與「客人未出現」
           await lineClient.replyMessage({
             replyToken,
             messages: [
@@ -458,8 +776,86 @@ export async function handleLineEvents(events: WebhookEvent[]) {
                         text: '客上',
                       },
                     },
+                    {
+                      type: 'action',
+                      action: {
+                        type: 'message',
+                        label: '🚫 客人未出現',
+                        text: '客人未出現',
+                      },
+                    },
                   ],
                 },
+              },
+            ],
+          });
+          continue;
+        }
+
+        // 4.5 司機回報「客人未出現」：取消訂單並為司機後台計點 +1 點補單點數
+        if (
+          text === '客人未出現' ||
+          text === '未出現' ||
+          text === '乘客未出現' ||
+          text === '客人沒出現' ||
+          text === '空趟'
+        ) {
+          if (!senderUserId) continue;
+
+          if (event.source.type === 'group' || event.source.type === 'room') {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: `⚠️ 為維護群組秩序，行程進度回報（到達、客上、客人未出現、乘客下車）請至「1:1 官方帳號」進行！\n👉 請點擊前往 1:1 OA：${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`,
+                },
+              ],
+            });
+            continue;
+          }
+
+          const activeOrder = await getActiveOrderByDriverId(senderUserId);
+          if (!activeOrder) {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [{ type: 'text', text: '⚠️ 查無您目前進行中的接單行程。' }],
+            });
+            continue;
+          }
+
+          await updateOrderStatus(activeOrder.id, 'cancelled');
+          if (activeOrder.customer_id && getCustomerChatOrderId(activeOrder.customer_id) === activeOrder.id) {
+            endCustomerChatSession(activeOrder.customer_id);
+          }
+
+          // 後台計點：為司機增加 1 點補單點數
+          const newPoints = await addDriverCompensationPoint(senderUserId, 1);
+
+          // 通知乘客訂單已因未出現而取消
+          if (activeOrder.customer_id) {
+            try {
+              await lineClient.pushMessage({
+                to: activeOrder.customer_id,
+                messages: [
+                  {
+                    type: 'text',
+                    text: `⚠️ 司機已於指定上車地（${activeOrder.pickup_address}）等候，因未見您出現，本趟叫車訂單（#${activeOrder.id.slice(-4)}）已取消。如需再次用車，請重新預約叫車。`,
+                  },
+                ],
+              });
+            } catch (custErr: any) {
+              console.warn('[Passenger No-Show] 推播乘客失敗:', custErr.message);
+            }
+          }
+
+          // 回覆司機確認並告知已獲得補單點數
+          await lineClient.replyMessage({
+            replyToken,
+            messages: [
+              {
+                type: 'text',
+                text: `✅ 已收到「客人未出現」回報，本筆訂單（#${activeOrder.id.slice(-4)}）已取消結案。\n\n🎁 系統已自動為您補償 +1 點【補單點數】（目前可用：${newPoints} 點）！\n下次於接單頁面勾選「使用補單點數」，喊單當下即可立即結單中單，不用再等 30 秒規則！🚖`,
               },
             ],
           });
@@ -529,33 +925,43 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
             }
           }
 
-          // 1:1 回覆司機確認訊息，引導抵達時回報下車結單
+          // 1:1 回覆司機確認訊息，並顯示該張訂單與金額的 Flex Message（含「確認金額並回報」與「調整訂單金額並回報」按鈕）
+          const defaultFare = getOrderDefaultFare(activeOrder);
+          const driverProfile = await getDriverById(senderUserId);
+          const boardedFareFlex = createDriverBoardedFareConfirmFlexMessage({
+            orderId: activeOrder.id,
+            driverName: driverProfile?.display_name || '司機夥伴',
+            pickupAddress: activeOrder.pickup_address,
+            dropoffAddress: activeOrder.dropoff_address,
+            passengerCount: activeOrder.passenger_count || 1,
+            fare: defaultFare,
+          });
+
           await lineClient.replyMessage({
             replyToken,
             messages: [
               {
                 type: 'text',
-                text: '👍 已收到「客上」回報！系統已發送感謝搭乘與安全叮嚀給乘客。\n\n抵達目的地乘客下車後，請輸入或點選「乘客下車」進行結單。',
-                quickReply: {
-                  items: [
-                    {
-                      type: 'action',
-                      action: {
-                        type: 'message',
-                        label: '🏁 乘客下車 (結單)',
-                        text: '乘客下車',
-                      },
-                    },
-                  ],
-                },
+                text:
+                  defaultFare !== null
+                    ? '👍 已收到「客上」回報！系統已發送感謝搭乘與安全叮嚀給乘客。\n\n以下為本筆訂單與金額資訊，請於行程結束時點選「確認金額並回報」或「調整訂單金額並回報」完成結單：'
+                    : '👍 已收到「客上」回報！系統已發送感謝搭乘與安全叮嚀給乘客。\n\n因本單乘客未提供詳細下車地址，請於抵達下車時點選下方「填寫訂單金額並回報」（金額為必填）完成結單：',
               },
+              boardedFareFlex,
             ],
           });
           continue;
         }
 
-        // 5.5 司機回報「乘客下車」：抵達目的地，正式結單
-        if (text === '乘客下車' || text === '下車' || text === '已下車' || text === '結單' || text === '下客') {
+        // 5.5 司機回報「乘客下車 / 確認金額並回報」：抵達目的地，正式結單並回報至群組
+        if (
+          text === '乘客下車' ||
+          text === '下車' ||
+          text === '已下車' ||
+          text === '結單' ||
+          text === '下客' ||
+          text === '確認金額並回報'
+        ) {
           if (!senderUserId) continue;
 
           // 需求：司機回報全面改在 1:1 OA 進行，群組內發送則提醒前往 1:1 OA
@@ -585,10 +991,65 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
 
           console.log(`[Trip Completed] 司機 ${senderUserId} 回報行程結束結單！訂單: ${activeOrder.id}, 乘客: ${activeOrder.customer_id}`);
 
-          // 更新訂單狀態為 done (正式結單)
-          await updateOrderStatus(activeOrder.id, 'done');
+          const finalFare = getOrderDefaultFare(activeOrder);
+          if (finalFare === null || finalFare <= 0) {
+            const requiredFareCard = createDriverBoardedFareConfirmFlexMessage({
+              orderId: activeOrder.id,
+              pickupAddress: activeOrder.pickup_address,
+              dropoffAddress: activeOrder.dropoff_address,
+              passengerCount: activeOrder.passenger_count || 1,
+              fare: null,
+            });
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: '⚠️ 此筆訂單乘客未提供詳細下車地址，回報下車時「填寫金額」這一欄為必填！請點擊下方按鈕填寫實際車資金額並完成結單回報：',
+                },
+                requiredFareCard,
+              ],
+            });
+            continue;
+          }
 
-          // 1:1 OA 傳給乘客抵達與感謝通知
+          // 更新訂單狀態為 done (正式結單) 並儲存金額
+          const completedOrder = (await completeOrderWithFare(activeOrder.id, finalFare)) || activeOrder;
+          if (activeOrder.customer_id && getCustomerChatOrderId(activeOrder.customer_id) === activeOrder.id) {
+            endCustomerChatSession(activeOrder.customer_id);
+          }
+
+          const driverProfile = await getDriverById(senderUserId);
+          const driverName = driverProfile?.display_name || '司機夥伴';
+
+          // 偵測上車地點與下車地點距離，若小於 5 公里即算短程單
+          const shortTripEval = await evaluateShortTripOnCompletion({
+            order: completedOrder,
+          });
+
+          // 1. 傳送到司機群組 (chatroom)：這筆訂單已完結，金額要顯示
+          const targetGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
+          if (targetGroupId) {
+            try {
+              const groupCompletedFlex = createGroupOrderCompletedFlexMessage({
+                orderId: activeOrder.id,
+                driverName,
+                pickupAddress: activeOrder.pickup_address,
+                dropoffAddress: activeOrder.dropoff_address,
+                fare: finalFare,
+                isAdjusted: false,
+              });
+              await lineClient.pushMessage({
+                to: targetGroupId,
+                messages: [groupCompletedFlex],
+              });
+              console.log(`[Trip Completed] ✅ 成功向司機群組推播訂單 #${activeOrder.id.slice(-4)} 完結與金額 $${finalFare}`);
+            } catch (gErr: any) {
+              console.warn('[Trip Completed] 推播司機群組結單失敗:', gErr.message);
+            }
+          }
+
+          // 2. 1:1 OA 傳給乘客抵達與感謝通知
           if (activeOrder.customer_id) {
             try {
               await lineClient.pushMessage({
@@ -596,7 +1057,7 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
                 messages: [
                   {
                     type: 'text',
-                    text: `🏁 您已順利抵達目的地，感謝搭乘！\n請記得攜帶隨身物品，祝您有美好的一天，歡迎再次預約用車！😊\n${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`,
+                    text: `🏁 您已順利抵達目的地，感謝搭乘！（本趟車資：$${finalFare}）\n請記得攜帶隨身物品，祝您有美好的一天，歡迎再次預約用車！😊\n${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`,
                   },
                 ],
               });
@@ -606,17 +1067,63 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
             }
           }
 
-          // 1:1 回覆司機結單確認
-          const fareInfo = activeOrder.fare ? `\n💰 本趟車資：$${activeOrder.fare}` : '';
+          // 3. 1:1 回覆司機結單確認（若為短程單，附上短程單提示 Flex Message 並發送管理群組核實 Flex Message）
+          const replyMessages: messagingApi.Message[] = [
+            {
+              type: 'text',
+              text: `🎉【本次行程已圓滿結單】\n\n🟢 上車：${activeOrder.pickup_address}\n🔴 下車：${activeOrder.dropoff_address || '乘客指定地點'}\n💰 本趟車資：$${finalFare}\n\n已同步將訂單完結與金額回報至聊天室群組！辛苦司機夥伴了！祝您行車平安、接單順利！🚖`,
+            },
+          ];
+
+          if (shortTripEval.isShortTrip && shortTripEval.dropoffAddress && shortTripEval.distanceKm !== null) {
+            const { driverFlex } = await notifyShortTripForVerification({
+              order: completedOrder,
+              driverId: senderUserId,
+              driverName,
+              dropoffAddress: shortTripEval.dropoffAddress,
+              distanceKm: shortTripEval.distanceKm,
+              fare: finalFare,
+              pushToDriver: false,
+            });
+            replyMessages.push(driverFlex);
+          }
+
           await lineClient.replyMessage({
             replyToken,
-            messages: [
-              {
-                type: 'text',
-                text: `🎉【本次行程已圓滿結單】\n\n🟢 上車：${activeOrder.pickup_address}\n🔴 下車：${activeOrder.dropoff_address || '乘客指定地點'}${fareInfo}\n\n辛苦司機夥伴了！祝您行車平安、接單順利！🚖`,
-              },
-            ],
+            messages: replyMessages,
           });
+          continue;
+        }
+
+        // 5.55 司機輸入「我知道了」確認預約單
+        if (text === '我知道了' || text === '收到預約' || text === '確認預約') {
+          if (!senderUserId) continue;
+          const scheduledOrders = await getScheduledOrdersByDriverId(senderUserId);
+          const targetOrder =
+            scheduledOrders.find((o) => !hasDriverAck(o)) || scheduledOrders[0];
+
+          if (!targetOrder) {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [{ type: 'text', text: '⚠️ 目前查無您需要確認的預約單行程。' }],
+            });
+            continue;
+          }
+
+          const ackRes = await acknowledgeReservationOrder(targetOrder.id, senderUserId);
+          if (ackRes.success && ackRes.order) {
+            const scheduledText = extractScheduledTimeText(ackRes.order);
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: `✅【已收到「我知道了」確認】\n您已確認承接預約訂單 #${targetOrder.id.slice(-4)}（預約時間：${scheduledText}）。\n系統將於預約單前 1 小時，在您的 1:1 官方帳號通知您前往上車地點載客（並附完整訂單資訊 Flex Message）！🚖`,
+                },
+              ],
+            });
+            checkAndSendReservationReminders().catch(() => {});
+          }
           continue;
         }
 
@@ -765,6 +1272,14 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
                               text: '客上',
                             },
                           },
+                          {
+                            type: 'action',
+                            action: {
+                              type: 'message',
+                              label: '🚫 客人未出現',
+                              text: '客人未出現',
+                            },
+                          },
                         ],
                       },
                     },
@@ -877,7 +1392,7 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
               continue;
             }
 
-            // 若尚在 60 秒派單媒合中 (尚未有司機接單)，直接秒速取消
+            // 若尚在 30 秒派單媒合中 (尚未有司機接單)，直接秒速取消
             if (activeOrder.status === 'pending' || activeOrder.status === 'dispatching') {
               await dispatchEngine.cancelDispatch(activeOrder.id);
               await updateOrderStatus(activeOrder.id, 'cancelled');
@@ -975,19 +1490,20 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
               ],
             });
 
-            // 即時推播通知接單司機 1:1 OA
+            // 即時推播通知接單司機 1:1 OA，並為司機後台計點 +1 點補單點數
             if (activeOrder.driver_id) {
+              const newPoints = await addDriverCompensationPoint(activeOrder.driver_id, 1);
               try {
                 await lineClient.pushMessage({
                   to: activeOrder.driver_id,
                   messages: [
                     {
                       type: 'text',
-                      text: `📢【訂單取消通知】\n乘客已取消${typeLabel} #${shortId}（上車點：${activeOrder.pickup_address}）。\n\n請您停止前往該上車點，系統已為您重置狀態，可返回司機大廳繼續接單！辛苦了！🚖`,
+                      text: `📢【訂單取消通知】\n乘客已取消${typeLabel} #${shortId}（上車點：${activeOrder.pickup_address}）。\n\n🎁 系統已自動為您補償 +1 點【補單點數】（目前可用：${newPoints} 點）！\n下次於接單頁面勾選「使用補單點數」，喊單當下即可立即結單中單，不用再等 30 秒規則！辛苦了！🚖`,
                     },
                   ],
                 });
-                console.log(`[Cancel Order] ✅ 成功推播訂單取消訊息至司機 1:1 OA: ${activeOrder.driver_id}`);
+                console.log(`[Cancel Order] ✅ 成功推播訂單取消與補單點數通知至司機 1:1 OA: ${activeOrder.driver_id} (目前點數: ${newPoints})`);
               } catch (pushErr: any) {
                 console.warn('[Cancel Order] 推播司機失敗:', pushErr.message);
               }
@@ -1103,7 +1619,66 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
               });
               continue;
             }
-          } else if (text === '結束溝通' || text === '結束對話' || text === '停止溝通') {
+          } else if (
+            text === '我的預約' ||
+            text === '查詢預約' ||
+            text === '預約查詢' ||
+            text === '查看預約' ||
+            text === '預約狀態'
+          ) {
+            const customerId = userSource.userId;
+            if (!customerId) continue;
+
+            const reservationOrders = await getActiveReservationOrdersByCustomerId(customerId);
+            if (reservationOrders.length === 0) {
+              await lineClient.replyMessage({
+                replyToken,
+                messages: [
+                  {
+                    type: 'text',
+                    text: '📅 您目前沒有正在進行中的預約單喔！\n如需預約用車，請點選下方選單或輸入上車地點、下車地點與預約乘車時間。😊',
+                  },
+                ],
+              });
+              continue;
+            }
+
+            const statusItems: CustomerReservationStatusItem[] = [];
+            for (const rOrder of reservationOrders) {
+              const isAccepted = Boolean(
+                rOrder.driver_id &&
+                ['accepted', 'arrived', 'in_progress', 'picked_up'].includes(rOrder.status)
+              );
+              const driver = isAccepted && rOrder.driver_id
+                ? await getDriverById(rOrder.driver_id)
+                : null;
+
+              statusItems.push({
+                orderId: rOrder.id,
+                scheduledTimeText: extractScheduledTimeText(rOrder),
+                pickupAddress: rOrder.pickup_address,
+                dropoffAddress: rOrder.dropoff_address,
+                passengerCount: rOrder.passenger_count || 1,
+                estimatedFare: rOrder.fare ? Number(rOrder.fare) : null,
+                status: rOrder.status,
+                isAccepted,
+                driverAcknowledged: hasDriverAck(rOrder),
+                driverName: driver?.display_name || (isAccepted ? '優質司機' : null),
+                carBrand: driver?.car_brand || null,
+                plateNumber: driver?.plate_number || null,
+                carColor: driver?.car_color || null,
+              });
+            }
+
+            const statusFlex = createCustomerReservationStatusFlexMessage(statusItems);
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [statusFlex],
+            });
+            continue;
+          } else if (
+            text === '結束溝通' || text === '結束對話' || text === '停止溝通'
+          ) {
             const customerId = userSource.userId;
             if (customerId) endCustomerChatSession(customerId);
             await lineClient.replyMessage({
@@ -1222,19 +1797,44 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
                 // 呼叫 Google Geocoding 取得上車點經緯度
                 const pickupGeo = await geocodeAddress(pickupAddr);
 
-                // 需求 2: 當下車地點沒填時，不用計算費用，該欄位空著
+                // 需求 1: 常客固定上下車地點與固定金額判斷
+                // 若上下車地點皆與常客設定相符，使用固定金額與固定路線；若有任一不符合，則以正常費率計算
+                const matchedRegular = await matchRegularCustomerRoute({
+                  customerId,
+                  pickupAddress: pickupAddr,
+                  dropoffAddress: dropoffAddr,
+                });
+
+                const hasDetailedDropoff = isDetailedDropoffAddress(dropoffAddr);
                 let fareResult: any = undefined;
                 let dropoffGeo: any = null;
-                if (dropoffAddr) {
+                let fixedRoute: string | null = null;
+
+                if (matchedRegular) {
+                  if (dropoffAddr) {
+                    dropoffGeo = await geocodeAddress(dropoffAddr).catch(() => null);
+                  }
+                  fixedRoute = matchedRegular.fixed_route || null;
+                  fareResult = {
+                    estimatedFare: matchedRegular.fixed_fare,
+                    distanceKm: 0,
+                    fareBreakdown: fixedRoute
+                      ? `常客固定金額｜固定路線：${fixedRoute}`
+                      : '常客固定金額',
+                  };
+                  console.log(
+                    `[Line Webhook] 🌟 命中常客固定路線 (${matchedRegular.customer_name}): 固定車資 $${matchedRegular.fixed_fare}, 固定路線: ${fixedRoute || '無'}`
+                  );
+                } else if (hasDetailedDropoff) {
                   dropoffGeo = await geocodeAddress(dropoffAddr);
                   fareResult = calculateFare(
                     'city',
                     pickupGeo.lat, pickupGeo.lng,
                     dropoffGeo.lat, dropoffGeo.lng
                   );
-                  console.log(`[Line Webhook] 預估車資: $${fareResult.estimatedFare} (${fareResult.distanceKm}km, ${fareResult.fareBreakdown})`);
+                  console.log(`[Line Webhook] 預估車資(正常費率): $${fareResult.estimatedFare} (${fareResult.distanceKm}km, ${fareResult.fareBreakdown})`);
                 } else {
-                  console.log('[Line Webhook] 乘客未填下車地點，跳過車資預估計算');
+                  console.log('[Line Webhook] 乘客未提供詳細下車地址，接單不顯示金額，待司機回報下車時必填');
                 }
 
                 // 解析乘車時間是否為未來預約單 (> 1小時)
@@ -1255,8 +1855,9 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
                   dropoff_lng: dropoffGeo ? dropoffGeo.lng : undefined,
                   passenger_count: passengerCount || 1,
                   scheduled_time: scheduledDate,
-                  distance_km: fareResult ? fareResult.distanceKm : undefined,
+                  distance_km: fareResult && fareResult.distanceKm ? fareResult.distanceKm : undefined,
                   fare: fareResult ? fareResult.estimatedFare : undefined,
+                  fixed_route: fixedRoute || undefined,
                   note: effectiveScheduledText ? `預約時間: ${effectiveScheduledText}` : undefined,
                 });
 
@@ -1272,32 +1873,50 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
                   ? `https://liff.line.me/${env.LIFF_ID}/driver/short-trip?orderId=${newOrder.id}`
                   : `https://flow-taxi-production.up.railway.app/driver/short-trip?orderId=${newOrder.id}`;
 
-                // 1. 向司機群組廣播 Flex Message
-                const targetGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
-                if (targetGroupId) {
-                  const dispatchFlex = createGroupDispatchOrderFlexMessage({
-                    orderId: newOrder.id,
-                    pickupAddress: pickupAddr,
-                    dropoffAddress: dropoffAddr || undefined,
-                    passengerCount: passengerCount || 1,
-                    scheduledTimeText: effectiveScheduledText,
-                    isReservation: isReservation,
-                    estimatedFare: fareResult ? fareResult.estimatedFare : undefined,
-                    fareBreakdown: fareResult ? fareResult.fareBreakdown : undefined,
-                    distanceKm: fareResult ? fareResult.distanceKm : undefined,
-                    bidUrl,
-                    shortTripUrl: !dropoffAddr ? shortTripUrl : undefined,
-                  });
+                // 預約單出現邏輯：
+                // - 若距離上車時間 > 10 小時，暫不在聊天室跳出 Flex Message，待上車前 10 小時由排程自動跳出（並每 30 分鐘重跳一次）
+                // - 若距離上車時間 <= 10 小時（或一般即時單），立即在聊天室跳出 Flex Message 並啟動 30 秒接單視窗
+                const reservationAction = isReservation
+                  ? evaluateReservationDispatchAction(newOrder)
+                  : 'immediate';
 
-                  await lineClient.pushMessage({
-                    to: targetGroupId,
-                    messages: [dispatchFlex],
-                  });
-                  console.log(`[Line Webhook] 成功向司機群組 ${targetGroupId} 廣播派單卡片！`);
+                if (isReservation && reservationAction === 'wait_for_10h') {
+                  console.log(
+                    `[Line Webhook] 📅 預約單 ${newOrder.id} 距離上車時間 (${effectiveScheduledText}) 超過 10 小時，已排入系統排程，將於上車前 10 小時自動在聊天室跳出派單 Flex Message！`
+                  );
+                } else {
+                  if (isReservation) {
+                    await markReservationBroadcasted(newOrder.id);
+                  }
+
+                  // 1. 向司機群組廣播 Flex Message
+                  const targetGroupId = env.DRIVER_GROUP_ID || 'C5179346ac8b2f3312cabe051ca818355';
+                  if (targetGroupId) {
+                    const dispatchFlex = createGroupDispatchOrderFlexMessage({
+                      orderId: newOrder.id,
+                      pickupAddress: pickupAddr,
+                      dropoffAddress: dropoffAddr || undefined,
+                      passengerCount: passengerCount || 1,
+                      scheduledTimeText: effectiveScheduledText,
+                      isReservation: isReservation,
+                      estimatedFare: fareResult ? fareResult.estimatedFare : undefined,
+                      fareBreakdown: fareResult ? fareResult.fareBreakdown : undefined,
+                      distanceKm: fareResult ? fareResult.distanceKm : undefined,
+                      fixedRoute: fixedRoute || extractFixedRoute(newOrder),
+                      bidUrl,
+                      shortTripUrl: !dropoffAddr ? shortTripUrl : undefined,
+                    });
+
+                    await lineClient.pushMessage({
+                      to: targetGroupId,
+                      messages: [dispatchFlex],
+                    });
+                    console.log(`[Line Webhook] 成功向司機群組 ${targetGroupId} 廣播派單卡片！`);
+                  }
+
+                  // 2. 啟動派單收集視窗 (30 秒)
+                  await dispatchEngine.startDispatch(newOrder.id, 30);
                 }
-
-                // 2. 啟動派單收集視窗 (60 秒)
-                await dispatchEngine.startDispatch(newOrder.id, 60);
               } catch (dispatchErr: any) {
                 console.error('[Line Webhook] 派單建立廣播失敗:', dispatchErr);
               }
@@ -1329,11 +1948,19 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
               replyToken,
               messages: [createAirportRidePromptMessage()],
             });
+          } else if (text.includes('酒後代駕')) {
+            await lineClient.replyMessage({
+              replyToken,
+              messages: [
+                {
+                  type: 'text',
+                  text: `您選擇了【${text}】服務 🚕\n💰 計費說明：10公里700元，超過1公里，每公里50元。\n\n請直接輸入您的：\n1. 上車地點\n2. 下車地點\n3. 乘車時間與人數\n\n派單專員將立即為您安排優質司機！`,
+                },
+              ],
+            });
           } else if (
-            text.includes('酒後代駕') ||
             text.includes('代購代送') ||
-            text.includes('包車服務') ||
-            text.includes('搬運服務')
+            text.includes('包車服務')
           ) {
             // 點擊其他服務按鈕時的引導回覆
             await lineClient.replyMessage({

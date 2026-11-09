@@ -141,6 +141,15 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult> {
 }
 
 /**
+ * 將預估抵達分鐘數無條件進位至以 5 分鐘為單位（例如：1~5 ➔ 5, 6~10 ➔ 10, 11~15 ➔ 15）
+ */
+export function roundUpToFiveMinutes(minutes: number): number {
+  const n = Number(minutes);
+  if (!n || isNaN(n) || n <= 0) return 5;
+  return Math.max(5, Math.ceil(n / 5) * 5);
+}
+
+/**
  * 計算兩點間開車導航車程與距離 (Google Distance Matrix API + 台灣路網備援)
  */
 export async function calculateDrivingEta(
@@ -155,8 +164,9 @@ export async function calculateDrivingEta(
   const straightDistanceMeters = calculateHaversineDistance(originLat, originLng, destLat, destLng);
   // 台灣市區實際行車里程約為直線距離的 1.35 倍 (考慮單行道、轉彎、繞行)
   const drivingDistanceMeters = Math.round(straightDistanceMeters * 1.35);
-  // 依據平均車速 (約 25 km/h ≈ 420m/分) + 基本停等紅燈 2 分鐘估算
-  const estimatedMins = Math.max(3, Math.round(drivingDistanceMeters / 420) + 2);
+  // 依據平均車速 (約 25 km/h ≈ 420m/分) + 基本停等紅燈 2 分鐘估算，並進位至 5 分鐘為單位
+  const rawEstimatedMins = Math.max(3, Math.round(drivingDistanceMeters / 420) + 2);
+  const estimatedMins = roundUpToFiveMinutes(rawEstimatedMins);
 
   if (!apiKey) {
     return {
@@ -180,9 +190,10 @@ export async function calculateDrivingEta(
         ? element.duration_in_traffic.value
         : element.duration.value;
       const distanceMeters = element.distance.value;
+      const rawMinutes = Math.max(1, Math.round(durationSeconds / 60));
 
       return {
-        durationMinutes: Math.max(1, Math.round(durationSeconds / 60)),
+        durationMinutes: roundUpToFiveMinutes(rawMinutes),
         distanceMeters,
       };
     }

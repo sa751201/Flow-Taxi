@@ -40,6 +40,22 @@ MG&MD 優質司機
     expect(parsed?.phone).toBe('0987654321');
   });
 
+  it('應支援解析備註或注意事項欄位', () => {
+    const sample = `
+駕駛：陳大明
+車型：LEXUS ES300h
+車號：TDC-8888
+車色：珍珠白
+備註：🚭 全車禁菸 🐾 寵物友善車 (需推車)
+    `;
+
+    const parsed = parseDriverRegistrationText(sample);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.displayName).toBe('陳大明');
+    expect(parsed?.plateNumber).toBe('TDC-8888');
+    expect(parsed?.notes).toBe('🚭 全車禁菸 🐾 寵物友善車 (需推車)');
+  });
+
   it('一般無關文字不應被誤判為登記範本', () => {
     const sample = '今天下午天氣真好，想去淡水走走！';
     const parsed = parseDriverRegistrationText(sample);

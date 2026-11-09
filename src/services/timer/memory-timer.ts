@@ -2,6 +2,7 @@ import { DispatchTimer, WindowExpiryCallback } from './timer-interface.js';
 
 export class MemoryDispatchTimer implements DispatchTimer {
   private timers = new Map<string, NodeJS.Timeout>();
+  private intervals = new Map<string, NodeJS.Timeout>();
   private activeWindows = new Set<string>();
 
   async startWindow(orderId: string, durationSeconds: number, onExpiry: WindowExpiryCallback): Promise<void> {
@@ -40,6 +41,7 @@ export class MemoryDispatchTimer implements DispatchTimer {
         fireExpiry();
       }
     }, 2000);
+    this.intervals.set(orderId, interval);
   }
 
   async cancelWindow(orderId: string): Promise<void> {
@@ -47,6 +49,11 @@ export class MemoryDispatchTimer implements DispatchTimer {
     if (existing) {
       clearTimeout(existing);
       this.timers.delete(orderId);
+    }
+    const existingInterval = this.intervals.get(orderId);
+    if (existingInterval) {
+      clearInterval(existingInterval);
+      this.intervals.delete(orderId);
     }
     this.activeWindows.delete(orderId);
   }
@@ -59,7 +66,11 @@ export class MemoryDispatchTimer implements DispatchTimer {
     for (const timeout of this.timers.values()) {
       clearTimeout(timeout);
     }
+    for (const interval of this.intervals.values()) {
+      clearInterval(interval);
+    }
     this.timers.clear();
+    this.intervals.clear();
     this.activeWindows.clear();
   }
 }

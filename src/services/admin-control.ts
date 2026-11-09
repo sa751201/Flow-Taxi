@@ -1,6 +1,8 @@
 import { messagingApi } from '@line/bot-sdk';
 import { env } from '../config/env.js';
 import { query } from '../db/index.js';
+import { getUnacknowledgedReservationOrders, memoryOrders } from '../db/queries/orders.js';
+import { reopenReservationOrder } from './reservation-reminder.js';
 
 export type DispatchMode = 'auto' | 'manual';
 
@@ -100,7 +102,66 @@ export async function handleAdminGroupCommand(
 
     return {
       type: 'text',
-      text: `📊【控制中心系統狀態】\n\n• 目前模式：${modeBadge}\n• 最後更新：${new Date(currentControlState.lastUpdated).toLocaleTimeString('zh-TW', { hour12: false })} (@${currentControlState.updatedBy})\n• 進行中訂單：${activeOrderCount} 筆\n\n可用指令：\n• 輸入「接管」：停止機器人，改為人員後台手動回覆\n• 輸入「恢復」：重新啟動機器人自動回覆與派單\n• 輸入「日報」：即時產生並預覽今日營運日報`,
+      text: `📊【控制中心系統狀態】\n\n• 目前模式：${modeBadge}\n• 最後更新：${new Date(currentControlState.lastUpdated).toLocaleTimeString('zh-TW', { hour12: false })} (@${currentControlState.updatedBy})\n• 進行中訂單：${activeOrderCount} 筆\n\n可用指令：\n• 輸入「接管」：停止機器人，改為人員後台手動回覆\n• 輸入「恢復」：重新啟動機器人自動回覆與派單\n• 輸入「日報」：即時產生並預覽今日營運日報\n• 輸入「重啟預約單 #單號」：重啟司機逾 1 小時未按我知道了之預約單`,
+    };
+  }
+
+  // 4. 管理員重啟「超過 1 小時未按我知道了」之預約單
+  if (
+    trimmed.startsWith('重啟預約單') ||
+    trimmed.startsWith('重啟派單') ||
+    trimmed.startsWith('重啟 #') ||
+    trimmed.startsWith('重啟#')
+  ) {
+    const idMatch = trimmed.match(/#?([a-zA-Z0-9_-]{3,})$/);
+    let targetOrderId: string | undefined;
+
+    if (idMatch) {
+      const code = idMatch[1].toLowerCase();
+      for (const o of memoryOrders.values()) {
+        if (o.id.toLowerCase() === code || o.id.toLowerCase().endsWith(code)) {
+          targetOrderId = o.id;
+          break;
+        }
+      }
+      if (!targetOrderId) {
+        const unacked = await getUnacknowledgedReservationOrders();
+        const found = unacked.find(
+          (o) => o.id.toLowerCase() === code || o.id.toLowerCase().endsWith(code)
+        );
+        if (found) targetOrderId = found.id;
+      }
+    } else {
+      const unacked = await getUnacknowledgedReservationOrders();
+      if (unacked.length === 1) {
+        targetOrderId = unacked[0].id;
+      } else if (unacked.length > 1) {
+        const listStr = unacked.map((o) => `#${o.id.slice(-4)} (${o.pickup_address})`).join('、');
+        return {
+          type: 'text',
+          text: `⚠️ 目前有 ${unacked.length} 筆逾 1 小時未按「我知道了」的預約單：${listStr}\n請指定單號，例如輸入：「重啟預約單 #${unacked[0].id.slice(-4)}」`,
+        };
+      }
+    }
+
+    if (!targetOrderId) {
+      return {
+        type: 'text',
+        text: '⚠️ 查無符合重啟條件（接單逾 1 小時未按「我知道了」）之預約單。',
+      };
+    }
+
+    const res = await reopenReservationOrder(targetOrderId);
+    if (!res.success) {
+      return {
+        type: 'text',
+        text: `⚠️ 無法重啟預約單 #${targetOrderId.slice(-4)}：${res.error}`,
+      };
+    }
+
+    return {
+      type: 'text',
+      text: `🔄【已重啟預約單 #${targetOrderId.slice(-4)}】\n操作幹部：@${senderName}\n系統已解除原司機指派並重新於司機群組廣播派單，尋找其他司機承接！`,
     };
   }
 

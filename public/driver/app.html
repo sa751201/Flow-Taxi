@@ -261,29 +261,49 @@
           </div>
         </div>
 
-        <!-- Middle Black Capsule Card (保留登入/營業中狀態，名字不破版) -->
-        <div class="rounded-[26px] bg-[#0f172a] text-white p-4 shadow-xl border border-slate-800 flex items-center justify-between gap-3">
-          <!-- Left: Driver Circular Avatar & Name -->
-          <div class="flex items-center gap-3 min-w-0 flex-1">
-            <div class="relative shrink-0">
-              <div class="w-13 h-13 rounded-full bg-slate-800 ring-2 ring-amber-400 p-0.5 shadow-md flex items-center justify-center text-xl overflow-hidden font-bold">
-                <span id="driver-card-avatar-text">🚕</span>
+        <!-- Middle Black Capsule Card (保留登入/營業中狀態，顯示車型與注意事項) -->
+        <div id="main-driver-card" class="rounded-[26px] bg-[#0f172a] text-white p-4 shadow-xl border border-slate-800 space-y-3 transition-all">
+          <div class="flex items-center justify-between gap-3">
+            <!-- Left: Driver Circular Avatar & Name -->
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+              <div class="relative shrink-0">
+                <div class="w-13 h-13 rounded-full bg-slate-800 ring-2 ring-amber-400 p-0.5 shadow-md flex items-center justify-center text-xl overflow-hidden font-bold">
+                  <span id="driver-card-avatar-text">🚕</span>
+                </div>
+                <span id="driver-avatar-online-dot" class="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-[#0f172a]"></span>
               </div>
-              <span id="driver-avatar-online-dot" class="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-[#0f172a]"></span>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <p class="text-[11px] text-slate-400 font-semibold tracking-wider">司機夥伴</p>
+                  <span id="driver-card-model-tag" class="hidden text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 font-medium border border-slate-700/80 truncate max-w-[130px]"></span>
+                </div>
+                <h3 id="driver-card-name" class="text-base font-extrabold text-white tracking-tight truncate">未登入</h3>
+                <p id="driver-card-plate" class="text-xs text-amber-400 font-bold mt-0.5 truncate cursor-pointer hover:underline" title="點此更換車牌">點此驗證車牌</p>
+              </div>
             </div>
-            <div class="min-w-0 flex-1">
-              <p class="text-[11px] text-slate-400 font-semibold tracking-wider">司機夥伴</p>
-              <h3 id="driver-card-name" class="text-base font-extrabold text-white tracking-tight truncate">未登入</h3>
-              <p id="driver-card-plate" class="text-xs text-amber-400 font-bold mt-0.5 truncate cursor-pointer hover:underline" title="點此更換車牌">點此驗證車牌</p>
+
+            <!-- Right: 專屬單一狀態膠囊 (保留營業中/待命中狀態) -->
+            <div class="shrink-0">
+              <div id="driver-status-badge-wrap" class="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-xs font-black shadow-sm">
+                <span id="driver-status-ping-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                <span id="stat-online-status">營業中</span>
+              </div>
             </div>
           </div>
 
-          <!-- Right: 專屬單一狀態膠囊 (保留營業中/待命中狀態) -->
-          <div class="shrink-0">
-            <div id="driver-status-badge-wrap" class="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-xs font-black shadow-sm">
-              <span id="driver-status-ping-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-              <span id="stat-online-status">營業中</span>
+          <!-- 車卡注意事項 / 備註預覽條 (首頁顯眼展示與快速編輯按鈕) -->
+          <div id="driver-card-notes-preview-wrap" class="pt-2.5 border-t border-slate-800/80 flex items-start justify-between gap-2 text-xs">
+            <div class="flex items-start gap-1.5 min-w-0 flex-1">
+              <span class="text-amber-400 shrink-0 text-sm leading-none mt-0.5">📌</span>
+              <div class="min-w-0 flex-1">
+                <span class="text-[10px] text-slate-400 font-bold block">車內注意事項 / 備註</span>
+                <p id="driver-card-notes-display" class="text-xs text-slate-200 font-medium leading-relaxed break-words line-clamp-2">🚭 禁菸 🚯 禁食</p>
+              </div>
             </div>
+            <button id="btn-edit-notes-card" type="button" class="shrink-0 px-2.5 py-1 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-amber-400 hover:text-amber-300 text-[11px] font-bold border border-slate-700/60 transition flex items-center gap-1 shadow-sm active:scale-95" title="編輯車卡注意事項">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+              <span>編輯車卡</span>
+            </button>
           </div>
         </div>
 
@@ -325,6 +345,11 @@
               <span>🗺️ 全螢幕導航</span>
             </button>
           </div>
+          <!-- 當已到點等待客上時，顯示「客人未出現」按鈕 -->
+          <button id="btn-active-card-no-show" type="button" class="hidden w-full py-2 px-3 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-500/40 text-xs font-bold transition flex items-center justify-center gap-1.5 active:scale-95">
+            <span>🚫</span>
+            <span>客人未出現（取消並補 1 點補單點數）</span>
+          </button>
         </div>
 
         <!-- 📅 預約行程 Section (讓司機查詢已承接的未來預約單) -->
@@ -493,6 +518,11 @@
                 <span id="trip-main-action-text">我已抵達上車地點（到點通知）</span>
               </button>
 
+              <button id="btn-trip-no-show" type="button" class="hidden w-full py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-extrabold text-xs transition flex items-center justify-center gap-1.5 active:scale-98">
+                <span>🚫</span>
+                <span>客人未出現（取消訂單並領取 +1 補單點數）</span>
+              </button>
+
               <a id="btn-trip-ext-nav" href="#" target="_blank" class="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition flex items-center justify-center gap-1.5">
                 <svg class="w-4 h-4 text-emerald-600" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
@@ -576,7 +606,7 @@
         </button>
       </div>
 
-      <!-- Drawer Tabs (司機資料 / 歷史行程) -->
+      <!-- Drawer Tabs (司機資料 / 歷史行程 / 常客) -->
       <div class="flex border-b border-slate-200 bg-slate-50 text-xs font-bold text-slate-600">
         <button id="tab-btn-profile" type="button" class="flex-1 py-3 border-b-2 border-emerald-600 text-emerald-600 font-extrabold">
           個人與車輛資料
@@ -584,18 +614,66 @@
         <button id="tab-btn-history" type="button" class="flex-1 py-3 border-b-2 border-transparent hover:text-slate-900">
           歷史接單紀錄
         </button>
+        <button id="tab-btn-regular-customers" type="button" class="flex-1 py-3 border-b-2 border-transparent hover:text-slate-900">
+          常客
+        </button>
       </div>
 
-      <!-- Tab Content 1: Driver Profile Form -->
+      <!-- Tab Content 1: Driver Profile Form (含專屬車卡即時預覽與自由備註區) -->
       <div id="tab-content-profile" class="flex-1 p-5 overflow-y-auto space-y-4 custom-scrollbar">
+        <!-- 🚗 專屬車卡即時預覽 (模擬乘客中單後看到的車卡) -->
+        <div class="rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 p-4 text-white shadow-xl border border-slate-700/60 relative overflow-hidden space-y-3">
+          <div class="absolute -right-6 -bottom-6 w-28 h-28 rounded-full bg-amber-500/10 blur-xl pointer-events-none"></div>
+
+          <div class="flex items-center justify-between pb-2 border-b border-slate-700/80">
+            <div class="flex items-center gap-1.5">
+              <span class="text-sm">🚖</span>
+              <span class="text-[11px] font-black tracking-wide text-amber-400">專屬司機車卡 (乘客視角)</span>
+            </div>
+            <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">即時預覽</span>
+          </div>
+
+          <!-- 車卡資訊格 -->
+          <div class="grid grid-cols-2 gap-2 text-[11px]">
+            <div>
+              <span class="text-slate-400">駕駛稱呼：</span>
+              <span id="preview-card-name" class="font-extrabold text-white">未登入</span>
+            </div>
+            <div>
+              <span class="text-slate-400">車牌號碼：</span>
+              <span id="preview-card-plate" class="font-extrabold text-amber-300 font-mono">點此驗證車牌</span>
+            </div>
+            <div>
+              <span class="text-slate-400">車輛廠牌：</span>
+              <span id="preview-card-brand" class="font-bold text-slate-200">TOYOTA</span>
+            </div>
+            <div>
+              <span class="text-slate-400">車身顏色：</span>
+              <span id="preview-card-color" class="font-bold text-slate-200">黑色</span>
+            </div>
+          </div>
+
+          <!-- 乘車注意事項展示 (車卡最核心部分) -->
+          <div class="p-2.5 rounded-xl bg-slate-950/80 border border-amber-500/30 text-[11px]">
+            <div class="flex items-center gap-1 text-amber-400 font-extrabold mb-1 text-[10px]">
+              <span>📌</span>
+              <span>乘車注意事項 (乘客中單後可見)：</span>
+            </div>
+            <p id="preview-card-notes" class="text-slate-200 leading-relaxed font-medium break-words">
+              🚭 禁菸 🚯 禁食
+            </p>
+          </div>
+        </div>
+
+        <!-- 編輯表單 -->
         <form id="driver-profile-form" class="space-y-3.5 text-xs">
           <div>
             <label class="block font-bold text-slate-700 mb-1">司機姓名 / 稱呼</label>
-            <input id="input-display-name" type="text" required class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900">
+            <input id="input-display-name" type="text" required class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 font-medium">
           </div>
           <div>
             <label class="block font-bold text-slate-700 mb-1">車牌號碼</label>
-            <input id="input-plate-number" type="text" required placeholder="例：TDC-8888" class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 uppercase">
+            <input id="input-plate-number" type="text" required placeholder="例：TDC-8888" class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 uppercase font-mono font-bold">
           </div>
           <div class="grid grid-cols-2 gap-2">
             <div>
@@ -609,14 +687,48 @@
           </div>
           <div>
             <label class="block font-bold text-slate-700 mb-1">聯絡電話</label>
-            <input id="input-driver-phone" type="tel" placeholder="例：0912345678" class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900">
+            <input id="input-driver-phone" type="tel" placeholder="例：0912345678" class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900 font-mono">
           </div>
-          <div>
-            <label class="block font-bold text-slate-700 mb-1">特色備註</label>
-            <input id="input-driver-notes" type="text" value="🚭 禁菸 🚯 禁食" class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none text-slate-900">
+
+          <!-- 車內備註與注意事項自由輸入區 -->
+          <div class="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/90 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <label for="input-driver-notes" class="block font-extrabold text-slate-800 text-xs flex items-center gap-1.5">
+                <span>📝 車內備註 / 注意事項 (自由輸入)</span>
+              </label>
+              <span id="notes-char-count" class="text-[10px] font-mono text-slate-500 font-bold">0 / 150</span>
+            </div>
+
+            <p class="text-[11px] text-slate-500 leading-relaxed">
+              司機夥伴可自由輸入乘車注意事項（如禁菸、空間大小、寵物友善、手機充電等），將於接單成功後顯示在乘客的車卡上。
+            </p>
+
+            <div class="relative">
+              <textarea id="input-driver-notes" rows="3" maxlength="150" placeholder="例如：🚭 全車禁菸 🚯 禁食、後車廂可放 2 只 28 吋大行李、提供手機充電線..." class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none text-slate-900 leading-relaxed resize-none text-xs bg-white"></textarea>
+            </div>
+
+            <!-- 常用快捷標籤 (點擊直接追加至備註區) -->
+            <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <span class="text-[10px] font-extrabold text-slate-600">⚡ 常用快捷標籤 (點擊直接追加)：</span>
+                <button type="button" id="btn-clear-notes" class="text-[10px] text-rose-500 hover:text-rose-600 font-bold transition">清空重寫</button>
+              </div>
+              <div class="flex flex-wrap gap-1.5">
+                <button type="button" class="quick-note-tag text-[11px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-amber-100 hover:border-amber-300 text-slate-700 font-medium transition active:scale-95 shadow-2xs" data-tag="🚭 全車禁菸">🚭 全車禁菸</button>
+                <button type="button" class="quick-note-tag text-[11px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-amber-100 hover:border-amber-300 text-slate-700 font-medium transition active:scale-95 shadow-2xs" data-tag="🚯 車內禁食">🚯 車內禁食</button>
+                <button type="button" class="quick-note-tag text-[11px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-amber-100 hover:border-amber-300 text-slate-700 font-medium transition active:scale-95 shadow-2xs" data-tag="🐾 寵物友善車 (需推車/提籠)">🐾 寵物友善</button>
+                <button type="button" class="quick-note-tag text-[11px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-amber-100 hover:border-amber-300 text-slate-700 font-medium transition active:scale-95 shadow-2xs" data-tag="🧳 後車廂空間大 (可載大行李)">🧳 後車廂空間大</button>
+                <button type="button" class="quick-note-tag text-[11px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-amber-100 hover:border-amber-300 text-slate-700 font-medium transition active:scale-95 shadow-2xs" data-tag="⚡ 備有手機充電線 (Type-C / Lightning)">⚡ 手機充電</button>
+                <button type="button" class="quick-note-tag text-[11px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-amber-100 hover:border-amber-300 text-slate-700 font-medium transition active:scale-95 shadow-2xs" data-tag="❄️ 冷氣適中可調整">❄️ 冷氣可調</button>
+                <button type="button" class="quick-note-tag text-[11px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-amber-100 hover:border-amber-300 text-slate-700 font-medium transition active:scale-95 shadow-2xs" data-tag="👶 可配合兒童安全座椅">👶 兒童座椅</button>
+                <button type="button" class="quick-note-tag text-[11px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-amber-100 hover:border-amber-300 text-slate-700 font-medium transition active:scale-95 shadow-2xs" data-tag="🧹 車內定期清消殺菌">🧹 定期消毒</button>
+              </div>
+            </div>
           </div>
-          <button type="submit" class="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs shadow-md transition">
-            儲存司機資料
+
+          <button type="submit" class="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs shadow-md transition flex items-center justify-center gap-1.5 active:scale-98">
+            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            <span>儲存並更新車卡資料</span>
           </button>
           <p id="profile-save-status" class="hidden text-center text-xs font-bold text-emerald-600"></p>
         </form>
@@ -650,6 +762,77 @@
           </h5>
           <div id="history-orders-list" class="space-y-2.5 text-xs">
             <p class="text-slate-400 text-center py-8">載入歷史紀錄中...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab Content 3: 常客管理 (固定上下車地點、固定金額、固定路線) -->
+      <div id="tab-content-regular-customers" class="hidden flex-1 p-4 overflow-y-auto space-y-4 custom-scrollbar">
+        <div class="p-3 rounded-2xl bg-indigo-50 border border-indigo-200/80 space-y-1">
+          <div class="flex items-center justify-between">
+            <h4 class="text-xs font-extrabold text-indigo-900 flex items-center gap-1">
+              <span>⭐</span>
+              <span>常客固定路線與固定金額管理</span>
+            </h4>
+            <a href="/admin" class="text-[11px] font-bold text-indigo-600 hover:underline">開啟獨立後台 ↗</a>
+          </div>
+          <p class="text-[11px] text-indigo-700 leading-relaxed">
+            當客人叫車時系統會自動比對上車與下車地點：若上下車地點皆與設定相符，即套用固定金額與固定路線；若有任一不符合，則以正常費率計算。
+          </p>
+        </div>
+
+        <form id="regular-customer-form" class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5 text-xs">
+          <input type="hidden" id="reg-cust-edit-id" value="">
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">客人稱呼 / 姓名 *</label>
+              <input id="reg-cust-name" type="text" required placeholder="例：王先生" class="w-full p-2 rounded-xl border border-slate-300 bg-white text-slate-900 outline-none focus:border-emerald-500">
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">客人 LINE ID (選填)</label>
+              <input id="reg-cust-line-id" type="text" placeholder="未填則不限特定ID" class="w-full p-2 rounded-xl border border-slate-300 bg-white text-slate-900 font-mono text-[11px] outline-none focus:border-emerald-500">
+            </div>
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">🟢 固定上車地點 *</label>
+            <input id="reg-cust-pickup" type="text" required placeholder="例：迪化街水門" class="w-full p-2 rounded-xl border border-slate-300 bg-white text-slate-900 outline-none focus:border-emerald-500">
+          </div>
+
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">🔴 固定下車地點 *</label>
+            <input id="reg-cust-dropoff" type="text" required placeholder="例：南港展覽館" class="w-full p-2 rounded-xl border border-slate-300 bg-white text-slate-900 outline-none focus:border-emerald-500">
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">💰 固定金額 (NT$) *</label>
+              <input id="reg-cust-fare" type="number" min="1" required placeholder="例：300" class="w-full p-2 rounded-xl border border-slate-300 bg-white text-slate-900 font-bold outline-none focus:border-emerald-500">
+            </div>
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">🛣️ 固定路線 / 指定路線</label>
+              <input id="reg-cust-route" type="text" placeholder="例：走市民高架" class="w-full p-2 rounded-xl border border-slate-300 bg-white text-slate-900 outline-none focus:border-emerald-500">
+            </div>
+          </div>
+
+          <div class="flex gap-2 pt-1">
+            <button type="submit" id="btn-save-reg-cust" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold shadow-sm transition">
+              ➕ 新增常客設定
+            </button>
+            <button type="button" id="btn-cancel-edit-reg-cust" class="hidden px-3 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold transition">
+              取消編輯
+            </button>
+          </div>
+          <p id="reg-cust-save-status" class="hidden text-center text-[11px] font-bold text-emerald-600"></p>
+        </form>
+
+        <div class="pt-1">
+          <div class="flex items-center justify-between mb-2">
+            <h5 class="font-extrabold text-xs text-slate-800">已設定常客清單</h5>
+            <span id="reg-cust-count-badge" class="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold">0 筆</span>
+          </div>
+          <div id="regular-customers-list" class="space-y-2.5 text-xs">
+            <p class="text-slate-400 text-center py-6">載入常客清單中...</p>
           </div>
         </div>
       </div>

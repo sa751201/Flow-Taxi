@@ -12,6 +12,7 @@ export interface ParsedDriverText {
   plateNumber?: string;
   carColor?: string;
   phone?: string;
+  notes?: string;
 }
 
 export function parseDriverRegistrationText(text: string): ParsedDriverText | null {
@@ -57,6 +58,13 @@ export function parseDriverRegistrationText(text: string): ParsedDriverText | nu
     const phoneMatch = line.match(/^(?:電話|手機|聯絡電話)\s*[:：]\s*(.+)$/i);
     if (phoneMatch) {
       result.phone = phoneMatch[1].trim();
+      continue;
+    }
+
+    // 備註 / 注意事項 / 提醒
+    const notesMatch = line.match(/^(?:備註|注意事項|備註事項|提醒|車內備註)\s*[:：]\s*(.+)$/i);
+    if (notesMatch) {
+      result.notes = notesMatch[1].trim();
       continue;
     }
   }

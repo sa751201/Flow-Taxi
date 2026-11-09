@@ -10,6 +10,7 @@ export interface Driver {
   car_color: string | null;
   car_brand: string | null;
   notes?: string | null;
+  compensation_points?: number;
   status: 'inactive' | 'active' | 'online';
   registered: boolean;
   created_at: Date;
@@ -23,6 +24,7 @@ export interface UpsertDriverParams {
   car_color?: string | null;
   car_brand?: string | null;
   notes?: string | null;
+  compensation_points?: number;
   status?: 'inactive' | 'active' | 'online';
   registered?: boolean;
 }
@@ -48,10 +50,24 @@ function getRedisClient() {
   return redisClient;
 }
 
+let ensuredCompensationCol = false;
+async function ensureCompensationPointsColumn() {
+  if (ensuredCompensationCol || !env.DATABASE_URL) return;
+  try {
+    await query('ALTER TABLE drivers ADD COLUMN IF NOT EXISTS compensation_points integer NOT NULL DEFAULT 0;');
+    ensuredCompensationCol = true;
+  } catch {
+    // ignore
+  }
+}
+
 export async function upsertDriver(params: UpsertDriverParams): Promise<Driver> {
+  const existing = memoryDrivers.get(params.line_user_id);
+
   // 1. 若有設定 DATABASE_URL 嘗試寫入 PostgreSQL
   if (env.DATABASE_URL) {
     try {
+      await ensureCompensationPointsColumn();
       const sql = `
         INSERT INTO drivers (
           line_user_id,
@@ -91,14 +107,30 @@ export async function upsertDriver(params: UpsertDriverParams): Promise<Driver> 
       ];
 
       const res = await query<Driver>(sql, values);
-      return res.rows[0];
+      if (res.rows[0]) {
+        const dbRow = {
+          ...res.rows[0],
+          compensation_points:
+            params.compensation_points ??
+            res.rows[0].compensation_points ??
+            existing?.compensation_points ??
+            0,
+        };
+        memoryDrivers.set(params.line_user_id, dbRow);
+        try {
+          const redis = getRedisClient();
+          if (redis) {
+            await redis.set(`driver:${params.line_user_id}`, JSON.stringify(dbRow));
+          }
+        } catch {}
+        return dbRow;
+      }
     } catch (dbErr: any) {
       console.warn('[DB] PostgreSQL 寫入失敗，切換至備援存儲:', dbErr.message);
     }
   }
 
   // 2. 備援存儲 / REST API 寫入
-  const existing = memoryDrivers.get(params.line_user_id);
   const updatedDriver: Driver = {
     line_user_id: params.line_user_id,
     display_name: params.display_name ?? existing?.display_name ?? null,
@@ -107,6 +139,7 @@ export async function upsertDriver(params: UpsertDriverParams): Promise<Driver> 
     car_color: params.car_color ?? existing?.car_color ?? null,
     car_brand: params.car_brand ?? existing?.car_brand ?? null,
     notes: params.notes ?? existing?.notes ?? '🚭 禁菸 🚯 禁食',
+    compensation_points: params.compensation_points ?? existing?.compensation_points ?? 0,
     status: (params.status || existing?.status || 'active') as any,
     registered: true,
     created_at: existing?.created_at || new Date(),
@@ -149,7 +182,10 @@ export async function upsertDriver(params: UpsertDriverParams): Promise<Driver> 
 export async function getDriverById(lineUserId: string): Promise<Driver | null> {
   // 1. 先查記憶體快取
   const mem = memoryDrivers.get(lineUserId);
-  if (mem) return mem;
+  if (mem) {
+    mem.compensation_points = Number(mem.compensation_points || 0);
+    return mem;
+  }
 
   // 2. 查 Redis 持久化資料庫
   try {
@@ -159,6 +195,7 @@ export async function getDriverById(lineUserId: string): Promise<Driver | null> 
       if (data) {
         const parsed = JSON.parse(data);
         if (parsed.created_at) parsed.created_at = new Date(parsed.created_at);
+        parsed.compensation_points = Number(parsed.compensation_points || 0);
         memoryDrivers.set(lineUserId, parsed);
         return parsed;
       }
@@ -173,8 +210,12 @@ export async function getDriverById(lineUserId: string): Promise<Driver | null> 
       const sql = 'SELECT * FROM drivers WHERE line_user_id = $1';
       const res = await query<Driver>(sql, [lineUserId]);
       if (res.rows[0]) {
-        memoryDrivers.set(lineUserId, res.rows[0]);
-        return res.rows[0];
+        const row = {
+          ...res.rows[0],
+          compensation_points: Number(res.rows[0].compensation_points || 0),
+        };
+        memoryDrivers.set(lineUserId, row);
+        return row;
       }
     } catch {
       // fallback
@@ -182,6 +223,71 @@ export async function getDriverById(lineUserId: string): Promise<Driver | null> 
   }
 
   return null;
+}
+
+/**
+ * 後台計點：為司機增加補單點數（例如：客人取消已接單行程、或客人未出現時 +1 點）
+ */
+export async function addDriverCompensationPoint(driverId: string, delta: number = 1): Promise<number> {
+  let driver = await getDriverById(driverId);
+  if (!driver) {
+    driver = {
+      line_user_id: driverId,
+      display_name: '司機夥伴',
+      phone: null,
+      plate_number: 'TDC-8888',
+      car_color: '黑色',
+      car_brand: 'TOYOTA CAMRY',
+      notes: '🚭 禁菸 🚯 禁食',
+      compensation_points: 0,
+      status: 'active',
+      registered: true,
+      created_at: new Date(),
+    };
+  }
+
+  const currentPoints = Number(driver.compensation_points || 0);
+  const newPoints = Math.max(0, currentPoints + delta);
+  driver.compensation_points = newPoints;
+  memoryDrivers.set(driverId, driver);
+
+  // 同步更新 Redis
+  try {
+    const redis = getRedisClient();
+    if (redis) {
+      await redis.set(`driver:${driverId}`, JSON.stringify(driver));
+    }
+  } catch {}
+
+  // 同步更新 PostgreSQL
+  if (env.DATABASE_URL) {
+    try {
+      await ensureCompensationPointsColumn();
+      await query(
+        'UPDATE drivers SET compensation_points = $1 WHERE line_user_id = $2;',
+        [newPoints, driverId]
+      );
+    } catch {}
+  }
+
+  console.log(`[Compensation Points] 🎁 司機 ${driverId} (${driver.display_name}) 補單點數變更: ${currentPoints} ➔ ${newPoints}`);
+  return newPoints;
+}
+
+/**
+ * 扣除 1 點補單點數（當司機於接單頁勾選使用補單點數並立即中單時呼叫）
+ */
+export async function consumeDriverCompensationPoint(
+  driverId: string
+): Promise<{ success: boolean; remainingPoints: number }> {
+  const driver = await getDriverById(driverId);
+  const currentPoints = Number(driver?.compensation_points || 0);
+  if (currentPoints <= 0) {
+    return { success: false, remainingPoints: 0 };
+  }
+
+  const remainingPoints = await addDriverCompensationPoint(driverId, -1);
+  return { success: true, remainingPoints };
 }
 
 export async function findDriverByPhoneOrPlate(queryKeyword: string): Promise<Driver | null> {

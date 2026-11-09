@@ -1,5 +1,6 @@
 import { messagingApi } from '@line/bot-sdk';
 import { env } from '../config/env.js';
+import { isDetailedDropoffAddress } from '../db/queries/orders.js';
 
 /**
  * 建立「司機資料登記 / 修改」的 Flex Message 卡片
@@ -139,9 +140,7 @@ export function createWelcomeServiceMessage(): messagingApi.TextMessage {
 🔺上山+1️⃣0️⃣0️⃣
 
 🌊酒後代駕服務
-收費方式如下
-基本1️⃣0️⃣公里內7️⃣0️⃣0️⃣
-超過公里數以1️⃣公里5️⃣0️⃣元計費
+10公里700元，超過1公里，每公里50元。
 
 🔎以上費率僅限
 北北基、桃園其他縣市另計。
@@ -210,14 +209,6 @@ export function createWelcomeServiceMessage(): messagingApi.TextMessage {
         type: 'message',
         label: '包車服務🚙',
         text: '包車服務🚙',
-      },
-    },
-    {
-      type: 'action',
-      action: {
-        type: 'message',
-        label: '搬運服務🧳',
-        text: '搬運服務🧳',
       },
     },
   ];
@@ -313,6 +304,25 @@ export function createAirportRidePromptMessage(): messagingApi.TextMessage {
 }
 
 /**
+ * 組合派單複製文字（包含上車地點、下車地點、指定路線），方便分享文字到外群
+ */
+export function buildDispatchCopyText(params: {
+  pickupAddress: string;
+  dropoffAddress?: string | null;
+  fixedRoute?: string | null;
+}): string {
+  const dropoffText =
+    params.dropoffAddress && params.dropoffAddress.trim()
+      ? params.dropoffAddress.trim()
+      : '乘客上車後說明';
+  const routeText =
+    params.fixedRoute && params.fixedRoute.trim()
+      ? params.fixedRoute.trim()
+      : '依導航最佳路線';
+  return `🟢 上車地點：${params.pickupAddress}\n🔴 下車地點：${dropoffText}\n🛣️ 指定路線：${routeText}`;
+}
+
+/**
  * 建立司機群組派單廣播卡片 (Tier 1: 僅顯示乘客人數、上車點、下車點，不揭露電話姓氏)
  */
 export function createGroupDispatchOrderFlexMessage(params: {
@@ -325,10 +335,18 @@ export function createGroupDispatchOrderFlexMessage(params: {
   estimatedFare?: number | null;
   fareBreakdown?: string;
   distanceKm?: number;
+  fixedRoute?: string | null;
   bidUrl: string;
   shortTripUrl?: string;
 }): messagingApi.FlexMessage {
   const isDropoffSpecified = Boolean(params.dropoffAddress && params.dropoffAddress.trim());
+  const hasDetailedDropoff = isDetailedDropoffAddress(params.dropoffAddress);
+  const fixedRouteText = params.fixedRoute?.trim() || '';
+  const copyText = buildDispatchCopyText({
+    pickupAddress: params.pickupAddress,
+    dropoffAddress: params.dropoffAddress,
+    fixedRoute: fixedRouteText || null,
+  });
 
   const bodyContents: messagingApi.FlexComponent[] = [
     {
@@ -402,6 +420,32 @@ export function createGroupDispatchOrderFlexMessage(params: {
     },
   ];
 
+  if (fixedRouteText) {
+    bodyContents.push({
+      type: 'box',
+      layout: 'horizontal',
+      spacing: 'sm',
+      contents: [
+        {
+          type: 'text',
+          text: '🛣️ 指定路線：',
+          color: '#64748b',
+          size: 'sm',
+          flex: 3,
+        },
+        {
+          type: 'text',
+          text: fixedRouteText,
+          color: '#7c3aed',
+          weight: 'bold',
+          size: 'sm',
+          wrap: true,
+          flex: 7,
+        },
+      ],
+    });
+  }
+
   if (params.scheduledTimeText) {
     bodyContents.push({
       type: 'box',
@@ -428,12 +472,15 @@ export function createGroupDispatchOrderFlexMessage(params: {
     });
   }
 
-  // 需求 2: 當下車地點沒填時，不用計算費用，該欄位空著 (只有在有填下車地點時才顯示預估車資)
-  if (isDropoffSpecified && params.estimatedFare !== undefined) {
-    const fareText = params.estimatedFare !== null
-      ? `$${params.estimatedFare}`
-      : (params.fareBreakdown || '專人報價');
-    const detailText = params.estimatedFare !== null && params.fareBreakdown
+  // 需求: 當使用者沒有詳細下車地址時，接單不顯示金額 (只有在有填詳細下車地址或為常客固定金額且計算出有效預估車資時才顯示金額)
+  if (
+    (hasDetailedDropoff || Boolean(fixedRouteText) || Boolean(params.fareBreakdown?.includes('常客'))) &&
+    params.estimatedFare !== undefined &&
+    params.estimatedFare !== null &&
+    Number(params.estimatedFare) > 0
+  ) {
+    const fareText = `$${params.estimatedFare}`;
+    const detailText = params.fareBreakdown
       ? `（${params.fareBreakdown}）`
       : '';
 
@@ -487,24 +534,20 @@ export function createGroupDispatchOrderFlexMessage(params: {
         label: params.isReservation ? '📅 立刻接單 (預約行程)' : '⚡ 立刻接單 (測算時間)',
         uri: params.bidUrl,
       },
-    }
-  );
-
-  // 需求 3: 當下車地點沒填時，下方多一個按鈕「回報為短距離單」
-  if (!isDropoffSpecified && params.shortTripUrl) {
-    bodyContents.push({
+    },
+    {
       type: 'button',
       style: 'secondary',
-      color: '#f8fafc',
+      color: '#e2e8f0',
       height: 'md',
       margin: 'sm',
       action: {
-        type: 'uri',
-        label: '📍 回報為短距離單',
-        uri: params.shortTripUrl,
+        type: 'clipboard',
+        label: '📋 複製派單資訊',
+        clipboardText: copyText,
       },
-    });
-  }
+    }
+  );
 
   const container: messagingApi.FlexBubble = {
     type: 'bubble',
@@ -530,7 +573,7 @@ export function createGroupDispatchOrderFlexMessage(params: {
             },
             {
               type: 'text',
-              text: '60秒搶單中',
+              text: '30秒搶單中',
               color: '#facc15',
               size: 'xs',
               weight: 'bold',
@@ -696,8 +739,19 @@ export function createDriverAssignedFlexMessage(params: {
 export function createGroupOrderWonFlexMessage(params: {
   driverName: string;
   oaUrl?: string;
+  orderId?: string;
+  winnerDriverId?: string;
+  checkUrl?: string;
+  isReservation?: boolean;
 }): messagingApi.FlexMessage {
   const oaUrl = params.oaUrl || env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw';
+  const defaultCheckUrl = params.orderId
+    ? (env.LIFF_ID
+        ? `https://liff.line.me/${env.LIFF_ID}/driver/bid?orderId=${params.orderId}&mode=check_won`
+        : `https://flow-taxi-production.up.railway.app/driver/bid?orderId=${params.orderId}&mode=check_won`)
+    : undefined;
+  const buttonUri = params.checkUrl || defaultCheckUrl || oaUrl;
+  const showReservationAck = Boolean(params.isReservation && params.orderId);
 
   const container: messagingApi.FlexBubble = {
     type: 'bubble',
@@ -734,7 +788,9 @@ export function createGroupOrderWonFlexMessage(params: {
       contents: [
         {
           type: 'text',
-          text: '詳細接單任務資訊已同步至接單司機 1:1 官方帳號。後續回報（到點、客上、乘客下車結單）請點擊下方開啟 1:1 OA 進行。',
+          text: showReservationAck
+            ? '請接單司機於 1 小時內點擊下方「我知道了」確認承接預約單（逾時未按管理員可重啟改派）。確認後系統將於預約單前 1 小時於 1:1 OA 發送出車通知。'
+            : '詳細接單任務資訊已同步至接單司機 1:1 官方帳號。後續回報（到點、客上、乘客下車結單）請點擊下方開啟 1:1 OA 進行。',
           color: '#64748b',
           size: 'xs',
           wrap: true,
@@ -745,6 +801,22 @@ export function createGroupOrderWonFlexMessage(params: {
           color: '#f1f5f9',
           margin: 'md',
         },
+        ...(showReservationAck
+          ? ([
+              {
+                type: 'button',
+                style: 'primary',
+                height: 'sm',
+                color: '#16a34a',
+                action: {
+                  type: 'postback',
+                  label: '✅ 我知道了',
+                  data: `action=ack_reservation&orderId=${params.orderId}`,
+                  displayText: '我知道了',
+                },
+              },
+            ] as messagingApi.FlexComponent[])
+          : []),
         {
           type: 'button',
           style: 'link', // Ghost Button 樣式（無邊框底色）
@@ -753,7 +825,7 @@ export function createGroupOrderWonFlexMessage(params: {
           action: {
             type: 'uri',
             label: '💬 開啟 1:1 OA 查看訂單與回報',
-            uri: oaUrl,
+            uri: buttonUri,
           },
         },
       ],
@@ -1275,11 +1347,23 @@ export function createDriverReservationOrderCardFlexMessage(params: {
         },
         {
           type: 'text',
-          text: '📢 提醒您：此單為預約行程，系統將在【出發前 1 小時】發送出車提醒通知，屆時將引導前往上車地點。請提早做好出車準備！🚕',
+          text: '📢 提醒您：此單為預約行程，請於 1 小時內點擊下方「我知道了」確認接單（若 1 小時內未按，管理員可重啟此單改派其他司機）。確認後系統將在【出發前 1 小時】發送出車提醒通知，引導您前往上車地點載客！🚕',
           color: '#d97706',
           size: 'xs',
           wrap: true,
           lineSpacing: '4px',
+        },
+        {
+          type: 'button',
+          style: 'primary',
+          color: '#16a34a',
+          height: 'md',
+          action: {
+            type: 'postback',
+            label: '✅ 我知道了',
+            data: `action=ack_reservation&orderId=${params.orderId}`,
+            displayText: '我知道了',
+          },
         },
         {
           type: 'button',
@@ -1318,5 +1402,992 @@ export function createDriverReservationOrderCardFlexMessage(params: {
     contents: container,
   };
 }
+
+export interface CustomerReservationStatusItem {
+  orderId: string;
+  scheduledTimeText: string;
+  pickupAddress: string;
+  dropoffAddress?: string | null;
+  passengerCount?: number;
+  estimatedFare?: number | null;
+  status: string;
+  isAccepted: boolean;
+  driverAcknowledged?: boolean;
+  driverName?: string | null;
+  carBrand?: string | null;
+  plateNumber?: string | null;
+  carColor?: string | null;
+}
+
+/**
+ * 乘客於 1:1 OA 輸入「我的預約」時，呈現正在進行的預約單與是否接單狀態之 Flex Message
+ */
+export function createCustomerReservationStatusFlexMessage(
+  items: CustomerReservationStatusItem[]
+): messagingApi.FlexMessage {
+  const buildBubble = (item: CustomerReservationStatusItem): messagingApi.FlexBubble => {
+    const shortId = item.orderId.slice(-4);
+    const statusBadgeText = item.isAccepted ? '✅ 已接單' : '⏳ 尚未接單';
+    const statusBadgeBg = item.isAccepted ? '#16a34a' : '#d97706';
+
+    return {
+      type: 'bubble',
+      size: 'mega',
+      header: {
+        type: 'box',
+        layout: 'horizontal',
+        backgroundColor: '#0f172a',
+        paddingAll: '16px',
+        alignItems: 'center',
+        contents: [
+          {
+            type: 'box',
+            layout: 'vertical',
+            flex: 1,
+            contents: [
+              {
+                type: 'text',
+                text: '📅【我的預約單】',
+                color: '#38bdf8',
+                weight: 'bold',
+                size: 'md',
+              },
+              {
+                type: 'text',
+                text: `訂單編號 #${shortId}`,
+                color: '#94a3b8',
+                size: 'xs',
+                margin: 'xs',
+              },
+            ],
+          },
+          {
+            type: 'box',
+            layout: 'vertical',
+            backgroundColor: statusBadgeBg,
+            cornerRadius: '8px',
+            paddingAll: '6px',
+            paddingStart: '10px',
+            paddingEnd: '10px',
+            contents: [
+              {
+                type: 'text',
+                text: statusBadgeText,
+                color: '#ffffff',
+                size: 'xs',
+                weight: 'bold',
+                align: 'center',
+              },
+            ],
+          },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#ffffff',
+        paddingAll: '16px',
+        spacing: 'md',
+        contents: [
+          {
+            type: 'box',
+            layout: 'vertical',
+            backgroundColor: item.isAccepted ? '#f0fdf4' : '#fffbeb',
+            borderColor: item.isAccepted ? '#bbf7d0' : '#fde68a',
+            borderWidth: '1px',
+            cornerRadius: '12px',
+            paddingAll: '12px',
+            contents: [
+              {
+                type: 'text',
+                text: '📅 預約搭乘時間',
+                color: item.isAccepted ? '#166534' : '#92400e',
+                size: 'xs',
+                weight: 'bold',
+              },
+              {
+                type: 'text',
+                text: item.scheduledTimeText || '預約行程',
+                color: item.isAccepted ? '#15803d' : '#b45309',
+                size: 'lg',
+                weight: 'bold',
+                margin: 'xs',
+              },
+            ],
+          },
+          {
+            type: 'box',
+            layout: 'vertical',
+            spacing: 'xs',
+            contents: [
+              {
+                type: 'text',
+                text: `🟢 上車：${item.pickupAddress}`,
+                color: '#334155',
+                size: 'sm',
+                weight: 'bold',
+                wrap: true,
+              },
+              {
+                type: 'text',
+                text: `🔴 下車：${item.dropoffAddress || '上車後告知'}`,
+                color: '#64748b',
+                size: 'sm',
+                wrap: true,
+              },
+              ...(item.estimatedFare
+                ? ([
+                    {
+                      type: 'text',
+                      text: `💰 預估車資：$${item.estimatedFare}`,
+                      color: '#0f172a',
+                      size: 'sm',
+                      weight: 'bold',
+                    },
+                  ] as messagingApi.FlexComponent[])
+                : []),
+            ],
+          },
+          {
+            type: 'separator',
+            color: '#f1f5f9',
+          },
+          ...(item.isAccepted
+            ? ([
+                {
+                  type: 'box',
+                  layout: 'vertical',
+                  spacing: 'xs',
+                  contents: [
+                    {
+                      type: 'text',
+                      text: item.driverAcknowledged
+                        ? '📋 接單狀態：✅ 司機已接單並確認行程'
+                        : '📋 接單狀態：✅ 已指派司機承接',
+                      color: '#16a34a',
+                      size: 'xs',
+                      weight: 'bold',
+                      wrap: true,
+                    },
+                    {
+                      type: 'text',
+                      text: `👤 接單司機：${item.driverName || '優質司機'}（${item.carBrand || 'TOYOTA'} ${item.plateNumber || '---'} / ${item.carColor || '黑色'}）`,
+                      color: '#0f172a',
+                      size: 'xs',
+                      weight: 'bold',
+                      wrap: true,
+                    },
+                  ],
+                },
+              ] as messagingApi.FlexComponent[])
+            : ([
+                {
+                  type: 'box',
+                  layout: 'vertical',
+                  spacing: 'xs',
+                  contents: [
+                    {
+                      type: 'text',
+                      text: '📋 接單狀態：⏳ 尚未有司機接單（派單媒合中）',
+                      color: '#d97706',
+                      size: 'xs',
+                      weight: 'bold',
+                      wrap: true,
+                    },
+                    {
+                      type: 'text',
+                      text: '系統將於上車前 10 小時起每半小時自動為您呼叫司機；若出發前 1 小時仍無司機接單，系統將主動通知您。',
+                      color: '#64748b',
+                      size: 'xxs',
+                      wrap: true,
+                      lineSpacing: '3px',
+                    },
+                  ],
+                },
+              ] as messagingApi.FlexComponent[])),
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#f8fafc',
+        paddingAll: '12px',
+        spacing: 'sm',
+        contents: [
+          ...(item.isAccepted
+            ? ([
+                {
+                  type: 'button',
+                  style: 'primary',
+                  color: '#0284c7',
+                  height: 'sm',
+                  action: {
+                    type: 'message',
+                    label: `💬 與司機溝通 #${shortId}`,
+                    text: `與司機溝通 #${shortId}`,
+                  },
+                },
+              ] as messagingApi.FlexComponent[])
+            : []),
+          {
+            type: 'button',
+            style: 'secondary',
+            color: '#f1f5f9',
+            height: 'sm',
+            action: {
+              type: 'message',
+              label: `❌ 取消預約 #${shortId}`,
+              text: `取消訂單 #${shortId}`,
+            },
+          },
+        ],
+      },
+    };
+  };
+
+  if (items.length === 1) {
+    const first = items[0];
+    return {
+      type: 'flex',
+      altText: `📅【我的預約單】#${first.orderId.slice(-4)}（${first.isAccepted ? '已接單' : '尚未接單'}）`,
+      contents: buildBubble(first),
+    };
+  }
+
+  return {
+    type: 'flex',
+    altText: `📅【我的預約單】共 ${items.length} 筆進行中的預約行程`,
+    contents: {
+      type: 'carousel',
+      contents: items.slice(0, 10).map(buildBubble),
+    },
+  };
+}
+
+/**
+ * 司機接預約單後 1 小時內未按「我知道了」時，推播至管理員群組的重啟派單提醒卡片
+ */
+export function createAdminUnacknowledgedReservationFlexMessage(params: {
+  orderId: string;
+  driverName: string;
+  scheduledTimeText: string;
+  pickupAddress: string;
+  dropoffAddress?: string | null;
+}): messagingApi.FlexMessage {
+  const shortId = params.orderId.slice(-4);
+
+  const container: messagingApi.FlexBubble = {
+    type: 'bubble',
+    size: 'kilo',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#991b1b',
+      paddingAll: '16px',
+      contents: [
+        {
+          type: 'text',
+          text: '⚠️【預約單逾 1 小時未確認】',
+          color: '#fef08a',
+          weight: 'bold',
+          size: 'md',
+        },
+        {
+          type: 'text',
+          text: `訂單 #${shortId}｜司機 @${params.driverName}`,
+          color: '#fecaca',
+          size: 'xs',
+          margin: 'xs',
+        },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#ffffff',
+      paddingAll: '16px',
+      spacing: 'sm',
+      contents: [
+        {
+          type: 'text',
+          text: `⏰ 預約時間：${params.scheduledTimeText}`,
+          color: '#0f172a',
+          size: 'xs',
+          weight: 'bold',
+          wrap: true,
+        },
+        {
+          type: 'text',
+          text: `🟢 上車：${params.pickupAddress}`,
+          color: '#334155',
+          size: 'xs',
+          wrap: true,
+        },
+        ...(params.dropoffAddress
+          ? ([
+              {
+                type: 'text',
+                text: `🔴 下車：${params.dropoffAddress}`,
+                color: '#64748b',
+                size: 'xs',
+                wrap: true,
+              },
+            ] as messagingApi.FlexComponent[])
+          : []),
+        {
+          type: 'separator',
+          color: '#f1f5f9',
+          margin: 'md',
+        },
+        {
+          type: 'text',
+          text: '該名司機承接預約單後已超過 1 小時未點擊「我知道了」。管理員可點擊下方按鈕重啟此張預約單，重新尋找其他司機處理。',
+          color: '#b91c1c',
+          size: 'xs',
+          wrap: true,
+          lineSpacing: '3px',
+        },
+        {
+          type: 'button',
+          style: 'primary',
+          color: '#dc2626',
+          height: 'sm',
+          margin: 'md',
+          action: {
+            type: 'postback',
+            label: `🔄 重啟預約單 #${shortId} 找其他司機`,
+            data: `action=admin_reopen_reservation&orderId=${params.orderId}`,
+            displayText: `重啟預約單 #${shortId}`,
+          },
+        },
+      ],
+    },
+  };
+
+  return {
+    type: 'flex',
+    altText: `⚠️【預約單未確認】訂單 #${shortId} 司機逾 1 小時未按「我知道了」，管理員可重啟派單`,
+    contents: container,
+  };
+}
+
+/**
+ * 司機按下「客上」後，於 1:1 OA 顯示的訂單與金額確認卡片
+ * - 若使用者有詳細下車地址且已算出金額：顯示訂單金額，下方提供「確認金額並回報」與「調整訂單金額並回報」兩個按鈕
+ * - 若使用者沒有詳細下車地址（無預估金額）：不預先顯示金額，提示司機於回報下車時必填金額，並開啟網頁填寫金額（必填）回報結單
+ */
+export function createDriverBoardedFareConfirmFlexMessage(params: {
+  orderId: string;
+  driverName?: string;
+  pickupAddress: string;
+  dropoffAddress?: string | null;
+  passengerCount?: number;
+  fare?: number | null;
+  adjustFareUrl?: string;
+}): messagingApi.FlexMessage {
+  const shortId = params.orderId.slice(-4);
+  const adjustFareUrl =
+    params.adjustFareUrl ||
+    (env.LIFF_ID
+      ? `https://liff.line.me/${env.LIFF_ID}/driver/adjust-fare?orderId=${params.orderId}`
+      : `https://flow-taxi-production.up.railway.app/driver/adjust-fare?orderId=${params.orderId}`);
+
+  const hasPrecalculatedFare = Boolean(
+    isDetailedDropoffAddress(params.dropoffAddress) &&
+      params.fare !== null &&
+      params.fare !== undefined &&
+      Number(params.fare) > 0
+  );
+
+  const fareBannerBox: messagingApi.FlexBox = hasPrecalculatedFare
+    ? {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#f0fdf4',
+        borderColor: '#bbf7d0',
+        borderWidth: '1px',
+        cornerRadius: '12px',
+        paddingAll: '12px',
+        contents: [
+          {
+            type: 'text',
+            text: '💵 本單車資金額',
+            color: '#166534',
+            size: 'xs',
+            weight: 'bold',
+            align: 'center',
+          },
+          {
+            type: 'text',
+            text: `$${params.fare}`,
+            color: '#15803d',
+            size: 'xxl',
+            weight: 'bold',
+            align: 'center',
+            margin: 'xs',
+          },
+        ],
+      }
+    : {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#fffbeb',
+        borderColor: '#fde68a',
+        borderWidth: '1px',
+        cornerRadius: '12px',
+        paddingAll: '12px',
+        contents: [
+          {
+            type: 'text',
+            text: '⚠️ 未提供詳細下車地址（下車時金額必填）',
+            color: '#b45309',
+            size: 'xs',
+            weight: 'bold',
+            align: 'center',
+            wrap: true,
+          },
+          {
+            type: 'text',
+            text: '請於乘客下車時點擊下方按鈕填寫實際車資金額（必填）並回報結單',
+            color: '#92400e',
+            size: 'xxs',
+            align: 'center',
+            margin: 'xs',
+            wrap: true,
+          },
+        ],
+      };
+
+  const actionButtons: messagingApi.FlexComponent[] = hasPrecalculatedFare
+    ? [
+        {
+          type: 'text',
+          text: '抵達目的地後，若金額無誤請點選「確認金額並回報」直接結單；若需修改金額或填寫備註，請點選「調整訂單金額並回報」。',
+          color: '#64748b',
+          size: 'xs',
+          wrap: true,
+          lineSpacing: '3px',
+        },
+        {
+          type: 'button',
+          style: 'primary',
+          color: '#16a34a',
+          height: 'md',
+          action: {
+            type: 'postback',
+            label: '確認金額並回報',
+            data: `action=confirm_fare_complete&orderId=${params.orderId}&fare=${params.fare}`,
+            displayText: '確認金額並回報',
+          },
+        },
+        {
+          type: 'button',
+          style: 'secondary',
+          color: '#f1f5f9',
+          height: 'md',
+          action: {
+            type: 'uri',
+            label: '調整訂單金額並回報',
+            uri: adjustFareUrl,
+          },
+        },
+      ]
+    : [
+        {
+          type: 'text',
+          text: '由於乘客未提供詳細下車地址，抵達目的地回報下車時，「訂單金額」欄位為必填，請點選下方按鈕填寫金額並回報結單：',
+          color: '#64748b',
+          size: 'xs',
+          wrap: true,
+          lineSpacing: '3px',
+        },
+        {
+          type: 'button',
+          style: 'primary',
+          color: '#16a34a',
+          height: 'md',
+          action: {
+            type: 'uri',
+            label: '填寫訂單金額並回報',
+            uri: adjustFareUrl,
+          },
+        },
+      ];
+
+  const container: messagingApi.FlexBubble = {
+    type: 'bubble',
+    size: 'mega',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#0f172a',
+      paddingAll: '16px',
+      contents: [
+        {
+          type: 'text',
+          text: '🚕【客上行程中・結單金額回報】',
+          color: '#38bdf8',
+          weight: 'bold',
+          size: 'md',
+        },
+        {
+          type: 'text',
+          text: `訂單編號 #${shortId}`,
+          color: '#94a3b8',
+          size: 'xs',
+          margin: 'xs',
+        },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#ffffff',
+      paddingAll: '18px',
+      spacing: 'md',
+      contents: [
+        fareBannerBox,
+        {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'xs',
+          contents: [
+            {
+              type: 'text',
+              text: `🟢 上車：${params.pickupAddress}`,
+              color: '#334155',
+              size: 'sm',
+              weight: 'bold',
+              wrap: true,
+            },
+            {
+              type: 'text',
+              text: `🔴 下車：${params.dropoffAddress || '乘客上車後說明'}`,
+              color: '#64748b',
+              size: 'sm',
+              wrap: true,
+            },
+            {
+              type: 'text',
+              text: `👥 人數：${params.passengerCount || 1} 人`,
+              color: '#64748b',
+              size: 'xs',
+            },
+          ],
+        },
+        {
+          type: 'separator',
+          color: '#f1f5f9',
+        },
+        ...actionButtons,
+      ],
+    },
+  };
+
+  return {
+    type: 'flex',
+    altText: hasPrecalculatedFare
+      ? `🚕【客上行程中】訂單 #${shortId} 本單金額：$${params.fare}（請於下車時確認或調整金額回報結單）`
+      : `🚕【客上行程中】訂單 #${shortId}（無詳細下車地址，請於下車時必填金額回報結單）`,
+    contents: container,
+  };
+}
+
+/**
+ * 司機點擊「確認金額並回報」或於網頁送出「調整訂單金額並回報」後，
+ * 推播至司機群組 (chatroom) 的訂單已完結卡片（顯示完結狀態與金額）
+ */
+export function createGroupOrderCompletedFlexMessage(params: {
+  orderId: string;
+  driverName?: string;
+  pickupAddress: string;
+  dropoffAddress?: string | null;
+  fare: number;
+  isAdjusted?: boolean;
+  adjustNote?: string | null;
+}): messagingApi.FlexMessage {
+  const shortId = params.orderId.slice(-4);
+  const driverLabel = params.driverName ? `@${params.driverName}` : '接單司機';
+
+  const container: messagingApi.FlexBubble = {
+    type: 'bubble',
+    size: 'kilo',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#0f172a',
+      paddingAll: '16px',
+      contents: [
+        {
+          type: 'text',
+          text: '🏁【這筆訂單已完結】',
+          color: '#4ade80',
+          weight: 'bold',
+          size: 'md',
+        },
+        {
+          type: 'text',
+          text: `訂單編號 #${shortId}｜${driverLabel}`,
+          color: '#94a3b8',
+          size: 'xs',
+          margin: 'xs',
+        },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#ffffff',
+      paddingAll: '16px',
+      spacing: 'md',
+      contents: [
+        {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#f0fdf4',
+          borderColor: '#bbf7d0',
+          borderWidth: '1px',
+          cornerRadius: '10px',
+          paddingAll: '12px',
+          contents: [
+            {
+              type: 'text',
+              text: params.isAdjusted ? '💰 結單金額（已調整）' : '💰 結單金額',
+              color: '#166534',
+              size: 'xs',
+              weight: 'bold',
+              align: 'center',
+            },
+            {
+              type: 'text',
+              text: `$${params.fare}`,
+              color: '#15803d',
+              size: 'xl',
+              weight: 'bold',
+              align: 'center',
+              margin: 'xs',
+            },
+          ],
+        },
+        {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'xs',
+          contents: [
+            {
+              type: 'text',
+              text: `🟢 上車：${params.pickupAddress}`,
+              color: '#334155',
+              size: 'xs',
+              weight: 'bold',
+              wrap: true,
+            },
+            {
+              type: 'text',
+              text: `🔴 下車：${params.dropoffAddress || '乘客指定地點'}`,
+              color: '#64748b',
+              size: 'xs',
+              wrap: true,
+            },
+            ...(params.adjustNote && params.adjustNote.trim()
+              ? ([
+                  {
+                    type: 'text',
+                    text: `📝 備註：${params.adjustNote.trim()}`,
+                    color: '#0284c7',
+                    size: 'xs',
+                    weight: 'bold',
+                    wrap: true,
+                  },
+                ] as messagingApi.FlexComponent[])
+              : []),
+          ],
+        },
+      ],
+    },
+  };
+
+  return {
+    type: 'flex',
+    altText: `🏁【這筆訂單已完結】訂單 #${shortId} 已完結，結單金額：$${params.fare}${params.adjustNote ? `（備註：${params.adjustNote}）` : ''}`,
+    contents: container,
+  };
+}
+
+/**
+ * 司機送出回報後，若系統計算上車地點與下車地點距離小於 5 公里（短程單），
+ * 推播 Flex Message 提示司機這趟系統計算是短程單，管理員核實之後會給他補單點數
+ */
+export function createDriverShortTripPendingFlexMessage(params: {
+  orderId: string;
+  pickupAddress: string;
+  dropoffAddress: string;
+  distanceKm: number;
+  fare?: number | null;
+}): messagingApi.FlexMessage {
+  const shortId = params.orderId.slice(-4);
+  const kmText = Number(params.distanceKm).toFixed(1);
+
+  const container: messagingApi.FlexBubble = {
+    type: 'bubble',
+    size: 'kilo',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#1e3a8a',
+      paddingAll: '16px',
+      contents: [
+        {
+          type: 'text',
+          text: '📏【系統計算為短程單】',
+          color: '#93c5fd',
+          weight: 'bold',
+          size: 'md',
+        },
+        {
+          type: 'text',
+          text: `訂單編號 #${shortId}｜測算里程 ${kmText} 公里`,
+          color: '#e0f2fe',
+          size: 'xs',
+          margin: 'xs',
+        },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#ffffff',
+      paddingAll: '16px',
+      spacing: 'md',
+      contents: [
+        {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'xs',
+          contents: [
+            {
+              type: 'text',
+              text: `🟢 上車地點：${params.pickupAddress}`,
+              color: '#0f172a',
+              size: 'xs',
+              weight: 'bold',
+              wrap: true,
+            },
+            {
+              type: 'text',
+              text: `🔴 下車地點：${params.dropoffAddress}`,
+              color: '#0f172a',
+              size: 'xs',
+              weight: 'bold',
+              wrap: true,
+            },
+            {
+              type: 'text',
+              text: `📏 系統測算距離：${kmText} 公里（小於 5 公里）`,
+              color: '#1d4ed8',
+              size: 'xs',
+              weight: 'bold',
+              wrap: true,
+            },
+            ...(params.fare
+              ? ([
+                  {
+                    type: 'text',
+                    text: `💰 回報車資：$${params.fare}`,
+                    color: '#475569',
+                    size: 'xs',
+                  },
+                ] as messagingApi.FlexComponent[])
+              : []),
+          ],
+        },
+        {
+          type: 'box',
+          layout: 'vertical',
+          backgroundColor: '#fffbeb',
+          borderColor: '#fde68a',
+          borderWidth: '1px',
+          cornerRadius: '10px',
+          paddingAll: '12px',
+          contents: [
+            {
+              type: 'text',
+              text: '🎁 系統計算本趟行程小於 5 公里，屬於【短程單】！已自動送交管理群組請管理員核實，待管理員核實之後將會發給您 +1 點【補單點數】！',
+              color: '#92400e',
+              size: 'xs',
+              weight: 'bold',
+              wrap: true,
+              lineSpacing: '4px',
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  return {
+    type: 'flex',
+    altText: `📏【短程單提示】訂單 #${shortId} 系統計算為短程單（${kmText}km），管理員核實之後會給您補單點數！`,
+    contents: container,
+  };
+}
+
+/**
+ * 當有短單時，Chatbot 發送 Flex Message 到管理群組請管理員核實（核實通過後自動發放補單點數給司機）
+ */
+export function createAdminShortTripVerifyFlexMessage(params: {
+  orderId: string;
+  driverId: string;
+  driverName?: string | null;
+  pickupAddress: string;
+  dropoffAddress: string;
+  distanceKm: number;
+  fare?: number | null;
+  adjustNote?: string | null;
+}): messagingApi.FlexMessage {
+  const shortId = params.orderId.slice(-4);
+  const kmText = Number(params.distanceKm).toFixed(1);
+  const driverLabel = params.driverName || '司機夥伴';
+
+  const container: messagingApi.FlexBubble = {
+    type: 'bubble',
+    size: 'mega',
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#7c2d12',
+      paddingAll: '16px',
+      contents: [
+        {
+          type: 'text',
+          text: '🕵️【短程單待管理員核實】',
+          color: '#fdba74',
+          weight: 'bold',
+          size: 'md',
+        },
+        {
+          type: 'text',
+          text: `訂單編號 #${shortId}｜司機：${driverLabel}`,
+          color: '#ffedd5',
+          size: 'xs',
+          margin: 'xs',
+        },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      backgroundColor: '#ffffff',
+      paddingAll: '18px',
+      spacing: 'md',
+      contents: [
+        {
+          type: 'box',
+          layout: 'vertical',
+          spacing: 'sm',
+          contents: [
+            {
+              type: 'text',
+              text: `🚖 接單司機：${driverLabel}`,
+              color: '#0f172a',
+              size: 'sm',
+              weight: 'bold',
+              wrap: true,
+            },
+            {
+              type: 'text',
+              text: `🟢 上車地點：${params.pickupAddress}`,
+              color: '#0f172a',
+              size: 'sm',
+              weight: 'bold',
+              wrap: true,
+            },
+            {
+              type: 'text',
+              text: `🔴 下車地點：${params.dropoffAddress}`,
+              color: '#0f172a',
+              size: 'sm',
+              weight: 'bold',
+              wrap: true,
+            },
+            {
+              type: 'text',
+              text: `📏 系統測算距離：${kmText} 公里（小於 5 公里短程單）`,
+              color: '#ea580c',
+              size: 'sm',
+              weight: 'bold',
+              wrap: true,
+            },
+            ...(params.fare
+              ? ([
+                  {
+                    type: 'text',
+                    text: `💰 回報結單金額：$${params.fare}`,
+                    color: '#334155',
+                    size: 'sm',
+                    weight: 'bold',
+                  },
+                ] as messagingApi.FlexComponent[])
+              : []),
+            ...(params.adjustNote && params.adjustNote.trim()
+              ? ([
+                  {
+                    type: 'text',
+                    text: `📝 司機備註：${params.adjustNote.trim()}`,
+                    color: '#0284c7',
+                    size: 'xs',
+                    wrap: true,
+                  },
+                ] as messagingApi.FlexComponent[])
+              : []),
+          ],
+        },
+        {
+          type: 'separator',
+          color: '#f1f5f9',
+        },
+        {
+          type: 'text',
+          text: '請管理員核實此筆短程單上下車地點是否屬實。點擊「核實通過」將自動為司機發放 +1 點補單點數：',
+          color: '#475569',
+          size: 'xs',
+          wrap: true,
+        },
+        {
+          type: 'button',
+          style: 'primary',
+          color: '#059669',
+          height: 'md',
+          action: {
+            type: 'postback',
+            label: '✅ 核實通過（給司機補單點數）',
+            data: `action=admin_verify_short_trip&orderId=${encodeURIComponent(params.orderId)}&driverId=${encodeURIComponent(params.driverId)}&approved=1`,
+            displayText: `核實通過短程單 #${shortId}`,
+          },
+        },
+        {
+          type: 'button',
+          style: 'secondary',
+          color: '#e2e8f0',
+          height: 'md',
+          margin: 'sm',
+          action: {
+            type: 'postback',
+            label: '❌ 駁回（不發放點數）',
+            data: `action=admin_verify_short_trip&orderId=${encodeURIComponent(params.orderId)}&driverId=${encodeURIComponent(params.driverId)}&approved=0`,
+            displayText: `駁回短程單 #${shortId}`,
+          },
+        },
+      ],
+    },
+  };
+
+  return {
+    type: 'flex',
+    altText: `🕵️【短程單待管理員核實】訂單 #${shortId}（司機：${driverLabel}，距離 ${kmText}km），請管理員核實並發放補單點數`,
+    contents: container,
+  };
+}
+
 
 

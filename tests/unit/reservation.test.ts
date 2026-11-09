@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { parseScheduledTimeString, formatScheduledTime, isFutureReservation } from '../../src/services/reservation.js';
+import {
+  parseScheduledTimeString,
+  formatScheduledTime,
+  isFutureReservation,
+  evaluateReservationDispatchAction,
+  canAdminReopenUnacknowledgedReservation,
+} from '../../src/services/reservation.js';
 
 describe('Reservation Service', () => {
   const mockNow = new Date('2026-10-12T16:00:00+08:00');
@@ -76,5 +82,76 @@ describe('Reservation Service', () => {
       reminder_sent: true,
     };
     expect(isFutureReservation(remindedOrder, mockNow)).toBe(false);
+  });
+
+  it('evaluateReservationDispatchAction：上車前 10 小時出現、每 30 分鐘重跳、出發前 1 小時無司機結單', () => {
+    const scheduledTime = new Date('2026-10-13T12:00:00+08:00');
+
+    // 1. 距離上車 12 小時 (> 10 小時) ➔ wait_for_10h
+    const tMinus12h = new Date(scheduledTime.getTime() - 12 * 60 * 60 * 1000);
+    expect(
+      evaluateReservationDispatchAction({ scheduled_time: scheduledTime }, tMinus12h)
+    ).toBe('wait_for_10h');
+
+    // 2. 距離上車 10 小時且尚未廣播過 ➔ broadcast_now
+    const tMinus10h = new Date(scheduledTime.getTime() - 10 * 60 * 60 * 1000);
+    expect(
+      evaluateReservationDispatchAction({ scheduled_time: scheduledTime }, tMinus10h)
+    ).toBe('broadcast_now');
+
+    // 3. 剛廣播完 15 分鐘 (< 30 分鐘) ➔ wait_next_30m
+    const tMinus9h45m = new Date(tMinus10h.getTime() + 15 * 60 * 1000);
+    expect(
+      evaluateReservationDispatchAction(
+        { scheduled_time: scheduledTime, last_broadcast_at: tMinus10h.getTime() },
+        tMinus9h45m
+      )
+    ).toBe('wait_next_30m');
+
+    // 4. 距離上次廣播滿 30 分鐘 ➔ broadcast_now
+    const tMinus9h30m = new Date(tMinus10h.getTime() + 30 * 60 * 1000);
+    expect(
+      evaluateReservationDispatchAction(
+        { scheduled_time: scheduledTime, last_broadcast_at: tMinus10h.getTime() },
+        tMinus9h30m
+      )
+    ).toBe('broadcast_now');
+
+    // 5. 出發前 1 小時 (<= 60 分鐘) 仍無司機接單 ➔ cutoff_no_driver
+    const tMinus1h = new Date(scheduledTime.getTime() - 60 * 60 * 1000);
+    expect(
+      evaluateReservationDispatchAction(
+        { scheduled_time: scheduledTime, last_broadcast_at: tMinus9h30m.getTime() },
+        tMinus1h
+      )
+    ).toBe('cutoff_no_driver');
+  });
+
+  it('canAdminReopenUnacknowledgedReservation：司機接單逾 1 小時未按「我知道了」時應允許管理員重啟', () => {
+    const acceptedAt = new Date('2026-10-12T10:00:00+08:00').getTime();
+    const order = {
+      status: 'accepted',
+      driver_id: 'D_DRIVER_1',
+      note: `預約時間: 2026/10/12 18:00 [WAIT_DRIVER_ACK] [ACCEPTED_AT:${acceptedAt}]`,
+    };
+
+    // 30 分鐘後：未滿 1 小時，不可重啟
+    expect(
+      canAdminReopenUnacknowledgedReservation(order, new Date(acceptedAt + 30 * 60 * 1000))
+    ).toBe(false);
+
+    // 61 分鐘後：滿 1 小時且未按我知道了，可重啟
+    expect(
+      canAdminReopenUnacknowledgedReservation(order, new Date(acceptedAt + 61 * 60 * 1000))
+    ).toBe(true);
+
+    // 若已按「我知道了」([DRIVER_ACK])，即使超過 1 小時也不可重啟
+    const ackedOrder = {
+      ...order,
+      note: `預約時間: 2026/10/12 18:00 [DRIVER_ACK] [ACCEPTED_AT:${acceptedAt}]`,
+    };
+    expect(
+      canAdminReopenUnacknowledgedReservation(ackedOrder, new Date(acceptedAt + 90 * 60 * 1000))
+    ).toBe(false);
   });
 });

@@ -6,6 +6,9 @@ import {
   updateOrderStatus,
   getActiveOrderByDriverId,
   getActiveOrderByCustomerId,
+  isDetailedDropoffAddress,
+  getOrderDefaultFare,
+  completeOrderWithFare,
 } from '../../src/db/queries/orders.js';
 
 describe('Rich Menu & Order Status Lifecycle Tests', () => {
@@ -91,6 +94,8 @@ describe('Rich Menu & Order Status Lifecycle Tests', () => {
         customer_id: customerId,
         service_type: 'city',
         pickup_address: '故宮',
+        pickup_lat: 25.1024,
+        pickup_lng: 121.5485,
         dropoff_address: '台大新生校門口',
       });
       expect(order.status).toBe('pending');
@@ -106,6 +111,64 @@ describe('Rich Menu & Order Status Lifecycle Tests', () => {
 
       activeForCustomer = await getActiveOrderByCustomerId(customerId);
       expect(activeForCustomer).toBeNull();
+    });
+
+    it('completeOrderWithFare 應能確認或調整訂單金額與備註，並將訂單狀態更新為 done', async () => {
+      const orderId = `test-complete-fare-${Date.now()}`;
+      const driverId = `driver-fare-${Date.now()}`;
+      const customerId = `cust-fare-${Date.now()}`;
+
+      const order = await createOrder({
+        id: orderId,
+        customer_id: customerId,
+        pickup_address: '台北車站',
+        pickup_lat: 25.0478,
+        pickup_lng: 121.517,
+        dropoff_address: '台北 101',
+        fare: 220,
+      });
+      order.driver_id = driverId;
+      await updateOrderStatus(orderId, 'picked_up');
+
+      expect(getOrderDefaultFare(order)).toBe(220);
+
+      const completed = await completeOrderWithFare(orderId, 280, '夜間加成與繞道');
+      expect(completed).not.toBeNull();
+      expect(completed?.status).toBe('done');
+      expect(completed?.fare).toBe(280);
+      expect(completed?.note).toContain('夜間加成與繞道');
+      expect(completed?.completed_at).toBeDefined();
+    });
+
+    it('當使用者沒有詳細下車地址時，預設金額為 null，且回報下車結單時必須填寫金額才能完成結單', async () => {
+      expect(isDetailedDropoffAddress('')).toBe(false);
+      expect(isDetailedDropoffAddress('台北市信義區')).toBe(false);
+      expect(isDetailedDropoffAddress('乘客上車後說明')).toBe(false);
+      expect(isDetailedDropoffAddress('台北市信義區松壽路12號')).toBe(true);
+      expect(isDetailedDropoffAddress('台北 101')).toBe(true);
+
+      const orderId = `test-no-dropoff-${Date.now()}`;
+      const order = await createOrder({
+        id: orderId,
+        customer_id: `cust-no-dropoff-${Date.now()}`,
+        pickup_address: '台北車站',
+        pickup_lat: 25.0478,
+        pickup_lng: 121.517,
+      });
+      await updateOrderStatus(orderId, 'picked_up');
+
+      // 無詳細下車地址時，不提供預設金額
+      expect(getOrderDefaultFare(order)).toBeNull();
+
+      // 未填寫金額時無法直接完成結單
+      const failedComplete = await completeOrderWithFare(orderId, null);
+      expect(failedComplete).toBeNull();
+
+      // 司機回報下車並填寫必填金額後，成功結單
+      const completed = await completeOrderWithFare(orderId, 350);
+      expect(completed).not.toBeNull();
+      expect(completed?.status).toBe('done');
+      expect(completed?.fare).toBe(350);
     });
   });
 });

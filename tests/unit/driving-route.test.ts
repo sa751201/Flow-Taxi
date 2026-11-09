@@ -1,7 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { getDrivingRoute } from '../../src/services/google-maps.js';
+import { getDrivingRoute, roundUpToFiveMinutes } from '../../src/services/google-maps.js';
 
-describe('Driving Route Service', () => {
+describe('Driving Route Service & ETA Rounding', () => {
+  it('roundUpToFiveMinutes 應將預估到達分鐘數無條件進位為 5 分鐘的倍數 (如 13->15, 6->10)', () => {
+    expect(roundUpToFiveMinutes(1)).toBe(5);
+    expect(roundUpToFiveMinutes(3)).toBe(5);
+    expect(roundUpToFiveMinutes(5)).toBe(5);
+    expect(roundUpToFiveMinutes(6)).toBe(10);
+    expect(roundUpToFiveMinutes(10)).toBe(10);
+    expect(roundUpToFiveMinutes(11)).toBe(15);
+    expect(roundUpToFiveMinutes(13)).toBe(15);
+    expect(roundUpToFiveMinutes(15)).toBe(15);
+    expect(roundUpToFiveMinutes(16)).toBe(20);
+  });
+
   it('應能成功取得起終點（台北車站到國立故宮博物院）的真實行車道路路線', async () => {
     // 台北車站: (25.0478, 121.5170) -> 故宮: (25.1016, 121.5489)
     const route = await getDrivingRoute(25.0478, 121.5170, 25.1016, 121.5489);

@@ -8,6 +8,7 @@ export interface SubmitBidParams {
   lat: number;
   lng: number;
   etaMinutes?: number | null;
+  useCompensationPoint?: boolean;
 }
 
 // 記憶體備援出價儲存
@@ -105,4 +106,15 @@ export async function getBidsByOrderId(orderId: string): Promise<DispatchBid[]> 
   }
 
   return memoryBids.get(orderId) || [];
+}
+
+export async function clearBidsByOrderId(orderId: string): Promise<void> {
+  memoryBids.delete(orderId);
+  if (env.DATABASE_URL) {
+    try {
+      await query(`DELETE FROM dispatch_bids WHERE order_id = $1;`, [orderId]);
+    } catch {
+      // fallback
+    }
+  }
 }

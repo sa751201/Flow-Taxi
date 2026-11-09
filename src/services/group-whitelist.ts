@@ -100,7 +100,24 @@ export function isAdminGroup(groupId: string): boolean {
   }
   const groups = getAllowedGroups();
   const matched = groups.find(
-    (g) => g.groupId === groupId && g.status === 'active' && (g.name.includes('幹部') || g.note?.includes('admin'))
+    (g) => g.groupId === groupId && g.status === 'active' && (g.name.includes('幹部') || g.name.includes('管理') || g.note?.includes('admin'))
   );
   return Boolean(matched);
+}
+
+/**
+ * 取得管理群組 Group ID（優先讀取 env.ADMIN_GROUP_ID，次取白名單中之幹部/管理群組，保底使用 DRIVER_GROUP_ID）
+ */
+export function getAdminGroupId(): string {
+  if (env.ADMIN_GROUP_ID && env.ADMIN_GROUP_ID.trim()) {
+    return env.ADMIN_GROUP_ID.trim();
+  }
+  const groups = getAllowedGroups();
+  const adminGroup = groups.find(
+    (g) => g.status === 'active' && (g.name.includes('幹部') || g.name.includes('管理') || g.note?.includes('admin'))
+  );
+  if (adminGroup?.groupId) {
+    return adminGroup.groupId;
+  }
+  return env.DRIVER_GROUP_ID || '';
 }

@@ -2,15 +2,21 @@ import { query } from '../index.js';
 import { env } from '../../config/env.js';
 import { Order, OrderStatus } from '../../types/dispatch.js';
 import { getDriverById, findDriverByPhoneOrPlate } from './drivers.js';
-import { isFutureReservation } from '../../services/reservation.js';
+import { clearBidsByOrderId } from './bids.js';
+import {
+  isFutureReservation,
+  isReservationOrder,
+  getScheduledDate,
+  canAdminReopenUnacknowledgedReservation,
+} from '../../services/reservation.js';
 
 export interface CreateOrderParams {
   id?: string;
   customer_id: string;
   service_type?: string;
   pickup_address: string;
-  pickup_lat: number;
-  pickup_lng: number;
+  pickup_lat?: number;
+  pickup_lng?: number;
   dropoff_address?: string;
   dropoff_lat?: number;
   dropoff_lng?: number;
@@ -18,6 +24,7 @@ export interface CreateOrderParams {
   scheduled_time?: Date | null;
   region?: string | null;
   note?: string | null;
+  fixed_route?: string | null;
   distance_km?: number | null;
   fare?: number | null;
 }
@@ -27,7 +34,25 @@ export { Order, OrderStatus };
 // 記憶體備援快取 (保障在 PostgreSQL 斷線或未設定 DATABASE_URL 時派單不中斷)
 export const memoryOrders = new Map<string, Order>();
 
+export function extractFixedRoute(order?: { fixed_route?: string | null; note?: string | null } | null): string | null {
+  if (!order) return null;
+  if (order.fixed_route && order.fixed_route.trim()) {
+    return order.fixed_route.trim();
+  }
+  const match = order.note?.match(/\[指定路線:\s*([^\]]+)\]/);
+  return match && match[1] ? match[1].trim() : null;
+}
+
 export async function createOrder(params: CreateOrderParams): Promise<Order> {
+  const combinedNote = (() => {
+    const parts: string[] = [];
+    if (params.note && params.note.trim()) parts.push(params.note.trim());
+    if (params.fixed_route && params.fixed_route.trim() && !params.note?.includes('[指定路線:')) {
+      parts.push(`[指定路線: ${params.fixed_route.trim()}]`);
+    }
+    return parts.length > 0 ? parts.join(' ') : null;
+  })();
+
   if (env.DATABASE_URL) {
     try {
       const sql = `
@@ -82,7 +107,7 @@ export async function createOrder(params: CreateOrderParams): Promise<Order> {
             params.passenger_count || 1,
             params.scheduled_time || null,
             params.region || null,
-            params.note || null,
+            combinedNote,
             params.distance_km || null,
             params.fare || null,
           ]
@@ -97,13 +122,14 @@ export async function createOrder(params: CreateOrderParams): Promise<Order> {
             params.passenger_count || 1,
             params.scheduled_time || null,
             params.region || null,
-            params.note || null,
+            combinedNote,
             params.distance_km || null,
             params.fare || null,
           ];
 
       const res = await query<Order>(sql, values);
       if (res.rows[0]) {
+        res.rows[0].fixed_route = params.fixed_route?.trim() || extractFixedRoute(res.rows[0]);
         memoryOrders.set(res.rows[0].id, res.rows[0]);
         return res.rows[0];
       }
@@ -119,15 +145,16 @@ export async function createOrder(params: CreateOrderParams): Promise<Order> {
     customer_id: params.customer_id,
     service_type: (params.service_type as any) || 'city',
     pickup_address: params.pickup_address,
-    pickup_lat: params.pickup_lat,
-    pickup_lng: params.pickup_lng,
+    pickup_lat: params.pickup_lat ?? 25.0478,
+    pickup_lng: params.pickup_lng ?? 121.517,
     dropoff_address: params.dropoff_address,
     dropoff_lat: params.dropoff_lat,
     dropoff_lng: params.dropoff_lng,
     passenger_count: params.passenger_count || 1,
     scheduled_time: params.scheduled_time || null,
     region: params.region || null,
-    note: params.note || null,
+    note: combinedNote,
+    fixed_route: params.fixed_route?.trim() || null,
     distance_km: params.distance_km || null,
     fare: params.fare || null,
     status: 'pending',
@@ -602,4 +629,331 @@ export async function getOrdersByDriverId(driverId: string, limit: number = 20):
     }
   }
   return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, limit);
+}
+
+/**
+ * 更新訂單備註 (同步寫入 DB 與記憶體備援)
+ */
+export async function updateOrderNote(orderId: string, note: string): Promise<void> {
+  const mem = memoryOrders.get(orderId);
+  if (mem) {
+    mem.note = note;
+  }
+  if (env.DATABASE_URL) {
+    try {
+      await query(`UPDATE orders SET note = $1 WHERE id = $2;`, [note, orderId]);
+    } catch {
+      // fallback
+    }
+  }
+}
+
+/**
+ * 記錄預約單最後一次在司機群組廣播的時間戳
+ */
+export async function markReservationBroadcasted(orderId: string, now: Date = new Date()): Promise<void> {
+  const order = await getOrderById(orderId);
+  if (!order) return;
+
+  const ts = now.getTime();
+  (order as any).last_broadcast_at = ts;
+  const mem = memoryOrders.get(orderId);
+  if (mem) {
+    (mem as any).last_broadcast_at = ts;
+  }
+
+  const baseNote = (order.note || '').replace(/\[LAST_BROADCAST:\d+\]/g, '').trim();
+  const nextNote = `${baseNote} [LAST_BROADCAST:${ts}]`.trim();
+  order.note = nextNote;
+  await updateOrderNote(orderId, nextNote);
+}
+
+/**
+ * 標記司機承接預約單後，等待司機點擊「我知道了」確認（1 小時內未按可由管理員重啟）
+ */
+export async function markReservationAwaitingDriverAck(orderId: string, now: Date = new Date()): Promise<void> {
+  const order = await getOrderById(orderId);
+  if (!order) return;
+
+  const ts = now.getTime();
+  (order as any).accepted_at = ts;
+  (order as any).wait_driver_ack = true;
+  (order as any).driver_acknowledged = false;
+
+  const mem = memoryOrders.get(orderId);
+  if (mem) {
+    (mem as any).accepted_at = ts;
+    (mem as any).wait_driver_ack = true;
+    (mem as any).driver_acknowledged = false;
+  }
+
+  const baseNote = (order.note || '')
+    .replace(/\[WAIT_DRIVER_ACK\]/g, '')
+    .replace(/\[DRIVER_ACK\]/g, '')
+    .replace(/\[ACCEPTED_AT:\d+\]/g, '')
+    .replace(/\[ACK_AT:\d+\]/g, '')
+    .replace(/\[ADMIN_ACK_ALERT_SENT\]/g, '')
+    .trim();
+
+  const nextNote = `${baseNote} [WAIT_DRIVER_ACK] [ACCEPTED_AT:${ts}]`.trim();
+  order.note = nextNote;
+  await updateOrderNote(orderId, nextNote);
+}
+
+/**
+ * 司機點擊「我知道了」確認承接預約單
+ */
+export async function acknowledgeReservationOrder(
+  orderId: string,
+  driverId?: string,
+  now: Date = new Date()
+): Promise<{ success: boolean; reason?: 'not_found' | 'not_winner'; order?: Order }> {
+  const order = await getOrderById(orderId);
+  if (!order) {
+    return { success: false, reason: 'not_found' };
+  }
+
+  if (driverId && order.driver_id && order.driver_id !== driverId) {
+    return { success: false, reason: 'not_winner', order };
+  }
+
+  const ts = now.getTime();
+  (order as any).driver_acknowledged = true;
+  (order as any).wait_driver_ack = false;
+
+  const mem = memoryOrders.get(orderId);
+  if (mem) {
+    (mem as any).driver_acknowledged = true;
+    (mem as any).wait_driver_ack = false;
+  }
+
+  const baseNote = (order.note || '')
+    .replace(/\[WAIT_DRIVER_ACK\]/g, '')
+    .replace(/\[DRIVER_ACK\]/g, '')
+    .replace(/\[ACK_AT:\d+\]/g, '')
+    .trim();
+
+  const nextNote = `${baseNote} [DRIVER_ACK] [ACK_AT:${ts}]`.trim();
+  order.note = nextNote;
+  await updateOrderNote(orderId, nextNote);
+
+  return { success: true, order };
+}
+
+/**
+ * 將未確認之預約單重置為 pending 並清除原司機與出價，供管理員重啟派單尋找其他司機
+ */
+export async function resetOrderToPendingForRedispatch(orderId: string): Promise<Order | null> {
+  const order = await getOrderById(orderId);
+  if (!order) return null;
+
+  const cleanNote = (order.note || '')
+    .replace(/\[WAIT_DRIVER_ACK\]/g, '')
+    .replace(/\[DRIVER_ACK\]/g, '')
+    .replace(/\[ACCEPTED_AT:\d+\]/g, '')
+    .replace(/\[ACK_AT:\d+\]/g, '')
+    .replace(/\[ADMIN_ACK_ALERT_SENT\]/g, '')
+    .replace(/\[LAST_BROADCAST:\d+\]/g, '')
+    .replace(/\[REMINDER_SENT\]/g, '')
+    .trim();
+
+  order.status = 'pending';
+  order.driver_id = null;
+  order.note = cleanNote;
+  delete (order as any).accepted_at;
+  delete (order as any).wait_driver_ack;
+  delete (order as any).driver_acknowledged;
+  delete (order as any).last_broadcast_at;
+  delete (order as any).reminder_sent;
+
+  const mem = memoryOrders.get(orderId);
+  if (mem) {
+    mem.status = 'pending';
+    mem.driver_id = null;
+    mem.note = cleanNote;
+    delete (mem as any).accepted_at;
+    delete (mem as any).wait_driver_ack;
+    delete (mem as any).driver_acknowledged;
+    delete (mem as any).last_broadcast_at;
+    delete (mem as any).reminder_sent;
+  }
+
+  if (env.DATABASE_URL) {
+    try {
+      await query(
+        `UPDATE orders SET status = 'pending', driver_id = NULL, note = $1 WHERE id = $2;`,
+        [cleanNote, orderId]
+      );
+    } catch {
+      // fallback
+    }
+  }
+
+  await clearBidsByOrderId(orderId);
+  return order;
+}
+
+/**
+ * 查詢乘客目前所有進行中的「預約單」列表（供 1:1 OA「我的預約」查詢）
+ */
+export async function getActiveReservationOrdersByCustomerId(
+  customerId: string,
+  now: Date = new Date()
+): Promise<Order[]> {
+  const allActive = await getActiveOrdersByCustomerId(customerId);
+  const reservations = allActive.filter((o) => isReservationOrder(o, now));
+  return reservations.sort((a, b) => {
+    const tA = getScheduledDate(a, now)?.getTime() || 0;
+    const tB = getScheduledDate(b, now)?.getTime() || 0;
+    return tA - tB;
+  });
+}
+
+/**
+ * 查詢所有已超過 1 小時未按「我知道了」之預約單（供管理員查詢或重啟）
+ */
+export async function getUnacknowledgedReservationOrders(now: Date = new Date()): Promise<Order[]> {
+  const candidates: Order[] = [];
+
+  if (env.DATABASE_URL) {
+    try {
+      const res = await query<Order>(
+        `SELECT * FROM orders WHERE status = 'accepted' AND scheduled_time IS NOT NULL;`
+      );
+      for (const r of res.rows) {
+        if (canAdminReopenUnacknowledgedReservation(r, now)) {
+          candidates.push(r);
+        }
+      }
+    } catch {}
+  }
+
+  for (const order of memoryOrders.values()) {
+    if (canAdminReopenUnacknowledgedReservation(order, now)) {
+      if (!candidates.some((c) => c.id === order.id)) {
+        candidates.push(order);
+      }
+    }
+  }
+
+  return candidates;
+}
+
+/**
+ * 判斷乘客是否提供了「詳細下車地址」
+ * - 若為空白、佔位字眼（如：上車後說明、未定），或僅有廣泛縣市/行政區名稱（如：台北市、信義區、新北市板橋區）而無路名/地標，視為無詳細下車地址
+ */
+export function isDetailedDropoffAddress(dropoffAddress?: string | null): boolean {
+  if (!dropoffAddress || typeof dropoffAddress !== 'string') return false;
+  const trimmed = dropoffAddress.trim();
+  if (!trimmed) return false;
+
+  if (
+    /^(無|未填|未定|待定|未知|不確定|免填|上車後說明|乘客上車後說明|乘客指定地點|上車告知|上車再說|車上說|車上告知|司機決定|隨便)$/i.test(
+      trimmed
+    )
+  ) {
+    return false;
+  }
+
+  // 移除純縣市、純行政區與籠統詞彙後，檢查是否仍有具體路名、門牌或地標名稱
+  const stripped = trimmed
+    .replace(
+      /([台臺]北市|新北市|桃園市|基隆市|新竹市|新竹縣|[台臺]中市|[台臺]南市|高雄市|[台臺]北|新北|桃園|基隆|新竹|[台臺]中|[台臺]南|高雄)/g,
+      ''
+    )
+    .replace(
+      /(信義|大安|中山|松山|內湖|士林|北投|萬華|中正|大同|文山|南港|板橋|中和|永和|新莊|三重|新店|土城|蘆洲|汐止|淡水|林口|八里|五股|泰山|樹林|鶯歌|三峽|瑞芳|龜山|蘆竹|大園|中壢|平鎮|八德|楊梅|龍潭)[區鄉鎮市]?/g,
+      ''
+    )
+    .replace(/(市區|附近|周邊|週邊|一帶)/g, '')
+    .trim();
+
+  if (!stripped) return false;
+  return true;
+}
+
+/**
+ * 計算訂單預設車資金額
+ * - 若使用者沒有詳細下車地址，回傳 null（接單不顯示金額，待司機回報下車時必填）
+ * - 若有詳細下車地址且已有 fare 則使用 fare，否則依里程估算
+ */
+export function getOrderDefaultFare(order: {
+  dropoff_address?: string | null;
+  fare?: number | string | null;
+  distance_km?: number | string | null;
+}): number | null {
+  if (!isDetailedDropoffAddress(order.dropoff_address)) {
+    return null;
+  }
+  const f = Number(order.fare);
+  if (f && !isNaN(f) && f > 0) {
+    return Math.round(f);
+  }
+  const d = Number(order.distance_km);
+  if (d && !isNaN(d) && d > 0) {
+    return Math.round(60 + d * 20);
+  }
+  return null;
+}
+
+/**
+ * 確認或調整訂單金額並正式結單 (status = 'done')
+ * 若訂單無詳細下車地址且未傳入有效 finalFare，將回傳 null（要求司機必填金額）
+ */
+export async function completeOrderWithFare(
+  orderId: string,
+  finalFare?: number | null,
+  adjustNote?: string | null
+): Promise<Order | null> {
+  const order = await getOrderById(orderId);
+  if (!order) return null;
+
+  const resolvedFare =
+    finalFare !== undefined && finalFare !== null && !isNaN(Number(finalFare)) && Number(finalFare) > 0
+      ? Math.round(Number(finalFare))
+      : getOrderDefaultFare(order);
+
+  if (resolvedFare === null || resolvedFare <= 0) {
+    return null;
+  }
+
+  const trimmedNote = adjustNote?.trim() || '';
+  const baseNote = (order.note || '').replace(/\[金額調整備註:[^\]]*\]/g, '').trim();
+  const nextNote = trimmedNote
+    ? `${baseNote} [金額調整備註: ${trimmedNote}]`.trim()
+    : baseNote;
+
+  const now = new Date();
+  order.status = 'done';
+  order.completed_at = now;
+  order.fare = resolvedFare;
+  order.note = nextNote;
+  if (trimmedNote) {
+    (order as any).adjust_note = trimmedNote;
+  }
+
+  const mem = memoryOrders.get(orderId);
+  if (mem) {
+    mem.status = 'done';
+    mem.completed_at = now;
+    mem.fare = resolvedFare;
+    mem.note = nextNote;
+    if (trimmedNote) {
+      (mem as any).adjust_note = trimmedNote;
+    }
+  }
+
+  if (env.DATABASE_URL) {
+    try {
+      await query(
+        `UPDATE orders SET status = 'done', completed_at = now(), fare = $1, note = $2 WHERE id = $3;`,
+        [resolvedFare, nextNote, orderId]
+      );
+    } catch {
+      // fallback
+    }
+  }
+
+  return order;
 }

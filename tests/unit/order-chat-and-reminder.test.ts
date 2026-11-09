@@ -9,11 +9,18 @@ import {
 import {
   createOrder,
   getActiveOrderByCustomerId,
+  getActiveReservationOrdersByCustomerId,
   getScheduledOrdersByDriverId,
   getActiveOrderByDriverId,
+  markReservationAwaitingDriverAck,
+  acknowledgeReservationOrder,
   memoryOrders,
 } from '../../src/db/queries/orders.js';
-import { checkAndSendReservationReminders } from '../../src/services/reservation-reminder.js';
+import {
+  checkAndSendReservationReminders,
+  processReservationLifecycle,
+  reopenReservationOrder,
+} from '../../src/services/reservation-reminder.js';
 
 describe('Order Chat & Reservation Reminder Tests', () => {
   beforeEach(() => {
@@ -214,6 +221,128 @@ describe('Order Chat & Reservation Reminder Tests', () => {
       const activeOrder = await getActiveOrderByCustomerId(custId);
       expect(activeOrder).not.toBeNull();
       expect(activeOrder?.id).toBe('ord-instant-now');
+    });
+
+    it('預約單排程邏輯：前 10 小時跳出、每 30 分鐘重跳一次、出發前 1 小時無人接單則轉為 no_driver', async () => {
+      const scheduledTime = new Date(Date.now() + 12 * 60 * 60 * 1000);
+      const order = await createOrder({
+        id: 'ord-lifecycle-10h',
+        customer_id: 'U_cust_10h',
+        pickup_address: '松山機場',
+        pickup_lat: 25.063,
+        pickup_lng: 121.551,
+        scheduled_time: scheduledTime,
+        note: '預約時間: 2026/11/03 10:00',
+      });
+
+      // 1. 距離上車 11 小時 (> 10h)：不廣播
+      const res11h = await processReservationLifecycle(
+        new Date(scheduledTime.getTime() - 11 * 60 * 60 * 1000)
+      );
+      expect(res11h.broadcastedCount).toBe(0);
+      expect(order.status).toBe('pending');
+
+      // 2. 距離上車 10 小時：首次跳出廣播並進入 dispatching
+      const tMinus10h = new Date(scheduledTime.getTime() - 10 * 60 * 60 * 1000);
+      const res10h = await processReservationLifecycle(tMinus10h);
+      expect(res10h.broadcastedCount).toBe(1);
+      expect(order.status).toBe('dispatching');
+
+      // 3. 15 分鐘後 (< 30 分鐘)：不重複跳出
+      const res9h45m = await processReservationLifecycle(
+        new Date(tMinus10h.getTime() + 15 * 60 * 1000)
+      );
+      expect(res9h45m.broadcastedCount).toBe(0);
+
+      // 4. 30 分鐘後：無人接單且未取消，再次跳出廣播
+      const res9h30m = await processReservationLifecycle(
+        new Date(tMinus10h.getTime() + 30 * 60 * 1000)
+      );
+      expect(res9h30m.broadcastedCount).toBe(1);
+
+      // 5. 出發前 1 小時仍無司機接單：轉為 no_driver 並通知客人
+      const res1h = await processReservationLifecycle(
+        new Date(scheduledTime.getTime() - 60 * 60 * 1000)
+      );
+      expect(res1h.cutoffNoDriverCount).toBe(1);
+      expect(order.status).toBe('no_driver');
+    });
+
+    it('司機接預約單後須按「我知道了」才於前 1 小時發送出車通知；逾 1 小時未按則管理員可重啟找其他司機', async () => {
+      const now = new Date();
+      const scheduledTime = new Date(now.getTime() + 3 * 60 * 60 * 1000); // 3 小時後出發
+      const order = await createOrder({
+        id: 'ord-ack-reopen',
+        customer_id: 'U_cust_ack',
+        pickup_address: '台北車站',
+        pickup_lat: 25.047,
+        pickup_lng: 121.517,
+        scheduled_time: scheduledTime,
+        note: '預約時間: 2026/11/02 18:00',
+      });
+      order.driver_id = 'D_driver_unacked';
+      order.status = 'accepted';
+
+      const acceptedTime = new Date(now.getTime());
+      await markReservationAwaitingDriverAck(order.id, acceptedTime);
+
+      // 未滿 1 小時前，管理員重啟應被拒絕
+      const earlyReopen = await reopenReservationOrder(order.id, {
+        now: new Date(acceptedTime.getTime() + 20 * 60 * 1000),
+      });
+      expect(earlyReopen.success).toBe(false);
+
+      // 超過 1 小時未按「我知道了」，管理員可成功重啟找其他司機
+      const validReopen = await reopenReservationOrder(order.id, {
+        now: new Date(acceptedTime.getTime() + 61 * 60 * 1000),
+      });
+      expect(validReopen.success).toBe(true);
+      expect(order.driver_id).toBeNull();
+      expect(order.status).toBe('dispatching');
+
+      // 第二位司機接單並按下「我知道了」
+      order.driver_id = 'D_driver_acked';
+      order.status = 'accepted';
+      await markReservationAwaitingDriverAck(order.id, now);
+      const ackRes = await acknowledgeReservationOrder(order.id, 'D_driver_acked', now);
+      expect(ackRes.success).toBe(true);
+
+      // 已按「我知道了」後，管理員不可再重啟
+      const blockedReopen = await reopenReservationOrder(order.id, {
+        now: new Date(now.getTime() + 90 * 60 * 1000),
+      });
+      expect(blockedReopen.success).toBe(false);
+
+      // 當時間進入預約單前 1 小時（例如出發前 45 分鐘），系統自動向該司機 1:1 OA 發送出車通知與訂單卡片
+      const tMinus45m = new Date(scheduledTime.getTime() - 45 * 60 * 1000);
+      const remindersSent = await checkAndSendReservationReminders(tMinus45m);
+      expect(remindersSent).toBe(1);
+      expect(order.note).toContain('[REMINDER_SENT]');
+    });
+
+    it('getActiveReservationOrdersByCustomerId 應僅回傳客人正在進行中的預約單（「我的預約」查詢）', async () => {
+      const custId = 'U_my_reservations';
+      await createOrder({
+        id: 'ord-instant-only',
+        customer_id: custId,
+        pickup_address: '即時單上車點',
+        pickup_lat: 25.033,
+        pickup_lng: 121.551,
+      });
+
+      await createOrder({
+        id: 'ord-my-res-1',
+        customer_id: custId,
+        pickup_address: '預約單上車點',
+        pickup_lat: 25.047,
+        pickup_lng: 121.517,
+        scheduled_time: new Date(Date.now() + 5 * 60 * 60 * 1000),
+        note: '預約時間: 2026/11/03 09:00',
+      });
+
+      const myReservations = await getActiveReservationOrdersByCustomerId(custId);
+      expect(myReservations).toHaveLength(1);
+      expect(myReservations[0].id).toBe('ord-my-res-1');
     });
   });
 });
