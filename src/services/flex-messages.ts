@@ -851,11 +851,11 @@ export function createDriverOrderCardFlexMessage(params: {
   etaMinutes: number;
   scheduledTimeText?: string;
 }): messagingApi.FlexMessage {
-  // 1. 前往上車地點：起點不填（Google Maps 會自動抓取司機目前手機定位），終點為乘客上車點
-  const pickupMapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(params.pickupAddress)}&travelmode=driving`;
-  // 2. 開啟下車地點定位：起點為乘客上車點，終點為乘客下車目的地
+  // 1. 前往上車地點：起點不填（Google Maps 會自動抓取司機目前手機定位），終點為乘客上車點（加上 openExternalBrowser=1 避免 LINE 內嵌瀏覽器無法定位）
+  const pickupMapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(params.pickupAddress)}&travelmode=driving&openExternalBrowser=1`;
+  // 2. 開啟下車地點定位：起點為乘客上車點，終點為乘客下車目的地（加上 openExternalBrowser=1）
   const dropoffMapUrl = params.dropoffAddress
-    ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(params.pickupAddress)}&destination=${encodeURIComponent(params.dropoffAddress)}&travelmode=driving`
+    ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(params.pickupAddress)}&destination=${encodeURIComponent(params.dropoffAddress)}&travelmode=driving&openExternalBrowser=1`
     : null;
 
   const container: messagingApi.FlexBubble = {
@@ -1257,7 +1257,7 @@ export function createDriverReservationOrderCardFlexMessage(params: {
   passengerCount?: number;
   estimatedFare?: number | null;
 }): messagingApi.FlexMessage {
-  const pickupMapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(params.pickupAddress)}&travelmode=driving`;
+  const pickupMapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(params.pickupAddress)}&travelmode=driving&openExternalBrowser=1`;
 
   const container: messagingApi.FlexBubble = {
     type: 'bubble',

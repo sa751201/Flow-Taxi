@@ -1187,7 +1187,7 @@
         const timeMatch = ord.note?.match(/預約時間:\s*([^\[]+)/);
         const timeText = timeMatch ? timeMatch[1].trim() : (ord.scheduled_time ? new Date(ord.scheduled_time).toLocaleString('zh-TW', { hour12: false }) : '預約時間');
         const fareText = ord.fare && Number(ord.fare) > 0 ? `$${ord.fare}` : '';
-        const mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ord.pickup_address)}&travelmode=driving`;
+        const mapUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ord.pickup_address)}&travelmode=driving&openExternalBrowser=1`;
 
         return `
           <div class="rounded-2xl bg-white p-4 shadow-sm border border-blue-200/80 space-y-3 relative overflow-hidden">
@@ -1345,7 +1345,7 @@
     }
 
     if (extNavBtn) {
-      extNavBtn.href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(targetAddr || '台北車站')}&travelmode=driving`;
+      extNavBtn.href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(targetAddr || '台北車站')}&travelmode=driving&openExternalBrowser=1`;
       if (extNavText) {
         extNavText.textContent = isPickedUp
           ? `開啟 Google Maps 語音導航（前往下車地點：${order.dropoff_address || '目的地'}）`

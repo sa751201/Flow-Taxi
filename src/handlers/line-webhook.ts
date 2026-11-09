@@ -310,24 +310,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
             }
           }
 
-          // 2. 推播給乘客抵達與感謝通知
-          if (completedOrder.customer_id) {
-            try {
-              await lineClient.pushMessage({
-                to: completedOrder.customer_id,
-                messages: [
-                  {
-                    type: 'text',
-                    text: `🏁 您已順利抵達目的地，感謝搭乘！（本趟車資：$${finalFare}）\n請記得攜帶隨身物品，祝您有美好的一天，歡迎再次預約用車！😊\n${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`,
-                  },
-                ],
-              });
-            } catch (custErr: any) {
-              console.warn('[Confirm Fare Complete] 推播乘客結單失敗:', custErr.message);
-            }
-          }
-
-          // 3. 回覆司機 1:1 OA 結單確認（若偵測為短程單，附上短程單提示 Flex Message 並發送管理群組核實 Flex Message）
+          // 2. 回覆司機 1:1 OA 結單確認（依需求，結單金額回報無須推播客人的 1:1 OA；若偵測為短程單，附上短程單提示 Flex Message 並發送管理群組核實 Flex Message）
           const replyMessages: messagingApi.Message[] = [
             {
               type: 'text',
@@ -1049,25 +1032,7 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
             }
           }
 
-          // 2. 1:1 OA 傳給乘客抵達與感謝通知
-          if (activeOrder.customer_id) {
-            try {
-              await lineClient.pushMessage({
-                to: activeOrder.customer_id,
-                messages: [
-                  {
-                    type: 'text',
-                    text: `🏁 您已順利抵達目的地，感謝搭乘！（本趟車資：$${finalFare}）\n請記得攜帶隨身物品，祝您有美好的一天，歡迎再次預約用車！😊\n${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`,
-                  },
-                ],
-              });
-              console.log(`[Trip Completed] ✅ 成功向乘客發送下車結單感謝訊息`);
-            } catch (dropErr: any) {
-              console.warn('[Trip Completed] 推播乘客結單失敗:', dropErr.message);
-            }
-          }
-
-          // 3. 1:1 回覆司機結單確認（若為短程單，附上短程單提示 Flex Message 並發送管理群組核實 Flex Message）
+          // 2. 1:1 回覆司機結單確認（依需求，結單金額回報無須推播客人的 1:1 OA；若為短程單，附上短程單提示 Flex Message 並發送管理群組核實 Flex Message）
           const replyMessages: messagingApi.Message[] = [
             {
               type: 'text',

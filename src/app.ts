@@ -700,18 +700,6 @@ app.post('/api/driver/trip-action', async (req, res) => {
         });
       }
 
-      const fareInfo = `\n💰 本次車資：$${finalFare} 元`;
-      if (customerId && customerId !== 'UNKNOWN_CUSTOMER') {
-        await lineClient.pushMessage({
-          to: customerId,
-          messages: [
-            {
-              type: 'text',
-              text: `🏁 您已順利抵達目的地，感謝搭乘！${fareInfo}\n請記得攜帶隨身物品，歡迎再次預約用車！😊`,
-            },
-          ],
-        });
-      }
       return res.json({ success: true, message: '行程已圓滿結單並回報至群組！辛苦司機了！' });
     }
 
@@ -983,24 +971,7 @@ app.post('/api/orders/complete-with-fare', async (req, res) => {
       }
     }
 
-    // 2. 1:1 OA 通知乘客抵達與結單
-    if (completedOrder.customer_id && completedOrder.customer_id !== 'UNKNOWN_CUSTOMER') {
-      try {
-        await lineClient.pushMessage({
-          to: completedOrder.customer_id,
-          messages: [
-            {
-              type: 'text',
-              text: `🏁 您已順利抵達目的地，感謝搭乘！（本趟車資：$${finalFare}）\n請記得攜帶隨身物品，祝您有美好的一天，歡迎再次預約用車！😊\n${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`,
-            },
-          ],
-        });
-      } catch (cErr: any) {
-        console.warn('[Complete With Fare] 推播乘客結單失敗:', cErr.message);
-      }
-    }
-
-    // 3. 1:1 OA 通知司機結單完成（若為短程單，一併發送短程單 Flex Message 給司機，並發送核實 Flex Message 到管理群組）
+    // 2. 1:1 OA 通知司機結單完成（依需求，結單金額回報無須推播客人的 1:1 OA；若為短程單，一併發送短程單 Flex Message 給司機，並發送核實 Flex Message 到管理群組）
     if (shortTripEval.isShortTrip && shortTripEval.dropoffAddress && shortTripEval.distanceKm !== null) {
       const { driverFlex } = await notifyShortTripForVerification({
         order: completedOrder,
