@@ -32,6 +32,8 @@
 
   let nearbyOrders = [];
   let knownOrderIds = new Set();
+  let isDriverOnline = localStorage.getItem('flow_taxi_driver_online') !== 'false';
+  let currentOrderFilter = 'all'; // 'all' | 'instant' | 'scheduled'
   let activeTrip = null;
   let tripStage = 'accepted';
   let pollTimer = null;
@@ -248,27 +250,38 @@
     if (drawerTitle) drawerTitle.textContent = `${name} (司機中心)`;
     if (drawerAvatar) drawerAvatar.textContent = initial;
 
-    if (currentDriver.isVerified) {
-      if (statusOnline) statusOnline.textContent = '營業中';
+    if (!isDriverOnline) {
+      if (statusOnline) statusOnline.textContent = '已下線';
       if (statusBadgeWrap) {
-        statusBadgeWrap.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-xs font-black shadow-sm';
+        statusBadgeWrap.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 text-xs font-bold shadow-sm';
+      }
+      if (statusDot) {
+        statusDot.className = 'w-2 h-2 rounded-full bg-slate-500';
+      }
+      if (avatarDot) {
+        avatarDot.className = 'absolute bottom-0 right-0 w-3 h-3 rounded-full bg-slate-500 ring-2 ring-slate-950';
+      }
+    } else if (currentDriver.isVerified) {
+      if (statusOnline) statusOnline.textContent = '在線上';
+      if (statusBadgeWrap) {
+        statusBadgeWrap.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-xs font-black shadow-sm group-hover:bg-emerald-500/30';
       }
       if (statusDot) {
         statusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-ping';
       }
       if (avatarDot) {
-        avatarDot.className = 'absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-[#0f172a]';
+        avatarDot.className = 'absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-slate-950';
       }
     } else {
-      if (statusOnline) statusOnline.textContent = '待命中';
+      if (statusOnline) statusOnline.textContent = '在線上';
       if (statusBadgeWrap) {
-        statusBadgeWrap.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-400 text-xs font-black shadow-sm';
+        statusBadgeWrap.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs font-black shadow-sm';
       }
       if (statusDot) {
         statusDot.className = 'w-2 h-2 rounded-full bg-amber-400';
       }
       if (avatarDot) {
-        avatarDot.className = 'absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-amber-500 ring-2 ring-[#0f172a]';
+        avatarDot.className = 'absolute bottom-0 right-0 w-3 h-3 rounded-full bg-amber-400 ring-2 ring-slate-950';
       }
     }
 
@@ -944,6 +957,10 @@
   }
 
   async function fetchNearbyOrders() {
+    if (!isDriverOnline) {
+      renderOrdersList([]);
+      return;
+    }
     try {
       const url = `/api/dispatch/nearby-orders?lat=${currentGps.lat}&lng=${currentGps.lng}&radiusKm=1.5`;
       const res = await fetch(url);
@@ -1040,17 +1057,33 @@
   }
 
   // -------------------------------------------------------------
-  // 7. 渲染訂單清單 (結合成一區：無訂單時呈現 60 秒媒合派單圖示，有訂單時呈現訂單資訊)
+  // 7. 渲染可接單清單 (依即時/預約篩選，呈現導航與接單按鈕，支援線上/線下狀態)
   // -------------------------------------------------------------
+  function formatWaitTime(isoStr) {
+    if (!isoStr) return '剛剛';
+    try {
+      const diffMs = Date.now() - new Date(isoStr).getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      if (diffMins <= 0) return '剛剛';
+      if (diffMins < 60) return `${diffMins} 分鐘前`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `${diffHours} 小時前`;
+      return `${Math.floor(diffHours / 24)} 天前`;
+    } catch (e) {
+      return '剛剛';
+    }
+  }
+
   function renderOrdersList(orders) {
     const container = document.getElementById('orders-list-container');
     const heroEmptyBanner = document.getElementById('hero-radar-empty-banner');
-    const ordersHeader = document.getElementById('instant-orders-header');
+    const offlineState = document.getElementById('orders-offline-state');
     const countBadge = document.getElementById('orders-count-badge');
 
-    if (!orders || orders.length === 0) {
-      if (heroEmptyBanner) heroEmptyBanner.classList.remove('hidden');
-      if (ordersHeader) ordersHeader.classList.add('hidden');
+    // 1. 如果司機處於「已下線」狀態
+    if (!isDriverOnline) {
+      if (offlineState) offlineState.classList.remove('hidden');
+      if (heroEmptyBanner) heroEmptyBanner.classList.add('hidden');
       if (container) {
         container.classList.add('hidden');
         container.innerHTML = '';
@@ -1059,51 +1092,115 @@
       return;
     }
 
-    if (heroEmptyBanner) heroEmptyBanner.classList.add('hidden');
-    if (ordersHeader) ordersHeader.classList.remove('hidden');
-    if (countBadge) countBadge.textContent = orders.length;
+    if (offlineState) offlineState.classList.add('hidden');
 
+    // 2. 依照分類篩選 (全部 / ⚡ 即時 / 📅 預約)
+    const list = Array.isArray(orders) ? orders : [];
+    const filtered = list.filter((ord) => {
+      const isSched = Boolean(ord.note && ord.note.includes('預約'));
+      if (currentOrderFilter === 'instant') return !isSched;
+      if (currentOrderFilter === 'scheduled') return isSched;
+      return true;
+    });
+
+    if (countBadge) countBadge.textContent = filtered.length;
+
+    // 3. 若無符合訂單，顯示輕量雷達掃描卡片
+    if (filtered.length === 0) {
+      if (heroEmptyBanner) heroEmptyBanner.classList.remove('hidden');
+      if (container) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+      }
+      return;
+    }
+
+    // 4. 有符合訂單，渲染精緻可接單卡片清單 (參照設計圖風格)
+    if (heroEmptyBanner) heroEmptyBanner.classList.add('hidden');
     if (container) {
       container.classList.remove('hidden');
-      container.innerHTML = orders.map((ord) => {
-        const distText = ord.distance_km ? `${ord.distance_km.toFixed(1)} km` : '1.2 km';
-        const timeStr = ord.created_at ? formatTime(ord.created_at) : '剛剛';
-        const scheduledBadge = ord.note && ord.note.includes('預約') ? '📅 預約' : '⚡ 即時';
+      container.innerHTML = filtered.map((ord) => {
+        const isScheduled = Boolean(ord.note && ord.note.includes('預約'));
+        const tagText = isScheduled ? '📅 預約' : '⚡ 即時';
+        const tagClass = isScheduled
+          ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+
+        // 司機到上車點距離
+        const distNum = ord.distance_to_driver_km != null ? Number(ord.distance_to_driver_km) : (ord.distance_km != null ? Number(ord.distance_km) : 1.2);
+        const distText = `${distNum.toFixed(1)} 公里`;
+
+        const waitTime = formatWaitTime(ord.created_at);
+        const shortId = (ord.id || '').slice(0, 7);
+
+        // 全程路線距離與預估車資
+        const routeDistText = ord.distance_km && ord.distance_to_driver_km ? `全程約 ${Number(ord.distance_km).toFixed(1)} 公里` : '';
+        const fareText = ord.fare ? `$${ord.fare}` : (ord.fare_type === 'fixed' ? '一口價' : '跳錶計費');
+
+        // 乘客備註 (排除內部標記)
+        let noteText = (ord.note || '').replace(/\[DRIVER_ARRIVED\]/g, '').replace(/\[SHORT_TRIP_FLAGGED\]/g, '').trim();
+
+        // 導航與接單連結 (包含 openExternalBrowser=1 避免 LINE 內置瀏覽器導航白畫面)
+        const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ord.pickup_address || '')}&travelmode=driving&openExternalBrowser=1`;
+        const bidUrl = `/driver/bid?orderId=${encodeURIComponent(ord.id)}&source=web`;
 
         return `
-          <div class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition flex items-center justify-between gap-3">
-            <div class="flex items-center gap-3 min-w-0">
-              <div class="w-11 h-11 rounded-full bg-emerald-50 text-emerald-700 font-extrabold text-base flex items-center justify-center shrink-0 border border-emerald-200/60">
-                🚖
+          <div class="rounded-2xl bg-[#0f172a] text-white p-4 shadow-lg border border-slate-800/90 space-y-3 transition hover:border-slate-700">
+            <!-- 頂部資訊：類別、距離與建立時間、單號 -->
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-extrabold px-2.5 py-0.5 rounded-full ${tagClass}">
+                  ${tagText}
+                </span>
+                <span class="text-sm font-black text-amber-400">
+                  距離 ${distText}
+                </span>
               </div>
-              <div class="min-w-0">
-                <div class="flex items-center gap-2">
-                  <span class="text-xs font-bold text-slate-900 truncate">乘客叫車</span>
-                  <span class="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200/50">${scheduledBadge}</span>
-                  <span class="text-[11px] text-slate-400">${timeStr}</span>
+              <div class="flex items-center gap-1.5 text-[11px] text-slate-400">
+                <span>待接單 ${waitTime}</span>
+                <span class="font-mono text-slate-500 font-bold">#${shortId}</span>
+              </div>
+            </div>
+
+            <!-- 上下車地點 -->
+            <div class="space-y-2 text-sm pt-0.5">
+              <div class="flex items-start gap-2.5">
+                <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-xs font-black flex items-center justify-center shrink-0 mt-0.5">上</span>
+                <div class="min-w-0 flex-1">
+                  <p class="font-extrabold text-white text-sm leading-snug break-words">${escapeHtml(ord.pickup_address || '未填寫上車地點')}</p>
                 </div>
-                <div class="mt-1 space-y-0.5">
-                  <p class="text-xs font-bold text-slate-800 truncate flex items-center gap-1">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-                    ${escapeHtml(ord.pickup_address || '上車地點')}
-                  </p>
-                  <p class="text-[11px] text-slate-500 truncate flex items-center gap-1">
-                    <span class="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span>
-                    ${escapeHtml(ord.dropoff_address || '下車定點')}
-                  </p>
-                </div>
-                <div class="flex items-center gap-2 mt-1.5 text-[11px] font-semibold text-emerald-600">
-                  <span>📍 距您約 ${distText}</span>
-                  <span>· 30秒媒合</span>
+              </div>
+              <div class="flex items-start gap-2.5">
+                <span class="w-5 h-5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40 text-xs font-black flex items-center justify-center shrink-0 mt-0.5">下</span>
+                <div class="min-w-0 flex-1">
+                  <p class="font-bold text-slate-300 text-sm leading-snug break-words">${escapeHtml(ord.dropoff_address || '乘客上車後說明')}</p>
                 </div>
               </div>
             </div>
 
-            <div class="shrink-0">
-              <a href="/driver/bid?orderId=${ord.id}&source=web"
-                 class="inline-block px-4 py-2 rounded-full border border-slate-300 hover:border-slate-900 bg-white hover:bg-slate-900 text-slate-900 hover:text-white font-extrabold text-xs shadow-sm transition active:scale-95">
-                搶單
-              </a>
+            <!-- 底部：行程資訊與快速操作 (導航 / 接單) -->
+            <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-3">
+              <div class="min-w-0 flex-1 text-xs text-slate-400 space-y-0.5">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  ${routeDistText ? `<span class="text-slate-300 font-medium">${routeDistText}</span><span>·</span>` : ''}
+                  <span class="font-black text-amber-400">${fareText}</span>
+                  ${ord.passengers ? `<span>· 乘客 ${ord.passengers} 人</span>` : ''}
+                </div>
+                ${noteText ? `<p class="text-[11px] text-slate-400 truncate">備註：${escapeHtml(noteText)}</p>` : ''}
+              </div>
+
+              <div class="flex items-center gap-2 shrink-0">
+                <a href="${navUrl}" target="_blank" rel="noopener noreferrer"
+                   class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition flex items-center gap-1 active:scale-95 shadow-sm"
+                   title="以 Google Maps 導航前往上車地點">
+                  <svg class="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+                  <span>導航</span>
+                </a>
+                <a href="${bidUrl}"
+                   class="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs transition flex items-center gap-1 active:scale-95 shadow-md shadow-emerald-500/20">
+                  <span>⚡ 接單</span>
+                </a>
+              </div>
             </div>
           </div>
         `;
@@ -1731,6 +1828,38 @@
   // 11. 監聽與綁定事件
   // -------------------------------------------------------------
   function setupDomListeners() {
+    // 司機在線上 / 已下線切換按鈕
+    function toggleDriverOnlineStatus() {
+      isDriverOnline = !isDriverOnline;
+      localStorage.setItem('flow_taxi_driver_online', isDriverOnline ? 'true' : 'false');
+      updateDriverUi();
+      if (isDriverOnline) {
+        fetchNearbyOrders();
+      } else {
+        renderOrdersList([]);
+      }
+    }
+
+    document.getElementById('btn-toggle-online-status')?.addEventListener('click', toggleDriverOnlineStatus);
+    document.getElementById('btn-orders-go-online')?.addEventListener('click', toggleDriverOnlineStatus);
+
+    // 可接單類別篩選 (全部 / ⚡ 即時 / 📅 預約)
+    const filterTabs = document.querySelectorAll('.order-filter-tab');
+    filterTabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const filter = tab.getAttribute('data-filter') || 'all';
+        currentOrderFilter = filter;
+        filterTabs.forEach((t) => {
+          if (t === tab) {
+            t.className = 'order-filter-tab px-2.5 py-1 rounded-lg transition active bg-white text-slate-900 shadow-sm font-bold';
+          } else {
+            t.className = 'order-filter-tab px-2.5 py-1 rounded-lg transition text-slate-600 hover:text-slate-900 font-bold';
+          }
+        });
+        renderOrdersList(nearbyOrders);
+      });
+    });
+
     // 底部導覽列
     document.getElementById('nav-btn-dashboard')?.addEventListener('click', () => switchView('dashboard'));
     document.getElementById('nav-btn-map')?.addEventListener('click', () => switchView('map'));
