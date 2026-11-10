@@ -739,7 +739,7 @@
 
     const isValidCoord = (lat, lng) => typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng) && lat > 15 && lng > 100;
 
-    if (!isValidCoord(targetLat, targetLng) && targetAddress) {
+    if (!isValidCoord(targetLat, targetLng) && targetAddress && !isDropoffMissing(targetAddress)) {
       console.log(`[Tracking Map] 訂單 ${order.id} 尚無座標，嘗試即時查詢地理座標: "${targetAddress}"`);
       fetchGeocode(targetAddress).then((geo) => {
         if (geo && isValidCoord(geo.lat, geo.lng)) {
@@ -1233,13 +1233,7 @@
         tripStage = activeTrip.status || 'accepted';
 
         if (reminder) {
-          reminder.classList.remove('hidden');
-          if (reminderText) {
-            const isPickedUp = (tripStage === 'picked_up');
-            reminderText.textContent = isPickedUp
-              ? `前往下車點：${activeTrip.dropoff_address || '目的地'}`
-              : `前往上車點：${activeTrip.pickup_address || '上車地點'}`;
-          }
+          reminder.classList.add('hidden');
         }
         renderActiveTripUi(activeTrip);
         renderActiveTripCard(activeTrip);
@@ -1337,6 +1331,110 @@
     }
   }
 
+  // 判斷下車地址是否未填或為預設占位字
+  function isDropoffMissing(addr) {
+    if (!addr) return true;
+    const clean = addr.trim();
+    return clean === '' || clean === '未提供下車地址' || clean === '乘客上車後說明' || clean === '未填' || clean === '---' || clean === '載入中...';
+  }
+
+  // 彈出輸入框請司機補填乘客下車地點
+  function openDropoffInputModal(onConfirmCallback) {
+    const modal = document.getElementById('dropoff-input-modal');
+    const input = document.getElementById('input-manual-dropoff');
+    const err = document.getElementById('dropoff-modal-error');
+    if (!modal) return;
+    if (err) err.classList.add('hidden');
+    if (input) {
+      input.value = '';
+      setTimeout(() => input.focus(), 150);
+    }
+    modal.classList.remove('hidden');
+
+    const confirmBtn = document.getElementById('btn-confirm-dropoff-modal');
+    const cancelBtn = document.getElementById('btn-cancel-dropoff-modal');
+
+    const handleConfirm = async () => {
+      const val = input ? input.value.trim() : '';
+      if (!val) {
+        if (err) {
+          err.textContent = '請輸入下車地點！';
+          err.classList.remove('hidden');
+        }
+        return;
+      }
+      confirmBtn.disabled = true;
+      const originalHtml = confirmBtn.innerHTML;
+      confirmBtn.innerHTML = '<span>儲存並解析中...</span>';
+      try {
+        if (activeTrip) {
+          activeTrip.dropoff_address = val;
+          const res = await fetch(`/api/driver/order/${encodeURIComponent(activeTrip.id)}/destination`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dropoffAddress: val }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.lat && data.lng) {
+              activeTrip.dropoff_lat = data.lat;
+              activeTrip.dropoff_lng = data.lng;
+            }
+          }
+        }
+        modal.classList.add('hidden');
+        if (typeof onConfirmCallback === 'function') {
+          onConfirmCallback(val);
+        }
+      } catch (e) {
+        console.warn('[Driver App] 更新下車地點失敗:', e);
+        modal.classList.add('hidden');
+        if (typeof onConfirmCallback === 'function') {
+          onConfirmCallback(val);
+        }
+      } finally {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = originalHtml;
+      }
+    };
+
+    const handleCancel = () => {
+      modal.classList.add('hidden');
+    };
+
+    if (confirmBtn) confirmBtn.onclick = handleConfirm;
+    if (cancelBtn) cancelBtn.onclick = handleCancel;
+  }
+
+  // 全螢幕導航點擊處理：接單時導航至上車地點；客上後導航至下車點（若未填則彈窗輸入）
+  function handleFullScreenNav() {
+    if (!activeTrip) {
+      switchView('dashboard');
+      return;
+    }
+
+    const isPickedUp = (tripStage === 'picked_up');
+    if (!isPickedUp) {
+      // 1. 一開始接單時（或已到點等待乘客時）：點擊進入地圖，導航至上車地點
+      switchView('tracking');
+      renderActiveTripUi(activeTrip);
+    } else {
+      // 2. 如果回報乘客上車，點開後帶入下車地址，如果客人沒有填，跳出輸入框請司機輸入
+      if (isDropoffMissing(activeTrip.dropoff_address)) {
+        openDropoffInputModal((newDropoff) => {
+          activeTrip.dropoff_address = newDropoff;
+          renderActiveTripCard(activeTrip);
+          renderActiveTripUi(activeTrip);
+          switchView('tracking');
+        });
+      } else {
+        // 客人有填，直接帶入下車地址並切換至地圖導航
+        switchView('tracking');
+        renderActiveTripUi(activeTrip);
+      }
+    }
+  }
+
   function renderActiveTripCard(order) {
     const card = document.getElementById('active-trip-card');
     if (!card || !order) return;
@@ -1357,7 +1455,24 @@
 
     if (orderIdEl) orderIdEl.textContent = `#${order.id ? order.id.slice(-4) : '----'}`;
     if (pickupEl) pickupEl.textContent = order.pickup_address || '未提供上車地址';
-    if (dropoffEl) dropoffEl.textContent = order.dropoff_address || '未提供下車地址';
+
+    if (dropoffEl) {
+      const isMissing = isDropoffMissing(order.dropoff_address);
+      if (isMissing) {
+        dropoffEl.innerHTML = `<span class="text-amber-300 font-bold hover:underline cursor-pointer flex items-center gap-1" title="點擊輸入下車地點"><span>未提供下車地址（點此輸入）</span><span class="text-xs">✏️</span></span>`;
+        dropoffEl.onclick = () => {
+          openDropoffInputModal((newDropoff) => {
+            order.dropoff_address = newDropoff;
+            renderActiveTripCard(order);
+            renderActiveTripUi(order);
+          });
+        };
+      } else {
+        dropoffEl.textContent = order.dropoff_address;
+        dropoffEl.onclick = null;
+      }
+    }
+
     const passCount = order.passenger_count || order.passengers || 1;
     if (passengerEl) passengerEl.textContent = `乘客 ${passCount} 人`;
     if (fareEl) {
@@ -1395,9 +1510,7 @@
     }
 
     if (navBtn) {
-      navBtn.onclick = () => {
-        switchView('tracking');
-      };
+      navBtn.onclick = handleFullScreenNav;
     }
   }
 
@@ -1416,10 +1529,28 @@
     const step2Subtext = document.getElementById('trip-step2-subtext');
 
     if (pickupEl) pickupEl.textContent = order.pickup_address || '---';
-    if (dropoffEl) dropoffEl.textContent = order.dropoff_address || '---';
-    if (passengerName) passengerName.textContent = `乘客 (訂單 #${order.id.slice(-4)})`;
 
     const isPickedUp = (tripStage === 'picked_up');
+    const isMissing = isDropoffMissing(order.dropoff_address);
+
+    if (dropoffEl) {
+      if (isMissing) {
+        dropoffEl.innerHTML = `<span class="text-amber-600 font-bold hover:underline cursor-pointer flex items-center gap-1"><span>未填寫目的地（點此補填）</span><span>✏️</span></span>`;
+        dropoffEl.onclick = () => {
+          openDropoffInputModal((newDropoff) => {
+            order.dropoff_address = newDropoff;
+            renderActiveTripCard(order);
+            renderActiveTripUi(order);
+          });
+        };
+      } else {
+        dropoffEl.textContent = order.dropoff_address;
+        dropoffEl.onclick = null;
+      }
+    }
+
+    if (passengerName) passengerName.textContent = `乘客 (訂單 #${order.id.slice(-4)})`;
+
     const targetAddr = isPickedUp ? order.dropoff_address : order.pickup_address;
 
     if (headerTitle) {
@@ -1451,12 +1582,45 @@
       }
     }
 
+    // 支援在導航面板點擊下車區塊補填
+    const dropoffBox = document.getElementById('trip-step2-box');
+    if (dropoffBox) {
+      if (isPickedUp && isMissing) {
+        dropoffBox.classList.add('cursor-pointer', 'bg-amber-50/80', 'p-2', 'rounded-xl', 'border', 'border-amber-200');
+        dropoffBox.onclick = () => {
+          openDropoffInputModal((newDropoff) => {
+            order.dropoff_address = newDropoff;
+            renderActiveTripCard(order);
+            renderActiveTripUi(order);
+          });
+        };
+      } else {
+        dropoffBox.classList.remove('cursor-pointer', 'bg-amber-50/80', 'p-2', 'rounded-xl', 'border', 'border-amber-200');
+      }
+    }
+
     if (extNavBtn) {
-      extNavBtn.href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(targetAddr || '台北車站')}&travelmode=driving&openExternalBrowser=1`;
-      if (extNavText) {
-        extNavText.textContent = isPickedUp
-          ? `開啟 Google Maps 語音導航（前往下車地點：${order.dropoff_address || '目的地'}）`
-          : `開啟 Google Maps 語音導航（前往上車地點：${order.pickup_address || '上車地點'}）`;
+      if (isPickedUp && isMissing) {
+        extNavBtn.onclick = (e) => {
+          e.preventDefault();
+          openDropoffInputModal((newDropoff) => {
+            order.dropoff_address = newDropoff;
+            renderActiveTripCard(order);
+            renderActiveTripUi(order);
+            window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(newDropoff)}&travelmode=driving&openExternalBrowser=1`, '_blank');
+          });
+        };
+        if (extNavText) {
+          extNavText.textContent = '⚠️ 乘客未填目的地，點此輸入並啟動 Google Maps 導航';
+        }
+      } else {
+        extNavBtn.onclick = null;
+        extNavBtn.href = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(targetAddr || '台北車站')}&travelmode=driving&openExternalBrowser=1`;
+        if (extNavText) {
+          extNavText.textContent = isPickedUp
+            ? `開啟 Google Maps 語音導航（前往下車地點：${order.dropoff_address || '目的地'}）`
+            : `開啟 Google Maps 語音導航（前往上車地點：${order.pickup_address || '上車地點'}）`;
+        }
       }
     }
 
@@ -1596,6 +1760,14 @@
         tripStage = 'picked_up';
         if (activeTrip) activeTrip.status = 'picked_up';
         localStorage.removeItem(`active_trip_stage_${activeTrip.id}`);
+        // 回報乘客上車後，若乘客未填寫下車目的地，主動彈窗請司機補填
+        if (activeTrip && isDropoffMissing(activeTrip.dropoff_address)) {
+          openDropoffInputModal((newDropoff) => {
+            activeTrip.dropoff_address = newDropoff;
+            renderActiveTripCard(activeTrip);
+            renderActiveTripUi(activeTrip);
+          });
+        }
       } else if (action === 'completed') {
         tripStage = 'completed';
         localStorage.removeItem(`active_trip_stage_${activeTrip.id}`);
@@ -1868,12 +2040,12 @@
     document.getElementById('btn-close-drawer')?.addEventListener('click', closeSideDrawer);
     document.getElementById('drawer-backdrop')?.addEventListener('click', closeSideDrawer);
 
-    // 切換地圖捷徑
+    // 切換地圖捷徑與導航按鈕
     document.getElementById('btn-toggle-map-shortcut')?.addEventListener('click', () => switchView('map'));
     document.getElementById('btn-map-show-list')?.addEventListener('click', () => switchView('dashboard'));
     document.getElementById('btn-tracking-back')?.addEventListener('click', () => switchView('dashboard'));
-    document.getElementById('btn-switch-to-tracking')?.addEventListener('click', () => switchView('tracking'));
-    document.getElementById('active-trip-reminder')?.addEventListener('click', () => switchView('tracking'));
+    document.getElementById('btn-switch-to-tracking')?.addEventListener('click', handleFullScreenNav);
+    document.getElementById('btn-active-card-nav')?.addEventListener('click', handleFullScreenNav);
 
     // Hero 掃描按鈕 (大圖示與頂部標題按鈕)
     document.getElementById('btn-hero-radar-refresh')?.addEventListener('click', () => {

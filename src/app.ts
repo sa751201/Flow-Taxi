@@ -4,6 +4,7 @@ import { DispatchEngine } from './services/dispatch-engine.js';
 import {
   getOrderById,
   updateOrderDropoffAndDistance,
+  updateOrderDestination,
   getNearbyOrders,
   getOrdersByDriverId,
   getActiveOrderByDriverId,
@@ -526,6 +527,44 @@ app.get('/api/driver/:driverId/history-orders', async (req, res) => {
     res.json({ success: true, orders: history });
   } catch (err: any) {
     res.status(500).json({ error: err.message, orders: [] });
+  }
+});
+
+// 司機網頁版：行程中補填或更新乘客下車地點
+app.post('/api/driver/order/:orderId/destination', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { dropoffAddress } = req.body || {};
+    if (!dropoffAddress || !String(dropoffAddress).trim()) {
+      return res.status(400).json({ error: '請提供有效的下車目的地地址' });
+    }
+    const cleanAddr = String(dropoffAddress).trim();
+    const order = await getOrderById(orderId);
+    if (!order) {
+      return res.status(404).json({ error: '找不到該訂單' });
+    }
+
+    let lat: number | undefined;
+    let lng: number | undefined;
+    try {
+      const geo = await geocodeAddress(cleanAddr);
+      lat = geo.lat;
+      lng = geo.lng;
+    } catch (e: any) {
+      console.warn('[Destination Geocode Warning]:', e.message);
+    }
+
+    await updateOrderDestination(orderId, cleanAddr, lat, lng);
+    res.json({
+      success: true,
+      dropoffAddress: cleanAddr,
+      lat,
+      lng,
+      message: '已成功更新下車目的地！',
+    });
+  } catch (err: any) {
+    console.error('[Update Destination API Error]', err);
+    res.status(500).json({ error: err.message });
   }
 });
 

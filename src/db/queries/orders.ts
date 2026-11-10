@@ -281,6 +281,46 @@ export async function updateOrderDropoffAndDistance(
   return false;
 }
 
+/**
+ * 司機在行程中手動補填或更新下車目的地
+ */
+export async function updateOrderDestination(
+  orderId: string,
+  dropoffAddress: string,
+  lat?: number,
+  lng?: number
+): Promise<boolean> {
+  const cleanAddr = dropoffAddress.trim();
+  if (env.DATABASE_URL) {
+    try {
+      if (lat && lng) {
+        const sql = `
+          UPDATE orders 
+          SET dropoff_address = $1, dropoff_geog = ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography
+          WHERE id = $4;
+        `;
+        await query(sql, [cleanAddr, lng, lat, orderId]);
+      } else {
+        const sql = `UPDATE orders SET dropoff_address = $1 WHERE id = $2;`;
+        await query(sql, [cleanAddr, orderId]);
+      }
+    } catch (err: any) {
+      console.warn('[Orders DB] 更新目的地失敗，使用記憶體備援:', err.message);
+    }
+  }
+
+  const mem = memoryOrders.get(orderId);
+  if (mem) {
+    mem.dropoff_address = cleanAddr;
+    if (lat && lng) {
+      mem.dropoff_lat = lat;
+      mem.dropoff_lng = lng;
+    }
+    return true;
+  }
+  return false;
+}
+
 export async function markOrderDispatching(orderId: string): Promise<boolean> {
   if (env.DATABASE_URL) {
     try {
