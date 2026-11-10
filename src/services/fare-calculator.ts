@@ -130,7 +130,7 @@ export function calculateFare(
  * - 3km 以內：$120
  * - 超過 3km：基本費 $60 + 每公里 $20 × 距離
  */
-function calculateCityFare(distanceKm: number): FareResult {
+export function calculateCityFare(distanceKm: number): FareResult {
   let fare: number;
   let breakdown: string;
 

@@ -144,6 +144,94 @@ async function initAdjustFareLiff() {
       fareInputEl.classList.remove('border-red-500', 'ring-2', 'ring-red-400');
     });
 
+    // 依據輸入的下車地點自動結算金額按鈕
+    const btnCalcFare = document.getElementById('btn-calc-fare');
+    const btnCalcText = document.getElementById('btn-calc-fare-text');
+    const calcStatusEl = document.getElementById('calc-fare-status');
+
+    btnCalcFare?.addEventListener('click', async () => {
+      const dropoffConfirmInputEl = document.getElementById('dropoff-confirm-input');
+      const dropoffAddress = (dropoffConfirmInputEl?.value || '').trim();
+
+      if (!dropoffAddress) {
+        if (calcStatusEl) {
+          calcStatusEl.textContent = '⚠️ 請先輸入下車地點，再點選結算金額！';
+          calcStatusEl.className = 'text-xs font-bold text-rose-700 bg-rose-50 p-2.5 rounded-xl border border-rose-200 mt-1';
+          calcStatusEl.classList.remove('hidden');
+        }
+        dropoffConfirmInputEl?.focus();
+        return;
+      }
+
+      if (btnCalcFare) btnCalcFare.disabled = true;
+      if (btnCalcText) btnCalcText.textContent = '計算中...';
+      if (calcStatusEl) calcStatusEl.classList.add('hidden');
+
+      try {
+        const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/estimate-fare`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dropoffAddress }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || '車資試算失敗');
+        }
+
+        const fareInputEl = document.getElementById('fare-input');
+        if (fareInputEl) {
+          fareInputEl.value = String(data.estimatedFare);
+          fareInputEl.classList.remove('border-red-500', 'ring-2', 'ring-red-400');
+        }
+
+        const errEl = document.getElementById('fare-error-msg');
+        if (errEl) errEl.classList.add('hidden');
+
+        const hintEl = document.getElementById('original-fare-hint');
+        if (hintEl) {
+          hintEl.textContent = `試算金額：$${data.estimatedFare} (${data.distanceKm}km)`;
+          hintEl.className = 'text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200';
+        }
+
+        if (calcStatusEl) {
+          calcStatusEl.classList.remove('hidden');
+          if (data.isShortTrip) {
+            calcStatusEl.className = 'text-xs font-bold text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200 mt-1 space-y-0.5';
+            calcStatusEl.innerHTML = `
+              <div class="flex items-center gap-1.5">
+                <span>⚡</span>
+                <span>已自動結算：全程約 <strong>${data.distanceKm} 公里</strong>（小於 5 公里短程單）</span>
+              </div>
+              <div class="text-[11px] text-amber-700">
+                系統試算車資為 <strong>$${data.estimatedFare}</strong> 元（${data.fareBreakdown || ''}），亦允許於下方手動修改金額。
+              </div>
+            `;
+          } else {
+            calcStatusEl.className = 'text-xs font-bold text-emerald-800 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 mt-1 space-y-0.5';
+            calcStatusEl.innerHTML = `
+              <div class="flex items-center gap-1.5">
+                <span>✅</span>
+                <span>已自動結算：全程約 <strong>${data.distanceKm} 公里</strong></span>
+              </div>
+              <div class="text-[11px] text-emerald-700">
+                系統試算車資為 <strong>$${data.estimatedFare}</strong> 元（${data.fareBreakdown || ''}），亦允許於下方手動修改金額。
+              </div>
+            `;
+          }
+        }
+      } catch (err) {
+        if (calcStatusEl) {
+          calcStatusEl.textContent = `❌ 試算失敗: ${err.message}`;
+          calcStatusEl.className = 'text-xs font-bold text-rose-700 bg-rose-50 p-2.5 rounded-xl border border-rose-200 mt-1';
+          calcStatusEl.classList.remove('hidden');
+        }
+      } finally {
+        if (btnCalcFare) btnCalcFare.disabled = false;
+        if (btnCalcText) btnCalcText.textContent = '結算金額';
+      }
+    });
+
     document.getElementById('loading-state').classList.add('hidden');
     document.getElementById('form-content').classList.remove('hidden');
   } catch (err) {

@@ -33,6 +33,7 @@ import {
 } from './db/queries/drivers.js';
 import { getLineClient } from './services/line-client.js';
 import { geocodeAddress, calculateDrivingEta, getDrivingRoute, roundUpToFiveMinutes } from './services/google-maps.js';
+import { calculateCityFare, calculateHaversineDistance } from './services/fare-calculator.js';
 import {
   createDriverAssignedFlexMessage,
   createGroupOrderWonFlexMessage,
@@ -895,6 +896,76 @@ app.post('/api/dispatch/calculate-eta', async (req, res) => {
   } catch (err: any) {
     console.error('[ETA API Error]', err);
     res.status(500).json({ error: err.message, durationMinutes: 5 });
+  }
+});
+
+// 司機網頁版：根據輸入的下車地點，即時試算車資金額與行車距離 (自動結算)
+app.post('/api/orders/:orderId/estimate-fare', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { dropoffAddress } = req.body || {};
+    if (!dropoffAddress || !String(dropoffAddress).trim()) {
+      return res.status(400).json({ error: '請提供下車地址' });
+    }
+    const cleanDropoff = String(dropoffAddress).trim();
+    const order = await getOrderById(orderId);
+    if (!order) {
+      return res.status(404).json({ error: '訂單不存在' });
+    }
+
+    const pickupAddr = order.pickup_address || '台北車站';
+    let pickupLat = Number((order as any).pickup_lat);
+    let pickupLng = Number((order as any).pickup_lng);
+
+    if (!pickupLat || !pickupLng || isNaN(pickupLat) || isNaN(pickupLng)) {
+      try {
+        const pGeo = await geocodeAddress(pickupAddr);
+        pickupLat = pGeo.lat;
+        pickupLng = pGeo.lng;
+      } catch (e: any) {
+        pickupLat = 25.0478;
+        pickupLng = 121.5170;
+      }
+    }
+
+    let dropoffLat: number = 25.0478;
+    let dropoffLng: number = 121.5170;
+    try {
+      const dGeo = await geocodeAddress(cleanDropoff);
+      dropoffLat = dGeo.lat;
+      dropoffLng = dGeo.lng;
+    } catch (e: any) {
+      console.warn('[Estimate Fare] Geocode failed for dropoff:', e.message);
+    }
+
+    let distanceKm = 1.0;
+    try {
+      const eta = await calculateDrivingEta(pickupLat, pickupLng, dropoffLat, dropoffLng);
+      distanceKm = Number((eta.distanceMeters / 1000).toFixed(1));
+    } catch (e: any) {
+      // 備援：Haversine × 1.3
+      const straightMeters = calculateHaversineDistance(pickupLat, pickupLng, dropoffLat, dropoffLng);
+      distanceKm = Number(((straightMeters * 1.3) / 1000).toFixed(1));
+    }
+
+    if (distanceKm <= 0) distanceKm = 1.0;
+
+    const fareRes = calculateCityFare(distanceKm);
+    const estimatedFare = fareRes.estimatedFare || 120;
+    const isShortTrip = distanceKm <= 5.0;
+
+    res.json({
+      success: true,
+      pickupAddress: pickupAddr,
+      dropoffAddress: cleanDropoff,
+      distanceKm,
+      estimatedFare,
+      fareBreakdown: fareRes.fareBreakdown,
+      isShortTrip,
+    });
+  } catch (err: any) {
+    console.error('[Estimate Fare API Error]', err);
+    res.status(500).json({ error: err.message });
   }
 });
 

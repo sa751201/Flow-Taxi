@@ -85,9 +85,22 @@
             placeholder="乘客未填寫下車地點，請於此補上實際下車地點"
             class="w-full px-4 py-3 rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-bold text-slate-900 transition"
           >
-          <p class="text-[11px] text-slate-400">
-            💡 送出後系統將自動偵測上車與下車地點距離，若小於 5 公里即算短程單並送請管理員核實補單點數。
-          </p>
+          <!-- 輸入地址下方「結算金額」按鈕 -->
+          <div class="flex items-center justify-between gap-2 pt-0.5">
+            <p class="text-[11px] text-slate-400 flex-1 leading-tight">
+              💡 送出後系統將自動偵測距離（小於 5 公里即算短程單核實補單點數）。
+            </p>
+            <button
+              type="button"
+              id="btn-calc-fare"
+              class="shrink-0 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-black shadow-sm transition active:scale-95 flex items-center gap-1.5"
+              title="依輸入的下車地址自動計算車資金額"
+            >
+              <span>🧮</span>
+              <span id="btn-calc-fare-text">結算金額</span>
+            </button>
+          </div>
+          <p id="calc-fare-status" class="hidden text-xs font-bold p-2.5 rounded-xl border mt-1"></p>
         </div>
 
         <!-- 司機輸入結單金額 (若有詳細下車地址則預設帶入此筆訂單金額；若無詳細下車地址則為必填空白) -->
