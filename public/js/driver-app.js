@@ -103,6 +103,16 @@
           mutantLayer.addTo(radarMap);
         } catch (e) {}
       }
+      if (trackingMap && typeof L !== 'undefined' && typeof L.gridLayer?.googleMutant === 'function') {
+        try {
+          const mutantLayer = L.gridLayer.googleMutant({
+            type: 'roadmap',
+            styles: CUSTOM_MAP_STYLES,
+            maxZoom: 20,
+          });
+          mutantLayer.addTo(trackingMap);
+        } catch (e) {}
+      }
     };
     document.head.appendChild(script);
   }
@@ -503,15 +513,15 @@
           maxZoom: 20,
         });
       } catch (err) {
-        console.warn('[Map Layer] Google Mutant 初始化失敗，切換至高相容度暖米色調圖磚:', err);
+        console.warn('[Map Layer] Google Mutant 初始化失敗，切換至原生 Google Maps 街道圖磚:', err);
       }
     }
 
-    // 備援圖磚：採用視覺配色相同（米白底色 #f9f5ed、淡水藍 #aee0f4、簡潔灰文字）的 CartoDB Positron
-    return L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19,
-      subdomains: 'abcd',
-      attribution: '© OpenStreetMap contributors, © CARTO',
+    // 原生 Google Maps 繁體中文街道圖磚（包含完整繁中路名、地標與道路幾何，極速載入且無任何浮水印）
+    return L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=zh-TW', {
+      maxZoom: 20,
+      subdomains: ['0', '1', '2', '3'],
+      attribution: '© Google Maps',
     });
   }
 
