@@ -932,7 +932,8 @@ export function getOrderDefaultFare(order: {
   }
   const d = Number(order.distance_km);
   if (d && !isNaN(d) && d > 0) {
-    return Math.round(60 + d * 20);
+    if (d <= 3) return 120;
+    return Math.round(50 + d * 20);
   }
   return null;
 }

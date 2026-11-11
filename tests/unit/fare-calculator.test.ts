@@ -26,15 +26,15 @@ describe('Fare Calculator', () => {
       expect(result.distanceKm).toBeLessThanOrEqual(3);
     });
 
-    it('超過 3km 應按公式計費：基本費 $60 + $20/km × 距離', () => {
+    it('超過 3km 應按公式計費：基本費 $50 + $20/km × 距離', () => {
       // 使用較遠的兩點 (~5km 直線 → ~6.5km 修正後)
       // 台北 101 到松山機場
       const result = calculateFare('city', 25.0339, 121.5645, 25.0638, 121.5522);
       expect(result.serviceType).toBe('city');
       expect(result.distanceKm).toBeGreaterThan(3);
       if (result.estimatedFare !== null) {
-        // 車資 = 60 + 20 × distanceKm
-        const expected = 60 + 20 * result.distanceKm;
+        // 車資 = 50 + 20 × distanceKm
+        const expected = 50 + 20 * result.distanceKm;
         expect(result.estimatedFare).toBe(Math.round(expected));
       }
     });

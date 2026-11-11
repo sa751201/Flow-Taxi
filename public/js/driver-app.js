@@ -20,7 +20,7 @@
     carBrand: '',
     carColor: '',
     phone: '',
-    notes: '🚭 禁菸 🚯 禁食',
+    notes: '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000',
     isVerified: false,
   };
 
@@ -299,7 +299,7 @@
     // 首頁車卡備註 / 注意事項顯示
     const cardNotesEl = document.getElementById('driver-card-notes-display');
     if (cardNotesEl) {
-      cardNotesEl.textContent = currentDriver.notes?.trim() || '🚭 禁菸 🚯 禁食';
+      cardNotesEl.textContent = currentDriver.notes?.trim() || '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000';
     }
 
     // 即時車卡預覽 (乘客視角)
@@ -313,7 +313,7 @@
     if (prevPlate) prevPlate.textContent = currentDriver.plateNumber && currentDriver.plateNumber !== '點此驗證車牌' ? currentDriver.plateNumber : 'TDC-8888';
     if (prevBrand) prevBrand.textContent = currentDriver.carBrand || 'TOYOTA';
     if (prevColor) prevColor.textContent = currentDriver.carColor || '黑色';
-    if (prevNotes) prevNotes.textContent = currentDriver.notes?.trim() || '🚭 禁菸 🚯 禁食';
+    if (prevNotes) prevNotes.textContent = currentDriver.notes?.trim() || '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000';
 
     // 表單同步
     const inputName = document.getElementById('input-display-name');
@@ -344,7 +344,7 @@
     const val = inputNotes.value;
     if (countEl) countEl.textContent = `${val.length} / 150`;
 
-    const displayVal = val.trim() ? val : '🚭 禁菸 🚯 禁食';
+    const displayVal = val.trim() ? val : '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000';
     if (prevNotes) prevNotes.textContent = displayVal;
     if (cardNotes) cardNotes.textContent = displayVal;
   }
@@ -354,7 +354,7 @@
     if (!inputNotes) return;
 
     const currentVal = inputNotes.value.trim();
-    if (!currentVal || currentVal === '🚭 禁菸 🚯 禁食') {
+    if (!currentVal || currentVal === '🚭 禁菸 🚯 禁食' || currentVal === '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000') {
       inputNotes.value = tag;
     } else if (!currentVal.includes(tag)) {
       if ((currentVal + ' ' + tag).length <= 150) {
@@ -425,7 +425,7 @@
             carBrand: 'TOYOTA',
             carColor: '黑色',
             phone: cleanQ.startsWith('09') ? cleanQ : '',
-            notes: '🚭 禁菸 🚯 禁食',
+            notes: '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000',
           }),
         });
 
@@ -437,7 +437,7 @@
             carBrand: 'TOYOTA',
             carColor: '黑色',
             phone: '',
-            notes: '🚭 禁菸 🚯 禁食',
+            notes: '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000',
             isVerified: true,
           };
           saveCurrentDriver();

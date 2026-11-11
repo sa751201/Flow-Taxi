@@ -104,7 +104,7 @@ export const dispatchEngine = new DispatchEngine({
           car_brand: 'TOYOTA CAMRY',
           registered: true,
           status: 'active' as const,
-          notes: '🚭 禁菸 🚯 禁食',
+          notes: '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000',
           created_at: new Date(),
         };
 
@@ -156,7 +156,7 @@ export const dispatchEngine = new DispatchEngine({
                 plateNumber: driver.plate_number || '---',
                 carColor: driver.car_color || '黑色',
                 etaMinutes,
-                notes: driver.notes || '🚭 禁菸 🚯 禁食',
+                notes: driver.notes || '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000',
               });
 
               await lineClient.pushMessage({
@@ -1167,7 +1167,7 @@ app.post('/api/dispatch/bid', async (req, res) => {
         plate_number: driver?.plate_number || 'TDC-8888',
         car_color: driver?.car_color || '黑色',
         car_brand: driver?.car_brand || 'TOYOTA CAMRY',
-        notes: driver?.notes || '🚭 禁菸 🚯 禁食',
+        notes: driver?.notes || '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000',
         registered: true,
         status: 'active',
       });
@@ -1279,7 +1279,7 @@ app.post('/api/driver/register', async (req, res) => {
       car_color: carColor,
       car_brand: carBrand,
       phone: phone || null,
-      notes: notes || '🚭 禁菸 🚯 禁食',
+      notes: notes || '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000',
       registered: true,
       status: 'active',
     });

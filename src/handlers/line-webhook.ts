@@ -612,7 +612,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
               messages: [
                 {
                   type: 'text',
-                  text: `📋 您目前登記的車卡資料如下：\n\n👤 駕駛姓名：${driver.display_name || '未填'}\n🔢 車牌號碼：${driver.plate_number || '未填'}\n🎨 車輛顏色：${driver.car_color || '未填'}\n🚙 車輛廠牌：${driver.car_brand || '未填'}\n📞 聯絡電話：${driver.phone || '未填'}\n📝 車內注意事項：${driver.notes || '🚭 禁菸 🚯 禁食'}\n\n若需修改，請點擊下方專屬頁面直接更新：\n${registerUrl}`,
+                  text: `📋 您目前登記的車卡資料如下：\n\n👤 駕駛姓名：${driver.display_name || '未填'}\n🔢 車牌號碼：${driver.plate_number || '未填'}\n🎨 車輛顏色：${driver.car_color || '未填'}\n🚙 車輛廠牌：${driver.car_brand || '未填'}\n📞 聯絡電話：${driver.phone || '未填'}\n📝 車內注意事項：${driver.notes || '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000'}\n\n若需修改，請點擊下方專屬頁面直接更新：\n${registerUrl}`,
                 },
               ],
             });
@@ -647,7 +647,7 @@ export async function handleLineEvents(events: WebhookEvent[]) {
             messages: [
               {
                 type: 'text',
-                text: `✅【${saved.display_name || '夥伴'}】你的司機車卡資料已經建立完成！\n\n🚙 車型：${saved.car_brand || '未填'}\n🔢 車號：${saved.plate_number || '未填'}\n🎨 車色：${saved.car_color || '未填'}\n📝 注意事項：${saved.notes || '🚭 禁菸 🚯 禁食'}\n\n已為您正式開通派單接單權限！若日後需變更資料，隨時輸入「修改資料」即可調整。`,
+                text: `✅【${saved.display_name || '夥伴'}】你的司機車卡資料已經建立完成！\n\n🚙 車型：${saved.car_brand || '未填'}\n🔢 車號：${saved.plate_number || '未填'}\n🎨 車色：${saved.car_color || '未填'}\n📝 注意事項：${saved.notes || '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000'}\n\n已為您正式開通派單接單權限！若日後需變更資料，隨時輸入「修改資料」即可調整。`,
               },
             ],
           });

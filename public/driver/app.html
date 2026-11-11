@@ -202,7 +202,7 @@
                 </div>
                 <div class="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5">
                   <span class="text-amber-400 shrink-0 text-xs">📌</span>
-                  <span id="driver-card-notes-display" class="truncate text-slate-300 max-w-[170px]">🚭 禁菸 🚯 禁食</span>
+                  <span id="driver-card-notes-display" class="truncate text-slate-300 max-w-[200px]">🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000</span>
                   <button id="btn-edit-notes-card" type="button" class="text-slate-400 hover:text-amber-300 transition p-0.5 shrink-0" title="編輯車卡注意事項">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
                   </button>
@@ -648,7 +648,7 @@
               <span>乘車注意事項 (乘客中單後可見)：</span>
             </div>
             <p id="preview-card-notes" class="text-slate-200 leading-relaxed font-medium break-words">
-              🚭 禁菸 🚯 禁食
+              🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000
             </p>
           </div>
         </div>
@@ -692,7 +692,7 @@
             </p>
 
             <div class="relative">
-              <textarea id="input-driver-notes" rows="3" maxlength="150" placeholder="例如：🚭 全車禁菸 🚯 禁食、後車廂可放 2 只 28 吋大行李、提供手機充電線..." class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none text-slate-900 leading-relaxed resize-none text-xs bg-white"></textarea>
+              <textarea id="input-driver-notes" rows="3" maxlength="150" placeholder="例如：🚭 全車禁菸 🚯 禁食 🤮 嘔吐加收3000、後車廂可放 2 只 28 吋大行李、提供手機充電線..." class="w-full p-2.5 rounded-xl border border-slate-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none text-slate-900 leading-relaxed resize-none text-xs bg-white"></textarea>
             </div>
 
             <!-- 常用快捷標籤 (點擊直接追加至備註區) -->
@@ -704,6 +704,7 @@
               <div class="flex flex-wrap gap-1.5">
                 <button type="button" class="quick-note-tag text-[11px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-amber-100 hover:border-amber-300 text-slate-700 font-medium transition active:scale-95 shadow-2xs" data-tag="🚭 全車禁菸">🚭 全車禁菸</button>
                 <button type="button" class="quick-note-tag text-[11px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-amber-100 hover:border-amber-300 text-slate-700 font-medium transition active:scale-95 shadow-2xs" data-tag="🚯 車內禁食">🚯 車內禁食</button>
+                <button type="button" class="quick-note-tag text-[11px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-amber-100 hover:border-amber-300 text-slate-700 font-medium transition active:scale-95 shadow-2xs" data-tag="🤮 嘔吐加收3000">🤮 嘔吐加收3000</button>
                 <button type="button" class="quick-note-tag text-[11px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-amber-100 hover:border-amber-300 text-slate-700 font-medium transition active:scale-95 shadow-2xs" data-tag="🐾 寵物友善車 (需推車/提籠)">🐾 寵物友善</button>
                 <button type="button" class="quick-note-tag text-[11px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-amber-100 hover:border-amber-300 text-slate-700 font-medium transition active:scale-95 shadow-2xs" data-tag="🧳 後車廂空間大 (可載大行李)">🧳 後車廂空間大</button>
                 <button type="button" class="quick-note-tag text-[11px] px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-amber-100 hover:border-amber-300 text-slate-700 font-medium transition active:scale-95 shadow-2xs" data-tag="⚡ 備有手機充電線 (Type-C / Lightning)">⚡ 手機充電</button>

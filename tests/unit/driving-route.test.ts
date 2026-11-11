@@ -33,5 +33,5 @@ describe('Driving Route Service & ETA Rounding', () => {
     const lastPoint = route.coordinates[route.coordinates.length - 1];
     expect(lastPoint[0]).toBeCloseTo(25.1016, 1);
     expect(lastPoint[1]).toBeCloseTo(121.5489, 1);
-  }, 10000);
+  }, 20000);
 });

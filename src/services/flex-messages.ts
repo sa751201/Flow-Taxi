@@ -714,7 +714,9 @@ export function createDriverAssignedFlexMessage(params: {
           contents: [
             {
               type: 'text',
-              text: params.notes?.trim() ? params.notes : '🚭 禁菸 🚯 禁食',
+              text: params.notes?.trim()
+                ? (params.notes.includes('嘔吐') ? params.notes : `${params.notes} 🤮 嘔吐加收3000`)
+                : '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000',
               color: '#475569',
               size: 'sm',
               weight: 'bold',

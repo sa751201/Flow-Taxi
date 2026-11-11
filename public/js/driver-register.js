@@ -86,7 +86,7 @@ function appendQuickNote(text) {
   const noteInput = document.getElementById('driverNotes');
   if (!noteInput) return;
   const current = noteInput.value.trim();
-  if (!current || current === '🚭 禁菸 🚯 禁食') {
+  if (!current || current === '🚭 禁菸 🚯 禁食' || current === '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000') {
     noteInput.value = text;
   } else if (!current.includes(text)) {
     if ((current + ' ' + text).length <= 150) {
@@ -144,7 +144,7 @@ document.getElementById('submit-btn')?.addEventListener('click', async () => {
   const carColor = document.getElementById('carColor').value.trim();
   const carBrand = document.getElementById('carBrand').value.trim();
   const phone = document.getElementById('phone').value.trim();
-  const notes = document.getElementById('driverNotes').value.trim() || '🚭 禁菸 🚯 禁食';
+  const notes = document.getElementById('driverNotes').value.trim() || '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000';
 
   let hasError = false;
   if (!displayName) { triggerShake('wrap-name'); hasError = true; }

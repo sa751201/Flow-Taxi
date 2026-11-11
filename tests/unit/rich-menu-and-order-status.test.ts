@@ -1,4 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('../../src/services/line-client.js', () => ({
+  getLineClient: vi.fn(() => ({
+    pushMessage: vi.fn().mockResolvedValue({}),
+    replyMessage: vi.fn().mockResolvedValue({}),
+    linkRichMenuIdToUser: vi.fn().mockResolvedValue({}),
+    unlinkRichMenuIdFromUser: vi.fn().mockResolvedValue({}),
+    getRichMenuIdOfUser: vi.fn().mockResolvedValue('richmenu-none'),
+  })),
+}));
+
 import { getDriverRichMenuTemplate } from '../../src/services/rich-menu.js';
 import {
   createOrder,
