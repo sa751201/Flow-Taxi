@@ -4,6 +4,39 @@ let currentUserId = null;
 let orderData = null;
 let defaultFare = null;
 
+function triggerHaptic(type = 'light') {
+  if (typeof navigator === 'undefined' || !('vibrate' in navigator)) return;
+  try {
+    if (type === 'light') navigator.vibrate(10);
+    else if (type === 'medium') navigator.vibrate(22);
+    else if (type === 'success') navigator.vibrate([15, 45, 20]);
+  } catch (_) {}
+}
+
+function animateNumberTickerInput(inputEl, fromVal, toVal, duration = 380) {
+  if (!inputEl) return;
+  const start = Number(fromVal) || 0;
+  const end = Number(toVal) || 0;
+  if (start === end) {
+    inputEl.value = String(end);
+    return;
+  }
+  const startTime = performance.now();
+  function tick(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const ease = 1 - Math.pow(1 - progress, 3);
+    const current = Math.round(start + (end - start) * ease);
+    inputEl.value = String(current);
+    if (progress < 1) {
+      requestAnimationFrame(tick);
+    } else {
+      inputEl.value = String(end);
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
 function isDetailedDropoffAddress(dropoffAddress) {
   if (!dropoffAddress || typeof dropoffAddress !== 'string') return false;
   const trimmed = dropoffAddress.trim();
@@ -150,6 +183,7 @@ async function initAdjustFareLiff() {
     const calcStatusEl = document.getElementById('calc-fare-status');
 
     btnCalcFare?.addEventListener('click', async () => {
+      triggerHaptic('light');
       const dropoffConfirmInputEl = document.getElementById('dropoff-confirm-input');
       const dropoffAddress = (dropoffConfirmInputEl?.value || '').trim();
 
@@ -181,9 +215,11 @@ async function initAdjustFareLiff() {
 
         const fareInputEl = document.getElementById('fare-input');
         if (fareInputEl) {
-          fareInputEl.value = String(data.estimatedFare);
+          const currentVal = parseInt(fareInputEl.value) || 0;
+          animateNumberTickerInput(fareInputEl, currentVal, data.estimatedFare, 380);
           fareInputEl.classList.remove('border-red-500', 'ring-2', 'ring-red-400');
         }
+        triggerHaptic('success');
 
         const errEl = document.getElementById('fare-error-msg');
         if (errEl) errEl.classList.add('hidden');
@@ -240,6 +276,7 @@ async function initAdjustFareLiff() {
 }
 
 document.getElementById('btn-submit-adjust-fare')?.addEventListener('click', async () => {
+  triggerHaptic('light');
   const fareInputEl = document.getElementById('fare-input');
   const noteInputEl = document.getElementById('note-input');
   const errEl = document.getElementById('fare-error-msg');
@@ -248,6 +285,7 @@ document.getElementById('btn-submit-adjust-fare')?.addEventListener('click', asy
   const adjustNote = (noteInputEl?.value || '').trim();
 
   if (!rawValStr || !rawFare || isNaN(rawFare) || rawFare <= 0) {
+    triggerHaptic('heavy');
     if (errEl) {
       errEl.classList.remove('hidden');
     }

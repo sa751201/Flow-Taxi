@@ -48,6 +48,46 @@
   let trackingPolyline = null;
 
   // -------------------------------------------------------------
+  // 0. React Bits 觸覺與動效輔助 (Tactile Haptic & Spring Number Ticker)
+  // -------------------------------------------------------------
+  function triggerHaptic(type = 'light') {
+    if (typeof navigator === 'undefined' || !('vibrate' in navigator)) return;
+    try {
+      if (type === 'light') navigator.vibrate(10);
+      else if (type === 'medium') navigator.vibrate(22);
+      else if (type === 'success') navigator.vibrate([15, 45, 20]);
+      else if (type === 'heavy') navigator.vibrate(40);
+    } catch (_) {}
+  }
+  window.__triggerHaptic = triggerHaptic;
+
+  function animateNumberTicker(el, fromVal, toVal, duration = 380, prefix = '', suffix = '') {
+    if (!el) return;
+    const start = Number(fromVal) || 0;
+    const end = Number(toVal) || 0;
+    if (start === end) {
+      el.textContent = `${prefix}${end}${suffix}`;
+      return;
+    }
+    const startTime = performance.now();
+    function tick(now) {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // easeOutCubic
+      const ease = 1 - Math.pow(1 - progress, 3);
+      const current = Math.round(start + (end - start) * ease);
+      el.textContent = `${prefix}${current}${suffix}`;
+      if (progress < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        el.textContent = `${prefix}${end}${suffix}`;
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+  window.__animateNumberTicker = animateNumberTicker;
+
+  // -------------------------------------------------------------
   // 1. 初始化進入點
   // -------------------------------------------------------------
   async function init() {
@@ -264,7 +304,7 @@
     } else if (currentDriver.isVerified) {
       if (statusOnline) statusOnline.textContent = '在線上';
       if (statusBadgeWrap) {
-        statusBadgeWrap.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-xs font-black shadow-sm group-hover:bg-emerald-500/30';
+        statusBadgeWrap.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-xs font-black shadow-sm group-hover:bg-emerald-500/30 status-pulse-active';
       }
       if (statusDot) {
         statusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-ping';
@@ -275,7 +315,7 @@
     } else {
       if (statusOnline) statusOnline.textContent = '在線上';
       if (statusBadgeWrap) {
-        statusBadgeWrap.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs font-black shadow-sm';
+        statusBadgeWrap.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs font-black shadow-sm status-pulse-active';
       }
       if (statusDot) {
         statusDot.className = 'w-2 h-2 rounded-full bg-amber-400';
@@ -975,7 +1015,10 @@
       updateRadarOrderMarkers(orders);
 
       const countBadge = document.getElementById('orders-count-badge');
-      if (countBadge) countBadge.textContent = orders.length;
+      if (countBadge) {
+        const prev = parseInt(countBadge.textContent) || 0;
+        animateNumberTicker(countBadge, prev, orders.length, 300);
+      }
 
       const mapSubtext = document.getElementById('map-status-subtext');
       if (mapSubtext) mapSubtext.textContent = `已偵測到 ${orders.length} 張可搶訂單`;
@@ -1103,7 +1146,10 @@
       return true;
     });
 
-    if (countBadge) countBadge.textContent = filtered.length;
+    if (countBadge) {
+      const prev = parseInt(countBadge.textContent) || 0;
+      animateNumberTicker(countBadge, prev, filtered.length, 300);
+    }
 
     // 3. 若無符合訂單，顯示輕量雷達掃描卡片
     if (filtered.length === 0) {
@@ -1115,11 +1161,11 @@
       return;
     }
 
-    // 4. 有符合訂單，渲染精緻可接單卡片清單 (參照設計圖風格)
+    // 4. 有符合訂單，渲染精緻可接單卡片清單 (參照設計圖風格，搭配 React Bits 彈性進場與微動效)
     if (heroEmptyBanner) heroEmptyBanner.classList.add('hidden');
     if (container) {
       container.classList.remove('hidden');
-      container.innerHTML = filtered.map((ord) => {
+      container.innerHTML = filtered.map((ord, idx) => {
         const isScheduled = Boolean(ord.note && ord.note.includes('預約'));
         const tagText = isScheduled ? '📅 預約' : '⚡ 即時';
         const tagClass = isScheduled
@@ -1144,8 +1190,11 @@
         const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ord.pickup_address || '')}&travelmode=driving&openExternalBrowser=1`;
         const bidUrl = `/driver/bid?orderId=${encodeURIComponent(ord.id)}&source=web`;
 
+        // 物理交錯進場延遲
+        const springDelayMs = Math.min(idx, 8) * 45;
+
         return `
-          <div class="rounded-2xl bg-[#0f172a] text-white p-4 shadow-lg border border-slate-800/90 space-y-3 transition hover:border-slate-700">
+          <div class="rounded-2xl bg-[#0f172a] text-white p-4 shadow-lg border border-slate-800/90 space-y-3 transition hover:border-slate-700 order-card-spring" style="animation-delay: ${springDelayMs}ms;">
             <!-- 頂部資訊：類別、距離與建立時間、單號 -->
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2">
@@ -1191,13 +1240,15 @@
 
               <div class="flex items-center gap-2 shrink-0">
                 <a href="${navUrl}" target="_blank" rel="noopener noreferrer"
-                   class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition flex items-center gap-1 active:scale-95 shadow-sm"
+                   class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 transition flex items-center gap-1 btn-spring shadow-sm"
+                   onclick="window.__triggerHaptic && window.__triggerHaptic('light')"
                    title="以 Google Maps 導航前往上車地點">
                   <svg class="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
                   <span>導航</span>
                 </a>
                 <a href="${bidUrl}"
-                   class="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs transition flex items-center gap-1 active:scale-95 shadow-md shadow-emerald-500/20">
+                   class="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs transition flex items-center gap-1 btn-spring btn-shimmer-cta shadow-md shadow-emerald-500/20"
+                   onclick="window.__triggerHaptic && window.__triggerHaptic('medium')">
                   <span>⚡ 接單</span>
                 </a>
               </div>
@@ -1751,6 +1802,7 @@
       }
 
       alert(result.message || '操作成功！');
+      triggerHaptic('success');
 
       if (action === 'arrived') {
         tripStage = 'arrived';
@@ -2004,6 +2056,7 @@
     function toggleDriverOnlineStatus() {
       isDriverOnline = !isDriverOnline;
       localStorage.setItem('flow_taxi_driver_online', isDriverOnline ? 'true' : 'false');
+      triggerHaptic(isDriverOnline ? 'success' : 'medium');
       updateDriverUi();
       if (isDriverOnline) {
         fetchNearbyOrders();
@@ -2019,6 +2072,7 @@
     const filterTabs = document.querySelectorAll('.order-filter-tab');
     filterTabs.forEach((tab) => {
       tab.addEventListener('click', () => {
+        triggerHaptic('light');
         const filter = tab.getAttribute('data-filter') || 'all';
         currentOrderFilter = filter;
         filterTabs.forEach((t) => {
@@ -2033,19 +2087,49 @@
     });
 
     // 底部導覽列
-    document.getElementById('nav-btn-dashboard')?.addEventListener('click', () => switchView('dashboard'));
-    document.getElementById('nav-btn-map')?.addEventListener('click', () => switchView('map'));
-    document.getElementById('nav-btn-menu')?.addEventListener('click', openSideDrawer);
-    document.getElementById('btn-open-drawer')?.addEventListener('click', openSideDrawer);
-    document.getElementById('btn-close-drawer')?.addEventListener('click', closeSideDrawer);
+    document.getElementById('nav-btn-dashboard')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      switchView('dashboard');
+    });
+    document.getElementById('nav-btn-map')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      switchView('map');
+    });
+    document.getElementById('nav-btn-menu')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      openSideDrawer();
+    });
+    document.getElementById('btn-open-drawer')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      openSideDrawer();
+    });
+    document.getElementById('btn-close-drawer')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      closeSideDrawer();
+    });
     document.getElementById('drawer-backdrop')?.addEventListener('click', closeSideDrawer);
 
     // 切換地圖捷徑與導航按鈕
-    document.getElementById('btn-toggle-map-shortcut')?.addEventListener('click', () => switchView('map'));
-    document.getElementById('btn-map-show-list')?.addEventListener('click', () => switchView('dashboard'));
-    document.getElementById('btn-tracking-back')?.addEventListener('click', () => switchView('dashboard'));
-    document.getElementById('btn-switch-to-tracking')?.addEventListener('click', handleFullScreenNav);
-    document.getElementById('btn-active-card-nav')?.addEventListener('click', handleFullScreenNav);
+    document.getElementById('btn-toggle-map-shortcut')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      switchView('map');
+    });
+    document.getElementById('btn-map-show-list')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      switchView('dashboard');
+    });
+    document.getElementById('btn-tracking-back')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      switchView('dashboard');
+    });
+    document.getElementById('btn-switch-to-tracking')?.addEventListener('click', () => {
+      triggerHaptic('medium');
+      handleFullScreenNav();
+    });
+    document.getElementById('btn-active-card-nav')?.addEventListener('click', () => {
+      triggerHaptic('medium');
+      handleFullScreenNav();
+    });
 
     // Hero 掃描按鈕 (大圖示與頂部標題按鈕)
     document.getElementById('btn-hero-radar-refresh')?.addEventListener('click', () => {

@@ -15,6 +15,40 @@ let driverCompensationPoints = 0;
 let isCurrentDriverWinner = false;
 let currentOaUrl = 'https://line.me/R/ti/p/@688muuaw';
 
+function triggerHaptic(type = 'light') {
+  if (typeof navigator === 'undefined' || !('vibrate' in navigator)) return;
+  try {
+    if (type === 'light') navigator.vibrate(10);
+    else if (type === 'medium') navigator.vibrate(22);
+    else if (type === 'success') navigator.vibrate([15, 45, 20]);
+    else if (type === 'heavy') navigator.vibrate(40);
+  } catch (_) {}
+}
+
+function animateNumberTicker(el, fromVal, toVal, duration = 240) {
+  if (!el) return;
+  const start = Number(fromVal) || 0;
+  const end = Number(toVal) || 0;
+  if (start === end) {
+    el.textContent = String(end);
+    return;
+  }
+  const startTime = performance.now();
+  function tick(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const ease = 1 - Math.pow(1 - progress, 3);
+    const current = Math.round(start + (end - start) * ease);
+    el.textContent = String(current);
+    if (progress < 1) {
+      requestAnimationFrame(tick);
+    } else {
+      el.textContent = String(end);
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
 function showNotWinnerPopup(winnerDriverName) {
   const winnerLabel = winnerDriverName ? `【${winnerDriverName}】` : '其他駕駛';
   const locatingEl = document.getElementById('locating-state');
@@ -115,10 +149,11 @@ function updateCompensationPointsUi(points) {
 
 function updateEtaDisplay() {
   if (isReservationOrder) return;
-  const totalEta = baseEtaMinutes + extraMinutes;
+  const totalEta = Math.max(1, baseEtaMinutes + extraMinutes);
   const etaMinsEl = document.getElementById('eta-mins');
   if (etaMinsEl) {
-    etaMinsEl.textContent = totalEta;
+    const prev = parseInt(etaMinsEl.textContent) || totalEta;
+    animateNumberTicker(etaMinsEl, prev, totalEta, 220);
   }
 
   const distanceBadgeEl = document.getElementById('eta-distance-badge');
@@ -502,11 +537,13 @@ async function fetchCalculatedEta() {
 
 // 需求 4: 重設按鈕監聽 (恢復為測算的 baseEtaMinutes)
 document.getElementById('btn-reset-eta')?.addEventListener('click', () => {
+  triggerHaptic('light');
   extraMinutes = 0;
   updateEtaDisplay();
 });
 
 document.getElementById('btn-minus-5')?.addEventListener('click', () => {
+  triggerHaptic('light');
   const currentTotal = baseEtaMinutes + extraMinutes;
   if (currentTotal > 5) {
     extraMinutes -= 5;
@@ -517,11 +554,13 @@ document.getElementById('btn-minus-5')?.addEventListener('click', () => {
 });
 
 document.getElementById('btn-plus-5')?.addEventListener('click', () => {
+  triggerHaptic('light');
   extraMinutes += 5;
   updateEtaDisplay();
 });
 
 document.getElementById('btn-confirm-bid')?.addEventListener('click', async () => {
+  triggerHaptic('medium');
   const confirmBtn = document.getElementById('btn-confirm-bid');
   const totalMins = baseEtaMinutes + extraMinutes;
   const useCompensationPoint = Boolean(document.getElementById('use-compensation-checkbox')?.checked);

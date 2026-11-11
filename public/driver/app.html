@@ -4,6 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Flow Taxi 司機調度中心</title>
+  <!-- PWA & Mobile Web App Meta (支援存成桌面 App) -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="司機端">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='128' fill='%230f172a'/%3E%3Ccircle cx='256' cy='256' r='180' fill='%2310b981' fill-opacity='0.15'/%3E%3Cpath d='M392 312c0 22-18 40-40 40h-16c-4 0-8-4-8-8v-24H184v24c0 4-4 8-8 8h-16c-22 0-40-18-40-40v-120c0-18 10-34 26-42l42-21c10-5 21-8 32-8h72c11 0 22 3 32 8l42 21c16 8 26 24 26 42v120z' fill='%23f59e0b'/%3E%3Crect x='160' y='200' width='192' height='56' rx='12' fill='%231e293b'/%3E%3Ccircle cx='176' cy='296' r='18' fill='%23ffffff'/%3E%3Ccircle cx='336' cy='296' r='18' fill='%23ffffff'/%3E%3C/svg%3E">
+
   <!-- Tailwind CSS 4 CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <!-- LINE Seed TW Font -->
@@ -19,6 +28,17 @@
   <link rel="stylesheet" href="/css/transitions.css">
 
   <style>
+    /* PWA Mobile App Experience: 類原生 App 觸控防誤觸與橡皮筋回彈優化 */
+    html, body {
+      overscroll-behavior-y: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    input, textarea {
+      -webkit-user-select: auto;
+      user-select: auto;
+    }
+
     body, button, input, select, textarea {
       font-family: 'LINE Seed TW', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
       -webkit-tap-highlight-color: transparent;
@@ -30,6 +50,85 @@
       -ms-overflow-style: none;
       scrollbar-width: none;
     }
+
+    /* React Bits-inspired: Spring-Physics 彈性卡片進場動畫 */
+    @keyframes spring-card-in {
+      0% {
+        opacity: 0;
+        transform: translateY(18px) scale(0.96);
+      }
+      60% {
+        opacity: 1;
+        transform: translateY(-2px) scale(1.008);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    .order-card-spring {
+      animation: spring-card-in 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+
+    /* React Bits-inspired: 進行中任務呼吸漸層光圈 (Subtle Breathing Glow) */
+    @keyframes subtle-glow-flow {
+      0% {
+        box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.3), 0 8px 20px -4px rgba(16, 185, 129, 0.15);
+      }
+      50% {
+        box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.45), 0 12px 28px -4px rgba(245, 158, 11, 0.25);
+      }
+      100% {
+        box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.3), 0 8px 20px -4px rgba(16, 185, 129, 0.15);
+      }
+    }
+    .glow-active-trip {
+      animation: subtle-glow-flow 3.5s ease-in-out infinite;
+    }
+
+    /* React Bits-inspired: 在線上呼吸光環 (Breathing Online Ring) */
+    @keyframes status-pulse-ring {
+      0% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+      }
+      70% {
+        box-shadow: 0 0 0 7px rgba(16, 185, 129, 0);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+      }
+    }
+    .status-pulse-active {
+      animation: status-pulse-ring 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    /* React Bits-inspired: 主操作按鈕流光 Shimmer 效果 */
+    @keyframes button-shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    .btn-shimmer-cta {
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-shimmer-cta::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.28) 50%, transparent 100%);
+      background-size: 200% 100%;
+      animation: button-shimmer 3s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    /* React Bits-inspired: 物理彈性按壓回饋 (Spring Scale Press) */
+    .btn-spring {
+      transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.12s ease;
+    }
+    .btn-spring:active {
+      transform: scale(0.94);
+    }
+
     /* Topo Pattern for Hero Card */
     .topo-pattern {
       background-image: radial-gradient(rgba(0, 0, 0, 0.08) 1.5px, transparent 1.5px),
@@ -211,8 +310,8 @@
             </div>
 
             <!-- Right: 在線上切換按鈕 (點擊切換線上/線下) -->
-            <button id="btn-toggle-online-status" type="button" class="shrink-0 active:scale-95 transition-transform" title="點擊切換在線上 / 已下線">
-              <div id="driver-status-badge-wrap" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-xs font-black shadow-sm transition">
+            <button id="btn-toggle-online-status" type="button" class="shrink-0 btn-spring" title="點擊切換在線上 / 已下線">
+              <div id="driver-status-badge-wrap" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-xs font-black shadow-sm transition status-pulse-active">
                 <span id="driver-status-ping-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
                 <span id="stat-online-status">在線上</span>
               </div>
@@ -223,7 +322,7 @@
         <!-- ==============================================================
              2. 進行中任務置頂卡片 (當司機有中單或進行中任務時顯眼呈現)
              ============================================================== -->
-        <div id="active-trip-card" class="hidden rounded-3xl bg-gradient-to-br from-slate-900 to-slate-950 text-white p-5 shadow-2xl border-2 border-emerald-500/70 space-y-3.5 relative overflow-hidden">
+        <div id="active-trip-card" class="hidden rounded-3xl bg-gradient-to-br from-slate-900 to-slate-950 text-white p-5 shadow-2xl border-2 border-emerald-500/70 space-y-3.5 relative overflow-hidden glow-active-trip">
           <div class="absolute -right-10 -bottom-10 w-36 h-36 rounded-full bg-emerald-500/15 blur-xl pointer-events-none"></div>
 
           <div class="flex items-center justify-between">
@@ -252,16 +351,16 @@
 
           <!-- 快捷操作動作群組 -->
           <div class="grid grid-cols-2 gap-2 pt-1">
-            <button id="btn-active-card-action" type="button" class="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-md transition flex items-center justify-center gap-1.5 active:scale-95">
+            <button id="btn-active-card-action" type="button" class="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-md transition flex items-center justify-center gap-1.5 btn-spring shadow-emerald-600/25">
               <span id="active-card-action-icon">🔔</span>
               <span id="active-card-action-text">到點回報</span>
             </button>
-            <button id="btn-active-card-nav" type="button" class="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-extrabold border border-slate-700 transition flex items-center justify-center gap-1.5 active:scale-95">
+            <button id="btn-active-card-nav" type="button" class="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-extrabold border border-slate-700 transition flex items-center justify-center gap-1.5 btn-spring">
               <span>🗺️ 全螢幕導航</span>
             </button>
           </div>
           <!-- 當已到點等待客上時，顯示「客人未出現」按鈕 -->
-          <button id="btn-active-card-no-show" type="button" class="hidden w-full py-2 px-3 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-500/40 text-xs font-bold transition flex items-center justify-center gap-1.5 active:scale-95">
+          <button id="btn-active-card-no-show" type="button" class="hidden w-full py-2 px-3 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-500/40 text-xs font-bold transition flex items-center justify-center gap-1.5 btn-spring">
             <span>🚫</span>
             <span>客人未出現（取消並補 1 點補單點數）</span>
           </button>
