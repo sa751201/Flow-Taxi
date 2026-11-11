@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const mockPushMessage = vi.fn().mockResolvedValue({});
+const mockReplyMessage = vi.fn().mockResolvedValue({});
+const mockBroadcast = vi.fn().mockResolvedValue({});
+
 // 模擬 LINE Client，防止單元測試期間向真實司機/管理員群組與使用者推播訊息
 vi.mock('../../src/services/line-client.js', () => ({
   getLineClient: vi.fn(() => ({
-    pushMessage: vi.fn().mockResolvedValue({}),
-    replyMessage: vi.fn().mockResolvedValue({}),
-    broadcast: vi.fn().mockResolvedValue({}),
+    pushMessage: mockPushMessage,
+    replyMessage: mockReplyMessage,
+    broadcast: mockBroadcast,
     getProfile: vi.fn().mockResolvedValue({ displayName: '測試用戶' }),
     getGroupMemberProfile: vi.fn().mockResolvedValue({ displayName: '測試司機' }),
   })),
@@ -17,7 +21,11 @@ import {
   isCustomerInChatSession,
   getCustomerChatOrderId,
   resolveOrderForCommunication,
+  forwardMessageToPassenger,
+  forwardMessageToDriver,
 } from '../../src/services/order-chat.js';
+import { getLineClient } from '../../src/services/line-client.js';
+import { upsertDriver, driversMap } from '../../src/db/queries/drivers.js';
 import {
   createOrder,
   getActiveOrderByCustomerId,
@@ -38,6 +46,8 @@ import { formatScheduledTime } from '../../src/services/reservation.js';
 describe('Order Chat & Reservation Reminder Tests', () => {
   beforeEach(() => {
     memoryOrders.clear();
+    mockPushMessage.mockClear();
+    mockReplyMessage.mockClear();
   });
 
   describe('Order Chat Service', () => {
@@ -147,6 +157,82 @@ describe('Order Chat & Reservation Reminder Tests', () => {
       const result = await resolveOrderForCommunication(custId, '與司機溝通 #2002');
       expect(result.needsDisambiguation).toBe(false);
       expect(result.targetOrder?.id).toBe('ord-reserve-2002');
+    });
+
+    it('forwardMessageToPassenger 應使用簡化格式（僅司機留言、司機暱稱與訊息內容）並自動開啟乘客溝通 session', async () => {
+      const custId = 'U_msg_cust_99';
+      const driverId = 'D_driver_mike';
+
+      await upsertDriver({
+        line_user_id: driverId,
+        display_name: 'Mike Wang / Work',
+        plate_number: 'CEQ-7710',
+        car_brand: 'Kia Stonic',
+        car_color: '綠色',
+        notes: '禁菸',
+        registered: true,
+      });
+
+      const ord = await createOrder({
+        id: 'ord-test-5e36',
+        customer_id: custId,
+        pickup_address: '內湖高中',
+        pickup_lat: 25.075,
+        pickup_lng: 121.590,
+      });
+      ord.driver_id = driverId;
+      ord.status = 'accepted';
+
+      expect(isCustomerInChatSession(custId)).toBe(false);
+
+      const pushed = await forwardMessageToPassenger(ord, driverId, '你在哪');
+      expect(pushed).toBe(true);
+
+      const mockClient = getLineClient();
+      expect(mockClient.pushMessage).toHaveBeenCalledWith({
+        to: custId,
+        messages: [
+          {
+            type: 'text',
+            text: '💬【司機留言】Mike Wang / Work\n\n「你在哪」',
+          },
+        ],
+      });
+
+      // 應自動為乘客開啟溝通 session
+      expect(isCustomerInChatSession(custId)).toBe(true);
+      expect(getCustomerChatOrderId(custId)).toBe(ord.id);
+    });
+
+    it('forwardMessageToDriver 應正確推播乘客留言給接單司機', async () => {
+      const custId = 'U_msg_cust_99';
+      const driverId = 'D_driver_mike';
+
+      const ord = await createOrder({
+        id: 'ord-test-5e36',
+        customer_id: custId,
+        pickup_address: '內湖高中',
+        pickup_lat: 25.075,
+        pickup_lng: 121.590,
+      });
+      ord.driver_id = driverId;
+      ord.status = 'accepted';
+
+      const pushed = await forwardMessageToDriver(ord, '快到了');
+      expect(pushed).toBe(true);
+
+      const mockClient = getLineClient();
+      expect(mockClient.pushMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: driverId,
+          messages: [
+            expect.objectContaining({
+              type: 'text',
+              text: expect.stringContaining('快到了'),
+            }),
+          ],
+        })
+      );
     });
   });
 

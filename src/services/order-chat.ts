@@ -144,6 +144,7 @@ export async function forwardMessageToDriver(
 
 /**
  * 將司機文字轉發至乘客 1:1 OA
+ * 簡化訊息格式：僅保留司機留言、司機暱稱與訊息內容
  */
 export async function forwardMessageToPassenger(
   order: Order,
@@ -155,8 +156,6 @@ export async function forwardMessageToPassenger(
   const lineClient = getLineClient();
   const driver = await getDriverById(driverId);
   const driverName = driver?.display_name || '接單司機';
-  const plate = driver?.plate_number ? ` (${driver.plate_number})` : '';
-  const shortId = order.id.slice(-4);
 
   try {
     await lineClient.pushMessage({
@@ -164,10 +163,12 @@ export async function forwardMessageToPassenger(
       messages: [
         {
           type: 'text',
-          text: `💬【司機留言】（${driverName}${plate}，訂單 #${shortId}）\n\n「${messageText}」\n\n您可以直接在此打字回覆司機！🚖`,
+          text: `💬【司機留言】${driverName}\n\n「${messageText}」`,
         },
       ],
     });
+    // 當司機主動留言給乘客時，自動開啟此乘客的雙向溝通 session，確保後續乘客打字直接轉達司機
+    startCustomerChatSession(order.customer_id, order.id);
     return true;
   } catch (err: any) {
     console.error(`[Order Chat] 轉發司機訊息至乘客 ${order.customer_id} 失敗:`, err.message);

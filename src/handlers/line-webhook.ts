@@ -1942,10 +1942,53 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
               ],
             });
           } else {
-            // 1. 檢查是否為處於「與司機溝通」會話中的乘客
-            if (userSource.userId && isCustomerInChatSession(userSource.userId)) {
-              const customerId = userSource.userId;
-              const chatOrderId = getCustomerChatOrderId(customerId);
+            const currentUserId = userSource.userId;
+
+            // 1. 檢查是否為已有活躍接單的司機（優先判定：若司機於 1:1 OA 輸入文字，自動轉發給乘客）
+            if (currentUserId) {
+              const driver = await getDriverById(currentUserId);
+              if (driver && driver.registered) {
+                const driverOrder =
+                  (await getActiveOrderByDriverId(currentUserId)) ||
+                  (await getScheduledOrdersByDriverId(currentUserId))[0];
+                if (driverOrder && driverOrder.customer_id) {
+                  const forwarded = await forwardMessageToPassenger(driverOrder, currentUserId, text);
+                  if (forwarded) {
+                    await lineClient.replyMessage({
+                      replyToken,
+                      messages: [
+                        {
+                          type: 'text',
+                          text: `✅ 已將您的訊息轉發給乘客！（訂單 #${driverOrder.id.slice(-4)}）`,
+                        },
+                      ],
+                    });
+                    continue;
+                  }
+                }
+              }
+            }
+
+            // 2. 檢查是否為處於「與司機溝通」會話中，或已有指派司機進行中訂單之乘客
+            if (currentUserId) {
+              const customerId = currentUserId;
+              let chatOrderId = isCustomerInChatSession(customerId)
+                ? getCustomerChatOrderId(customerId)
+                : undefined;
+
+              // 若乘客未顯式點選「與司機溝通」，但當前已有司機接單之活躍行程，自動綁定溝通並轉發
+              if (!chatOrderId) {
+                const activeOrder = await getActiveOrderByCustomerId(customerId);
+                if (
+                  activeOrder &&
+                  activeOrder.driver_id &&
+                  ['accepted', 'in_progress', 'arrived', 'picked_up'].includes(activeOrder.status)
+                ) {
+                  chatOrderId = activeOrder.id;
+                  startCustomerChatSession(customerId, activeOrder.id);
+                }
+              }
+
               if (chatOrderId) {
                 const order = await getOrderById(chatOrderId);
                 if (
@@ -1960,7 +2003,7 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
                       messages: [
                         {
                           type: 'text',
-                          text: '✅ 已將您的訊息轉發給司機夥伴！🚖',
+                          text: `✅ 已將您的訊息轉發給司機夥伴！🚖\n\n「${text}」`,
                           quickReply: {
                             items: [
                               {
@@ -1980,31 +2023,6 @@ ${env.OFFICIAL_ACCOUNT_URL || 'https://line.me/R/ti/p/@688muuaw'}`;
                   }
                 } else {
                   endCustomerChatSession(customerId);
-                }
-              }
-            }
-
-            // 2. 檢查是否為已有活躍接單的司機（將文字自動轉發給乘客）
-            if (userSource.userId) {
-              const driver = await getDriverById(userSource.userId);
-              if (driver && driver.registered) {
-                const driverOrder =
-                  (await getActiveOrderByDriverId(userSource.userId)) ||
-                  (await getScheduledOrdersByDriverId(userSource.userId))[0];
-                if (driverOrder && driverOrder.customer_id) {
-                  const forwarded = await forwardMessageToPassenger(driverOrder, userSource.userId, text);
-                  if (forwarded) {
-                    await lineClient.replyMessage({
-                      replyToken,
-                      messages: [
-                        {
-                          type: 'text',
-                          text: `✅ 已將您的訊息轉發給乘客！（訂單 #${driverOrder.id.slice(-4)}）`,
-                        },
-                      ],
-                    });
-                    continue;
-                  }
                 }
               }
             }

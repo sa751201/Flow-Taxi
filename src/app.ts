@@ -46,6 +46,7 @@ import {
 } from './services/flex-messages.js';
 import { linkDriverRichMenu } from './services/rich-menu.js';
 import { isFutureReservation, formatScheduledTime, extractScheduledTimeText } from './services/reservation.js';
+import { endCustomerChatSession } from './services/order-chat.js';
 import {
   startReservationReminderWorker,
   registerReservationLifecycleHooks,
@@ -666,6 +667,7 @@ app.post('/api/driver/trip-action', async (req, res) => {
       const newPoints = targetDriverId ? await addDriverCompensationPoint(targetDriverId, 1) : 1;
 
       if (customerId && customerId !== 'UNKNOWN_CUSTOMER') {
+        endCustomerChatSession(customerId);
         await lineClient.pushMessage({
           to: customerId,
           messages: [
@@ -698,6 +700,9 @@ app.post('/api/driver/trip-action', async (req, res) => {
       }
 
       const completedOrder = await completeOrderWithFare(orderId, finalFare);
+      if (order.customer_id) {
+        endCustomerChatSession(order.customer_id);
+      }
       const shortTripEval = await evaluateShortTripOnCompletion({
         order: completedOrder || order,
         confirmedDropoffAddress: req.body.dropoffAddress,
@@ -1039,6 +1044,9 @@ app.post('/api/orders/complete-with-fare', async (req, res) => {
     const completedOrder = await completeOrderWithFare(orderId, finalFare, trimmedNote || undefined);
     if (!completedOrder) {
       return res.status(500).json({ error: '更新結單金額失敗' });
+    }
+    if (completedOrder.customer_id) {
+      endCustomerChatSession(completedOrder.customer_id);
     }
 
     // 偵測上車地點與確認後之下車地點距離，若小於 5 公里即判定為短程單

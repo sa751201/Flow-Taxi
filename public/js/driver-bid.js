@@ -141,10 +141,10 @@ function updateEtaDisplay() {
     }
   }
 
-  // 需求 4: 按加後，數字下方/手動微調區出現重設按鈕 (ghost button 樣式)
+  // 需求 4: 手動微調後，數字下方/手動微調區出現重設按鈕 (ghost button 樣式)
   const resetBtn = document.getElementById('btn-reset-eta');
   if (resetBtn) {
-    if (extraMinutes > 0) {
+    if (extraMinutes !== 0) {
       resetBtn.classList.remove('hidden');
     } else {
       resetBtn.classList.add('hidden');
@@ -506,8 +506,13 @@ document.getElementById('btn-reset-eta')?.addEventListener('click', () => {
   updateEtaDisplay();
 });
 
-document.getElementById('btn-plus-1')?.addEventListener('click', () => {
-  extraMinutes += 1;
+document.getElementById('btn-minus-5')?.addEventListener('click', () => {
+  const currentTotal = baseEtaMinutes + extraMinutes;
+  if (currentTotal > 5) {
+    extraMinutes -= 5;
+  } else if (currentTotal > 1) {
+    extraMinutes = 1 - baseEtaMinutes;
+  }
   updateEtaDisplay();
 });
 
