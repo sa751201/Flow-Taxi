@@ -260,7 +260,7 @@ export async function seedMockOrders(): Promise<void> {
             $1, $2, $3, $4,
             ST_SetSRID(ST_MakePoint($5, $6), 4326)::geography,
             $7,
-            ${ord.dropoff_lat && ord.dropoff_lng ? `ST_SetSRID(ST_MakePoint($8, $9), 4326)::geography` : 'NULL'},
+            CASE WHEN $8::float IS NOT NULL AND $9::float IS NOT NULL THEN ST_SetSRID(ST_MakePoint($8, $9), 4326)::geography ELSE NULL END,
             $10, $11, $12, $13, $14,
             'dispatching',
             NOW()
@@ -274,7 +274,8 @@ export async function seedMockOrders(): Promise<void> {
           ord.pickup_lng,
           ord.pickup_lat,
           ord.dropoff_address,
-          ...(ord.dropoff_lat && ord.dropoff_lng ? [ord.dropoff_lng, ord.dropoff_lat] : []),
+          ord.dropoff_lng ?? null,
+          ord.dropoff_lat ?? null,
           ord.passenger_count,
           ord.distance_km,
           ord.fare,
@@ -341,3 +342,4 @@ export function startMockOrdersScheduler(): void {
     }
   }, 2 * 60 * 1000);
 }
+
