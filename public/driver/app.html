@@ -370,27 +370,47 @@
              3. 可接單列表 (Available Orders Section)
              ============================================================== -->
         <div id="instant-dispatch-section" class="space-y-3">
-          <!-- 頂部標題與篩選控制列 -->
+          <!-- 頂部標題列 -->
           <div class="flex items-center justify-between px-1">
-            <div class="flex items-center gap-2">
-              <h3 class="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
-                <span>可接單</span>
-                <span id="orders-count-badge" class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">0</span>
-              </h3>
+            <h3 class="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+              <span>可接單</span>
+              <span id="orders-count-badge" class="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-800 text-xs font-black border border-emerald-500/30">0</span>
+            </h3>
+
+            <!-- 重新整理按鈕 -->
+            <button id="btn-hero-radar-refresh-mini" type="button" class="p-2 rounded-xl text-slate-500 hover:text-emerald-600 hover:bg-slate-200/80 transition btn-spring" title="重新整理訂單列表">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            </button>
+          </div>
+
+          <!-- 篩選與字體控制列 (參照設計圖：距離全部篩選 & 大中小字體切換) -->
+          <div class="flex items-center justify-between gap-2 px-1">
+            <!-- 距離篩選膠囊按鈕 -->
+            <div class="relative">
+              <select id="select-order-distance-filter" class="appearance-none pl-3.5 pr-8 py-2 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-black border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm transition cursor-pointer">
+                <option value="all">距離：全部 ▾</option>
+                <option value="5">距離：5 公里內</option>
+                <option value="15">距離：15 公里內</option>
+                <option value="30">距離：30 公里內</option>
+                <option value="50">距離：50 公里內</option>
+              </select>
+              <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]">▼</span>
             </div>
 
-            <div class="flex items-center gap-2">
-              <!-- Filter tabs: 全部 / 即時 / 預約 -->
-              <div class="inline-flex rounded-xl bg-slate-200/80 p-0.5 text-xs font-bold text-slate-600">
-                <button type="button" class="order-filter-tab px-2.5 py-1 rounded-lg transition active bg-white text-slate-900 shadow-sm" data-filter="all">全部</button>
-                <button type="button" class="order-filter-tab px-2.5 py-1 rounded-lg transition text-slate-600 hover:text-slate-900" data-filter="instant">⚡即時</button>
-                <button type="button" class="order-filter-tab px-2.5 py-1 rounded-lg transition text-slate-600 hover:text-slate-900" data-filter="scheduled">📅預約</button>
-              </div>
+            <!-- 字體大小切換 (大 / 中 / 小) - 緩解長時間工作疲勞 -->
+            <div id="font-size-switcher-group" class="inline-flex items-center rounded-full bg-slate-900 p-1 border border-slate-700 text-xs font-black shadow-sm">
+              <button type="button" class="btn-font-size-opt px-3 py-1 rounded-full transition text-white bg-indigo-600 shadow-xs btn-spring" data-size="large">大</button>
+              <button type="button" class="btn-font-size-opt px-3 py-1 rounded-full transition text-slate-400 hover:text-white btn-spring" data-size="medium">中</button>
+              <button type="button" class="btn-font-size-opt px-3 py-1 rounded-full transition text-slate-400 hover:text-white btn-spring" data-size="small">小</button>
+            </div>
+          </div>
 
-              <!-- 重新整理按鈕 -->
-              <button id="btn-hero-radar-refresh-mini" type="button" class="p-1.5 rounded-lg text-slate-500 hover:text-emerald-600 hover:bg-slate-100 transition" title="重新整理訂單列表">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-              </button>
+          <!-- Filter tabs: 全部 / ⚡ 即時 / 📅 預約 -->
+          <div class="flex items-center justify-start gap-1 px-1">
+            <div class="inline-flex rounded-xl bg-slate-200/80 p-0.5 text-xs font-bold text-slate-600">
+              <button type="button" class="order-filter-tab px-3 py-1.5 rounded-lg transition active bg-white text-slate-900 shadow-sm font-extrabold" data-filter="all">全部</button>
+              <button type="button" class="order-filter-tab px-3 py-1.5 rounded-lg transition text-slate-600 hover:text-slate-900 font-extrabold" data-filter="instant">⚡ 即時</button>
+              <button type="button" class="order-filter-tab px-3 py-1.5 rounded-lg transition text-slate-600 hover:text-slate-900 font-extrabold" data-filter="scheduled">📅 預約</button>
             </div>
           </div>
 
