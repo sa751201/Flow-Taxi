@@ -56,6 +56,11 @@ import {
   evaluateShortTripOnCompletion,
   notifyShortTripForVerification,
 } from './services/short-trip-verifier.js';
+import {
+  startMockOrdersScheduler,
+  seedMockOrders,
+  purgeMockOrders,
+} from './services/mock-orders-manager.js';
 
 import { middleware, webhook, messagingApi } from '@line/bot-sdk';
 import { handleLineEvents } from './handlers/line-webhook.js';
@@ -404,12 +409,12 @@ app.get('/api/config', (req, res) => {
   });
 });
 
-// 司機網頁版：取得方圓 1.5 公里內正在派單中的訂單
+// 司機網頁版：取得司機所在生活圈內正在派單中的訂單 (預設半徑 50 公里)
 app.get('/api/dispatch/nearby-orders', async (req, res) => {
   try {
     const lat = Number(req.query.lat);
     const lng = Number(req.query.lng);
-    const radiusKm = req.query.radiusKm ? Number(req.query.radiusKm) : 1.5;
+    const radiusKm = req.query.radiusKm ? Number(req.query.radiusKm) : 50;
 
     if (isNaN(lat) || isNaN(lng)) {
       return res.status(400).json({ error: '請提供有效的司機經緯度座標 (lat, lng)' });
@@ -1376,11 +1381,32 @@ app.post('/api/orders/:orderId/close-window', async (req, res) => {
   }
 });
 
+// 管理員/調試：手動觸發模擬訂單注入或清理 (預設於今晚 19:00:00 自動清理)
+app.post(['/api/mock-orders/seed', '/api/admin/mock-orders/seed'], async (req, res) => {
+  try {
+    await seedMockOrders();
+    res.json({ success: true, message: '10 筆情境模擬訂單 (6 即時 / 4 預約) 已成功注入！今晚 19:00 後將自動移除。' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post(['/api/mock-orders/cleanup', '/api/admin/mock-orders/cleanup'], async (req, res) => {
+  try {
+    const force = Boolean(req.body?.force ?? true);
+    const count = await purgeMockOrders(force);
+    res.json({ success: true, count, message: `已成功移除 ${count} 筆模擬訂單！` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 if (process.env.NODE_ENV !== 'test') {
   // 載入自訂靜默問題清單與啟動定時日報排程器
   loadSilentRulesFromExcel();
   initDailyReportScheduler();
   startReservationReminderWorker();
+  startMockOrdersScheduler();
 
   app.listen(env.PORT, () => {
     console.log(`[Server] Taxi dispatch system listening on port ${env.PORT}`);

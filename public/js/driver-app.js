@@ -1002,7 +1002,7 @@
       return;
     }
     try {
-      const url = `/api/dispatch/nearby-orders?lat=${currentGps.lat}&lng=${currentGps.lng}&radiusKm=1.5`;
+      const url = `/api/dispatch/nearby-orders?lat=${currentGps.lat}&lng=${currentGps.lng}&radiusKm=50`;
       const res = await fetch(url);
       if (!res.ok) return;
 
@@ -1184,7 +1184,11 @@
         const fareText = ord.fare ? `$${ord.fare}` : (ord.fare_type === 'fixed' ? '一口價' : '跳錶計費');
 
         // 乘客備註 (排除內部標記)
-        let noteText = (ord.note || '').replace(/\[DRIVER_ARRIVED\]/g, '').replace(/\[SHORT_TRIP_FLAGGED\]/g, '').trim();
+        let noteText = (ord.note || '')
+          .replace(/\[DRIVER_ARRIVED\]/g, '')
+          .replace(/\[SHORT_TRIP_FLAGGED\]/g, '')
+          .replace(/\[MOCK_SIMULATION_20261112\]/g, '')
+          .trim();
 
         // 導航與接單連結 (包含 openExternalBrowser=1 避免 LINE 內置瀏覽器導航白畫面)
         const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ord.pickup_address || '')}&travelmode=driving&openExternalBrowser=1`;

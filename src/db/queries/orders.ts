@@ -1,6 +1,6 @@
 import { query } from '../index.js';
 import { env } from '../../config/env.js';
-import { Order, OrderStatus } from '../../types/dispatch.js';
+import type { Order, OrderStatus } from '../../types/dispatch.js';
 import { getDriverById, findDriverByPhoneOrPlate } from './drivers.js';
 import { clearBidsByOrderId } from './bids.js';
 import {
@@ -563,6 +563,7 @@ export async function getNearbyOrders(
   radiusKm: number = 1.5
 ): Promise<Array<Order & { distance_to_driver_km: number }>> {
   const result: Array<Order & { distance_to_driver_km: number }> = [];
+  const isMockExpired = new Date() >= new Date('2026-11-12T19:00:00+08:00');
 
   if (env.DATABASE_URL) {
     try {
@@ -577,11 +578,35 @@ export async function getNearbyOrders(
         WHERE status = 'dispatching'
           AND pickup_geog IS NOT NULL
           AND ST_DWithin(pickup_geog, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3 * 1000)
+          ${isMockExpired ? "AND NOT (note LIKE '%[MOCK_SIMULATION_20261112]%')" : ''}
         ORDER BY distance_to_driver_km ASC;
       `;
       const res = await query<Order & { distance_to_driver_km: number }>(sql, [lng, lat, radiusKm]);
       if (res.rows.length > 0) {
         return res.rows.map(r => ({
+          ...r,
+          distance_to_driver_km: Number(Number(r.distance_to_driver_km).toFixed(2)),
+        }));
+      }
+
+      // 備援查詢：若設定之半徑內無訂單，擴大至生活圈派單中訂單 (按司機距離排序，上限 20 筆)
+      const fallbackSql = `
+        SELECT *,
+          ST_Y(pickup_geog::geometry) as pickup_lat,
+          ST_X(pickup_geog::geometry) as pickup_lng,
+          ST_Y(dropoff_geog::geometry) as dropoff_lat,
+          ST_X(dropoff_geog::geometry) as dropoff_lng,
+          (ST_Distance(pickup_geog, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000.0) as distance_to_driver_km
+        FROM orders
+        WHERE status = 'dispatching'
+          AND pickup_geog IS NOT NULL
+          ${isMockExpired ? "AND NOT (note LIKE '%[MOCK_SIMULATION_20261112]%')" : ''}
+        ORDER BY distance_to_driver_km ASC
+        LIMIT 20;
+      `;
+      const fallbackRes = await query<Order & { distance_to_driver_km: number }>(fallbackSql, [lng, lat]);
+      if (fallbackRes.rows.length > 0) {
+        return fallbackRes.rows.map(r => ({
           ...r,
           distance_to_driver_km: Number(Number(r.distance_to_driver_km).toFixed(2)),
         }));
@@ -592,8 +617,12 @@ export async function getNearbyOrders(
   }
 
   // 記憶體備援空間計算 (Haversine Formula)
+  const allMemoryActive: Array<Order & { distance_to_driver_km: number }> = [];
   for (const order of memoryOrders.values()) {
     if (order.status === 'dispatching' && order.pickup_lat && order.pickup_lng) {
+      if (isMockExpired && (order.note?.includes('[MOCK_SIMULATION_20261112]') || order.id?.startsWith('mock-261112-'))) {
+        continue;
+      }
       const pLat = Number(order.pickup_lat);
       const pLng = Number(order.pickup_lng);
       // Haversine
@@ -607,18 +636,26 @@ export async function getNearbyOrders(
           Math.sin(dLng / 2) *
           Math.sin(dLng / 2);
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      const dist = R * c;
+      const dist = Number((R * c).toFixed(2));
 
+      const entry = {
+        ...order,
+        distance_to_driver_km: dist,
+      };
+
+      allMemoryActive.push(entry);
       if (dist <= radiusKm) {
-        result.push({
-          ...order,
-          distance_to_driver_km: Number(dist.toFixed(2)),
-        });
+        result.push(entry);
       }
     }
   }
 
-  return result.sort((a, b) => a.distance_to_driver_km - b.distance_to_driver_km);
+  if (result.length > 0) {
+    return result.sort((a, b) => a.distance_to_driver_km - b.distance_to_driver_km);
+  }
+
+  // 記憶體備援：半徑內無訂單時，回傳全部派單中訂單按距離排序 (上限 20 筆)
+  return allMemoryActive.sort((a, b) => a.distance_to_driver_km - b.distance_to_driver_km).slice(0, 20);
 }
 
 /**
