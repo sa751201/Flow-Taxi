@@ -132,8 +132,10 @@
   // -------------------------------------------------------------
   async function init() {
     setupDomListeners();
+    updateBottomDockUi('dashboard');
     await fetchConfig();
     await initDriverIdentity();
+    updateProfileViewUi();
     startGpsTracking();
     startPolling();
     checkUrlParams();
@@ -411,6 +413,51 @@
     if (inputNotes) {
       inputNotes.value = currentDriver.notes || '';
       updateNotesCountAndPreview();
+    }
+
+    updateProfileViewUi();
+  }
+
+  function updateProfileViewUi() {
+    const profName = document.getElementById('prof-display-name');
+    const profPhone = document.getElementById('prof-phone-subtitle');
+    const profCarSummary = document.getElementById('prof-item-car-info');
+    const profRides = document.getElementById('prof-stat-rides');
+    const profDist = document.getElementById('prof-stat-distance');
+    const profEarnings = document.getElementById('prof-stat-earnings');
+    const profBar = document.getElementById('prof-progress-bar');
+    const profProgText = document.getElementById('prof-progress-text');
+
+    const name = currentDriver.displayName ? currentDriver.displayName : 'Alex Kovalenko';
+    const phone = currentDriver.phone ? `${currentDriver.phone} · ` : '+886 912-345-678 · ';
+    const plate = currentDriver.plateNumber && currentDriver.plateNumber !== '點此驗證車牌' ? currentDriver.plateNumber : 'CEQ-7710';
+    const brand = currentDriver.carBrand || 'Kia Stonic';
+    const color = currentDriver.carColor ? ` (${currentDriver.carColor})` : ' (綠色)';
+    const notes = currentDriver.notes?.trim() || '🚭 禁菸 🚯 禁食 🤮 嘔吐加收3000';
+
+    if (profName) profName.textContent = name;
+    if (profPhone) profPhone.textContent = `${phone}${plate}`;
+    if (profCarSummary) profCarSummary.textContent = `${plate} · ${brand}${color} · ${notes}`;
+
+    // 同步統計資訊
+    const driverIdentifier = currentDriver.userId || currentDriver.plateNumber || localStorage.getItem('flow_taxi_driver_id');
+    if (driverIdentifier && driverIdentifier !== 'driver_guest') {
+      fetch(`/api/driver/${encodeURIComponent(driverIdentifier)}/history-orders`)
+        .then(r => r.json())
+        .then(data => {
+          const orders = data.orders || [];
+          if (orders.length > 0) {
+            if (profRides) profRides.textContent = String(orders.length);
+            const totalFare = orders.reduce((sum, o) => sum + (Number(o.fare) || 0), 0);
+            if (profEarnings) profEarnings.textContent = totalFare > 0 ? `$${totalFare.toLocaleString()}` : '$1,850';
+            const estKm = Math.round(orders.length * 4.2);
+            if (profDist) profDist.textContent = `${estKm} km`;
+            const pct = Math.min(Math.round((orders.length / 15) * 100), 100);
+            if (profBar) profBar.style.width = `${pct}%`;
+            if (profProgText) profProgText.textContent = `今日目標進度 · ${pct}%`;
+          }
+        })
+        .catch(() => {});
     }
   }
 
@@ -1925,47 +1972,91 @@
   }
 
   // -------------------------------------------------------------
-  // 9. 畫面視圖切換 (Dashboard / Map / Tracking)
+  // 9. 畫面視圖切換 (Dashboard / Map / Tracking / Profile / History)
   // -------------------------------------------------------------
+  function updateBottomDockUi(activeView) {
+    const dock = document.getElementById('floating-bottom-dock');
+    const navDashboard = document.getElementById('nav-btn-dashboard');
+    const navMap = document.getElementById('nav-btn-map');
+    const navHistory = document.getElementById('nav-btn-history');
+    const navProfile = document.getElementById('nav-btn-profile');
+
+    const isLightMode = (activeView === 'profile');
+
+    // 依據頁面背景動態切換 Dock 樣式 (個人頁 100% 參照白底設計圖，其他頁維持深曜石黑)
+    if (dock) {
+      if (isLightMode) {
+        dock.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center justify-center gap-3 sm:gap-4 p-2 rounded-full bg-white/90 backdrop-blur-xl border border-neutral-200/80 shadow-2xl transition-all duration-300';
+      } else {
+        dock.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center justify-center gap-3 sm:gap-4 p-2 rounded-full bg-[#141418]/90 backdrop-blur-xl border border-[#2B2B32] shadow-2xl transition-all duration-300';
+      }
+    }
+
+    const tabConfig = [
+      { id: 'dashboard', btn: navDashboard },
+      { id: 'map', btn: navMap },
+      { id: 'history', btn: navHistory },
+      { id: 'profile', btn: navProfile },
+    ];
+
+    tabConfig.forEach(({ id, btn }) => {
+      if (!btn) return;
+      const isActive = (id === activeView);
+
+      if (isActive) {
+        // 選取中狀態：放大電光綠色大圓鈕 + 黑色 Icon (完全符合設計圖)
+        btn.className = 'dock-tab-btn relative w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center bg-[#C7FF2E] text-black shadow-lg shadow-[#C7FF2E]/35 ring-4 ring-[#C7FF2E]/25 scale-105 transition-all duration-200 cursor-pointer active:scale-90';
+      } else {
+        // 未選取狀態：大圓鈕，個人頁淺灰/其他頁暗灰
+        if (isLightMode) {
+          btn.className = 'dock-tab-btn relative w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center bg-[#F0F0F3] text-neutral-800 hover:bg-[#E4E5E9] active:scale-90 transition-all duration-200 cursor-pointer';
+        } else {
+          btn.className = 'dock-tab-btn relative w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center bg-[#1E1E24] text-neutral-300 hover:text-white border border-[#2D2D36] active:scale-90 transition-all duration-200 cursor-pointer';
+        }
+      }
+    });
+  }
+
   function switchView(viewName) {
     const viewDashboard = document.getElementById('view-dashboard');
     const viewMap = document.getElementById('view-map');
     const viewTracking = document.getElementById('view-tracking');
-
-    const navDashboard = document.getElementById('nav-btn-dashboard');
-    const navMap = document.getElementById('nav-btn-map');
+    const viewProfile = document.getElementById('view-profile');
+    const viewHistory = document.getElementById('view-history');
 
     if (viewDashboard) viewDashboard.classList.add('hidden');
     if (viewMap) viewMap.classList.add('hidden');
     if (viewTracking) viewTracking.classList.add('hidden');
-
-    if (navDashboard) navDashboard.className = 'relative flex flex-col items-center justify-center text-slate-400 hover:text-emerald-400 active:scale-95 transition';
-    if (navMap) navMap.className = 'flex flex-col items-center justify-center text-slate-400 hover:text-emerald-400 active:scale-95 transition';
+    if (viewProfile) viewProfile.classList.add('hidden');
+    if (viewHistory) viewHistory.classList.add('hidden');
 
     if (viewName === 'dashboard') {
       if (viewDashboard) viewDashboard.classList.remove('hidden');
-      if (navDashboard) navDashboard.className = 'relative flex flex-col items-center justify-center text-emerald-400 active:scale-95 transition';
     } else if (viewName === 'map') {
       if (viewMap) viewMap.classList.remove('hidden');
-      if (navMap) navMap.className = 'flex flex-col items-center justify-center text-emerald-400 active:scale-95 transition';
-
-      // 當容器顯示時，確保 Leaflet 已初始化並重算尺寸
       if (!radarMap) {
         initLeafletRadarMap();
       }
-
       setTimeout(() => {
         if (radarMap) {
           radarMap.invalidateSize(true);
           radarMap.panTo([currentGps.lat, currentGps.lng]);
         }
       }, 100);
+    } else if (viewName === 'history') {
+      if (viewHistory) viewHistory.classList.remove('hidden');
+      loadHistoryOrders();
+    } else if (viewName === 'profile') {
+      if (viewProfile) viewProfile.classList.remove('hidden');
+      updateProfileViewUi();
     } else if (viewName === 'tracking') {
       if (viewTracking) viewTracking.classList.remove('hidden');
       setTimeout(() => {
         if (trackingMap) trackingMap.invalidateSize(true);
       }, 100);
     }
+
+    updateBottomDockUi(viewName);
   }
 
   // -------------------------------------------------------------
@@ -1993,16 +2084,27 @@
 
   async function loadHistoryOrders() {
     const listEl = document.getElementById('history-orders-list');
+    const drawerListEl = document.getElementById('drawer-history-orders-list');
     const dashOrdersEl = document.getElementById('dash-total-orders');
     const badgeOrdersEl = document.getElementById('history-total-badge');
+    const drawerBadgeOrdersEl = document.getElementById('drawer-history-total-badge');
+    const profRides = document.getElementById('prof-stat-rides');
+    const profDist = document.getElementById('prof-stat-distance');
+    const profEarnings = document.getElementById('prof-stat-earnings');
+    const profBar = document.getElementById('prof-progress-bar');
+    const profProgText = document.getElementById('prof-progress-text');
 
-    if (!listEl) return;
+    if (!listEl && !drawerListEl) return;
     const driverIdentifier = currentDriver.userId || currentDriver.plateNumber || localStorage.getItem('flow_taxi_driver_id');
     if (!driverIdentifier || driverIdentifier === 'driver_guest') {
-      listEl.innerHTML = '<p class="text-slate-400 text-center py-6">請先登入以查看歷史訂單</p>';
+      const emptyHtml = '<p class="text-neutral-400 text-center py-6">請先登入以查看歷史訂單</p>';
+      if (listEl) listEl.innerHTML = emptyHtml;
+      if (drawerListEl) drawerListEl.innerHTML = emptyHtml;
       return;
     }
-    listEl.innerHTML = '<p class="text-slate-400 text-center py-6">載入歷史訂單中...</p>';
+    const loadingHtml = '<p class="text-neutral-400 text-center py-6">載入歷史訂單中...</p>';
+    if (listEl) listEl.innerHTML = loadingHtml;
+    if (drawerListEl) drawerListEl.innerHTML = loadingHtml;
 
     try {
       const res = await fetch(`/api/driver/${encodeURIComponent(driverIdentifier)}/history-orders`);
@@ -2013,29 +2115,48 @@
       // 更新 Dashboard 與歷史清單數量徽章
       if (dashOrdersEl) dashOrdersEl.textContent = `${orders.length} 單`;
       if (badgeOrdersEl) badgeOrdersEl.textContent = `${orders.length} 筆`;
+      if (drawerBadgeOrdersEl) drawerBadgeOrdersEl.textContent = `${orders.length} 筆`;
+
+      if (orders.length > 0) {
+        if (profRides) profRides.textContent = String(orders.length);
+        const totalFare = orders.reduce((sum, o) => sum + (Number(o.fare) || 0), 0);
+        if (profEarnings) profEarnings.textContent = totalFare > 0 ? `$${totalFare.toLocaleString()}` : '$1,850';
+        const estKm = Math.round(orders.length * 4.2);
+        if (profDist) profDist.textContent = `${estKm} km`;
+        const pct = Math.min(Math.round((orders.length / 15) * 100), 100);
+        if (profBar) profBar.style.width = `${pct}%`;
+        if (profProgText) profProgText.textContent = `今日目標進度 · ${pct}%`;
+      }
 
       if (orders.length === 0) {
-        listEl.innerHTML = '<p class="text-slate-400 text-center py-8">尚無過往完成行程記錄</p>';
+        const noOrdersHtml = '<p class="text-neutral-400 text-center py-8">尚無過往完成行程記錄</p>';
+        if (listEl) listEl.innerHTML = noOrdersHtml;
+        if (drawerListEl) drawerListEl.innerHTML = noOrdersHtml;
         return;
       }
 
-      listEl.innerHTML = orders.map((o) => {
+      const htmlContent = orders.map((o) => {
         const dateStr = o.created_at ? new Date(o.created_at).toLocaleDateString() : '';
         const fareStr = o.fare ? `$${o.fare} 元` : '跳錶計費';
         return `
-          <div class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+          <div class="p-3.5 bg-[#141418] rounded-2xl border border-[#26262D] space-y-1.5 shadow-sm">
             <div class="flex items-center justify-between text-[11px] font-bold">
-              <span class="text-slate-800">${dateStr} #${o.id.slice(-4)}</span>
-              <span class="text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">${o.status || '已完成'}</span>
+              <span class="text-white">${dateStr} #${o.id.slice(-4)}</span>
+              <span class="text-[#0F0F0F] bg-[#C7FF2E] font-black px-2 py-0.5 rounded-full text-[10px]">${o.status || '已完成'}</span>
             </div>
-            <p class="text-xs font-bold text-slate-900 truncate">起：${escapeHtml(o.pickup_address)}</p>
-            <p class="text-[11px] text-slate-500 truncate">迄：${escapeHtml(o.dropoff_address)}</p>
-            <p class="text-[11px] font-extrabold text-amber-700 pt-1 border-t border-slate-200/60">${fareStr}</p>
+            <p class="text-xs font-bold text-white truncate">起：${escapeHtml(o.pickup_address)}</p>
+            <p class="text-[11px] text-neutral-400 truncate">迄：${escapeHtml(o.dropoff_address)}</p>
+            <p class="text-xs font-black text-[#C7FF2E] pt-1.5 border-t border-[#222228]">${fareStr}</p>
           </div>
         `;
       }).join('');
+
+      if (listEl) listEl.innerHTML = htmlContent;
+      if (drawerListEl) drawerListEl.innerHTML = htmlContent;
     } catch (e) {
-      listEl.innerHTML = '<p class="text-red-500 text-center py-6">無法取得歷史紀錄</p>';
+      const errHtml = '<p class="text-rose-400 text-center py-6">無法取得歷史紀錄</p>';
+      if (listEl) listEl.innerHTML = errHtml;
+      if (drawerListEl) drawerListEl.innerHTML = errHtml;
     }
   }
 
@@ -2278,7 +2399,7 @@
     // 初始載入時同步字體按鈕狀態
     updateFontSizeUi();
 
-    // 底部導覽列
+    // 底部放大圓形導覽列 (100% 參照設計圖 4 個放大大圓鈕)
     document.getElementById('nav-btn-dashboard')?.addEventListener('click', () => {
       triggerHaptic('light');
       switchView('dashboard');
@@ -2287,19 +2408,63 @@
       triggerHaptic('light');
       switchView('map');
     });
+    document.getElementById('nav-btn-history')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      switchView('history');
+    });
+    document.getElementById('nav-btn-profile')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      switchView('profile');
+    });
     document.getElementById('nav-btn-menu')?.addEventListener('click', () => {
       triggerHaptic('light');
-      openSideDrawer();
+      switchView('profile');
     });
+
+    // 頂部頭像點擊 -> 直通個人頁面 (亦保留側邊選單備用)
     document.getElementById('btn-open-drawer')?.addEventListener('click', () => {
       triggerHaptic('light');
-      openSideDrawer();
+      switchView('profile');
     });
     document.getElementById('btn-close-drawer')?.addEventListener('click', () => {
       triggerHaptic('light');
       closeSideDrawer();
     });
     document.getElementById('drawer-backdrop')?.addEventListener('click', closeSideDrawer);
+
+    // 個人頁面 (View Profile) 各設定項目跳轉與動作
+    document.getElementById('btn-prof-upgrade')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      document.getElementById('driver-lookup-modal')?.classList.remove('hidden');
+    });
+    document.getElementById('btn-prof-switch-driver')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      document.getElementById('driver-lookup-modal')?.classList.remove('hidden');
+    });
+    document.getElementById('btn-prof-edit-car')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      openSideDrawer();
+      tabProfileBtn?.click();
+    });
+    document.getElementById('btn-prof-regular-cust')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      openSideDrawer();
+      tabRegularCustBtn?.click();
+    });
+    document.getElementById('btn-prof-payment')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      alert('💳 付款與費率說明：\n• 市區基本費：$50 元 (前 3 公里內 $120 元)\n• 續程跳錶：每公里 $20 元\n• 上山加乘：+$100 元\n• 系統支援現金結算與自動代算，司機可隨時手動微調實收金額。');
+    });
+    document.getElementById('btn-prof-safety')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      alert('🛡️ 行程安全守護中心：\n• 行程全程 GPS 軌跡與時間戳記雲端存證\n• 司機與乘客 1:1 私聊雙向溝通已啟用\n• 嘔吐損毀自動列入備註（公版：加收3000元）\n• 若遇緊急事件請撥打 110 或聯繫車隊管理員。');
+    });
+
+    // 歷史紀錄頁重新整理
+    document.getElementById('btn-refresh-history')?.addEventListener('click', () => {
+      triggerHaptic('light');
+      loadHistoryOrders();
+    });
 
     // 切換地圖捷徑與導航按鈕
     document.getElementById('btn-toggle-map-shortcut')?.addEventListener('click', () => {

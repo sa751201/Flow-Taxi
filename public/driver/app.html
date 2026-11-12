@@ -631,37 +631,204 @@
 
       </section>
 
+      <!-- ------------------------------------------------------------
+           VIEW D: Personal Profile View (100% 參照最新設計圖)
+           ------------------------------------------------------------ -->
+      <section id="view-profile" class="hidden flex-col min-h-screen bg-white text-[#0F0F0F] p-5 pb-32 space-y-6">
+        
+        <!-- Top Profile Info (Avatar + Name + Phone) -->
+        <div class="flex flex-col items-start pt-3 space-y-2">
+          <!-- 預設頭像 (高辨識度電光綠底 + 質感司機向量圖示) -->
+          <div class="relative inline-block">
+            <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-[#C7FF2E] overflow-hidden flex items-center justify-center border-4 border-white shadow-xl shadow-[#C7FF2E]/25">
+              <svg class="w-full h-full" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="50" cy="50" r="50" fill="#C7FF2E"/>
+                <path d="M18 96C18 78 32 74 50 74C68 74 82 78 82 96V100H18V96Z" fill="#18181D"/>
+                <path d="M38 74L50 86L62 74" stroke="#C7FF2E" stroke-width="2.5" stroke-linecap="round"/>
+                <rect x="44" y="62" width="12" height="15" fill="#E8B595" rx="3"/>
+                <ellipse cx="50" cy="46" rx="19" ry="21" fill="#FBD5B5"/>
+                <path d="M28 38C28 25 36 17 50 17C64 17 72 25 72 38C72 40 70 41 68 41C65 37 60 33 50 33C40 33 35 37 32 41C30 41 28 40 28 38Z" fill="#222228"/>
+                <path d="M31 38C31 32 37 25 50 25C63 25 69 32 69 38C69 41 67 42 65 40C61 36 57 34 50 34C43 34 39 36 35 40C33 42 31 41 31 38Z" fill="#18181D"/>
+                <path d="M39 39C41 37 45 37 47 39" stroke="#18181D" stroke-width="2" stroke-linecap="round"/>
+                <path d="M53 39C55 37 59 37 61 39" stroke="#18181D" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="43" cy="45" r="2.5" fill="#18181D"/>
+                <circle cx="57" cy="45" r="2.5" fill="#18181D"/>
+                <path d="M49 47L48 51H52" stroke="#D99B7A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M44 56C46 59 54 59 56 56" stroke="#18181D" stroke-width="2.2" stroke-linecap="round"/>
+                <path d="M37 49C37 61 63 61 63 49" stroke="#222228" stroke-width="1.6" stroke-dasharray="1 2.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <span class="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-[#C7FF2E] ring-4 ring-white shadow-md"></span>
+          </div>
+
+          <!-- 司機姓名與電話 (參照設計圖字體大小與層級) -->
+          <div class="pt-1">
+            <h2 id="prof-display-name" class="text-3xl sm:text-4xl font-black text-neutral-900 tracking-tight">Mike Wang / Work</h2>
+            <p id="prof-phone-subtitle" class="text-sm font-semibold text-neutral-500 mt-0.5">+886 912-345-678 · CEQ-7710</p>
+          </div>
+        </div>
+
+        <!-- 頂部膠囊按鈕 (AutoPass Member & Upgrade) -->
+        <div class="flex items-center gap-3">
+          <div class="flex-1 py-3.5 px-4 rounded-full bg-[#C7FF2E] text-[#0F0F0F] font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm">
+            <span>👑</span>
+            <span id="prof-member-badge">AutoPass 認證司機</span>
+          </div>
+          <button id="btn-prof-upgrade" type="button" class="flex-1 py-3.5 px-4 rounded-full bg-black hover:bg-neutral-900 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm border border-neutral-800 transition active:scale-95 btn-spring">
+            <span>切換司機</span>
+            <span class="text-xs text-neutral-400">➔</span>
+          </button>
+        </div>
+
+        <!-- 數據統計黑卡 (3 格數據 + 電光綠進度條) -->
+        <div class="rounded-[32px] bg-black text-white p-6 shadow-2xl border border-neutral-900 space-y-4">
+          <div class="grid grid-cols-3 gap-2 text-center divide-x divide-neutral-800/80">
+            <div class="space-y-1">
+              <p id="prof-stat-rides" class="text-3xl sm:text-4xl font-black text-white tracking-tight">12</p>
+              <p class="text-[11px] sm:text-xs font-bold text-neutral-400">趟數 Rides</p>
+            </div>
+            <div class="space-y-1">
+              <p id="prof-stat-distance" class="text-3xl sm:text-4xl font-black text-white tracking-tight">48 km</p>
+              <p class="text-[11px] sm:text-xs font-bold text-neutral-400">里程 Traveled</p>
+            </div>
+            <div class="space-y-1">
+              <p id="prof-stat-earnings" class="text-3xl sm:text-4xl font-black text-[#C7FF2E] tracking-tight">$1,850</p>
+              <p class="text-[11px] sm:text-xs font-bold text-neutral-400">營收 Saved</p>
+            </div>
+          </div>
+          
+          <!-- 進度條 (Monthly limit · 72%) -->
+          <div class="pt-2 space-y-1.5">
+            <div class="w-full h-2 rounded-full bg-neutral-800 overflow-hidden">
+              <div id="prof-progress-bar" class="h-full rounded-full bg-[#C7FF2E] shadow-[0_0_10px_#C7FF2E] transition-all duration-700" style="width: 72%;"></div>
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-neutral-400 font-bold px-0.5">
+              <span id="prof-progress-text">今日目標進度 · 72%</span>
+              <span class="text-[#C7FF2E]">好評率 99%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Settings 區塊 (大型圓角設定項目列表) -->
+        <div class="space-y-3 pt-1">
+          <h3 class="text-base font-black text-neutral-900 px-1 tracking-tight">Settings</h3>
+          <div class="space-y-2.5">
+            <!-- 項目 1: 車輛與乘車規定 (點擊開啟編輯 Modal) -->
+            <button id="btn-prof-edit-car" type="button" class="w-full p-4 rounded-3xl bg-[#F3F4F6] hover:bg-[#EBECEF] active:scale-[0.99] transition text-left flex items-center justify-between border border-neutral-200/60 shadow-sm cursor-pointer">
+              <div class="space-y-0.5 pr-2">
+                <p class="text-sm font-black text-neutral-900">車輛設定與專屬車卡</p>
+                <p id="prof-item-car-info" class="text-xs text-neutral-500 font-medium truncate">CEQ-7710 · Kia Stonic · 🚭禁菸 🚯禁食 🤮嘔吐加收3000</p>
+              </div>
+              <div class="w-8 h-8 rounded-full bg-white flex items-center justify-center text-neutral-900 shadow-sm shrink-0 font-bold">
+                ➔
+              </div>
+            </button>
+
+            <!-- 項目 2: 付款設定 (Payment Methods) -->
+            <button id="btn-prof-payment" type="button" class="w-full p-4 rounded-3xl bg-[#F3F4F6] hover:bg-[#EBECEF] active:scale-[0.99] transition text-left flex items-center justify-between border border-neutral-200/60 shadow-sm cursor-pointer">
+              <div class="space-y-0.5 pr-2">
+                <p class="text-sm font-black text-neutral-900">付款與費率設定 (Payment Methods)</p>
+                <p class="text-xs text-neutral-500 font-medium truncate">現金收費 · 起步基本費 $50 · 系統自動精準算費</p>
+              </div>
+              <div class="w-8 h-8 rounded-full bg-white flex items-center justify-center text-neutral-900 shadow-sm shrink-0 font-bold">
+                ➔
+              </div>
+            </button>
+
+            <!-- 項目 3: 安全防護 (Safety Settings) -->
+            <button id="btn-prof-safety" type="button" class="w-full p-4 rounded-3xl bg-[#F3F4F6] hover:bg-[#EBECEF] active:scale-[0.99] transition text-left flex items-center justify-between border border-neutral-200/60 shadow-sm cursor-pointer">
+              <div class="space-y-0.5 pr-2">
+                <p class="text-sm font-black text-neutral-900">安全守護與通訊 (Safety Settings)</p>
+                <p class="text-xs text-neutral-500 font-medium truncate">已啟動 · 行程即時守護 · 雙向語音私聊</p>
+              </div>
+              <div class="w-8 h-8 rounded-full bg-white flex items-center justify-center text-neutral-900 shadow-sm shrink-0 font-bold">
+                ➔
+              </div>
+            </button>
+
+            <!-- 項目 4: 常客固定路線 (Regular Customers) -->
+            <button id="btn-prof-regular-cust" type="button" class="w-full p-4 rounded-3xl bg-[#F3F4F6] hover:bg-[#EBECEF] active:scale-[0.99] transition text-left flex items-center justify-between border border-neutral-200/60 shadow-sm cursor-pointer">
+              <div class="space-y-0.5 pr-2">
+                <p class="text-sm font-black text-neutral-900">常客固定路線與金額管理</p>
+                <p class="text-xs text-neutral-500 font-medium truncate">指定熟客特定路線自動比對套用固定金額</p>
+              </div>
+              <div class="w-8 h-8 rounded-full bg-white flex items-center justify-center text-neutral-900 shadow-sm shrink-0 font-bold">
+                ➔
+              </div>
+            </button>
+
+            <!-- 項目 5: 更換司機身分 -->
+            <button id="btn-prof-switch-driver" type="button" class="w-full p-4 rounded-3xl bg-[#F3F4F6] hover:bg-[#EBECEF] active:scale-[0.99] transition text-left flex items-center justify-between border border-neutral-200/60 shadow-sm cursor-pointer">
+              <div class="space-y-0.5 pr-2">
+                <p class="text-sm font-black text-neutral-900">更換司機帳號登入</p>
+                <p class="text-xs text-neutral-500 font-medium truncate">輸入車牌號碼或電話快速切換登入身分</p>
+              </div>
+              <div class="w-8 h-8 rounded-full bg-white flex items-center justify-center text-neutral-900 shadow-sm shrink-0 font-bold">
+                ➔
+              </div>
+            </button>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ------------------------------------------------------------
+           VIEW E: Trip History View (歷史接單紀錄)
+           ------------------------------------------------------------ -->
+      <section id="view-history" class="hidden flex-col p-4 space-y-3.5 pb-32">
+        <div class="flex items-center justify-between px-1">
+          <h3 class="text-2xl font-black text-white tracking-tight flex items-center gap-2">
+            <span>歷史接單紀錄</span>
+            <span id="history-total-badge" class="px-2.5 py-0.5 rounded-full bg-[#C7FF2E]/15 text-[#C7FF2E] text-xs font-black border border-[#C7FF2E]/30">0 筆</span>
+          </h3>
+          <button id="btn-refresh-history" type="button" class="p-2 rounded-full bg-[#18181C] hover:bg-[#222228] text-neutral-300 transition" title="重新整理">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div id="history-orders-list" class="space-y-2.5 text-xs">
+          <p class="text-neutral-400 text-center py-8">載入歷史紀錄中...</p>
+        </div>
+      </section>
+
     </main>
 
     <!-- ==============================================================
-         5. Floating Bottom Navigation Pill (Matches Screenshot Bottom Pill)
+         5. Floating Bottom Navigation Dock (Enlarged circular tabs matching design)
          ============================================================== -->
-    <nav class="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-[#141416]/95 backdrop-blur-lg text-white rounded-full px-7 py-3 flex items-center gap-8 shadow-2xl border border-[#28282E]">
+    <nav id="floating-bottom-dock" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center justify-center gap-3 sm:gap-4 p-2 rounded-full bg-[#141418]/90 backdrop-blur-xl border border-[#2B2B32] shadow-2xl transition-all duration-300">
       
-      <!-- Nav 1: Radar Map View -->
-      <button id="nav-btn-map" type="button" class="flex flex-col items-center justify-center text-neutral-400 hover:text-[#C7FF2E] active:scale-95 transition group" title="雷達地圖">
-        <svg class="w-6 h-6 stroke-current fill-none" viewBox="0 0 24 24">
-          <circle cx="12" cy="12" r="9" stroke-width="2"/>
-          <path d="M12 3a9 9 0 0 1 9 9" stroke-width="2"/>
-          <circle cx="12" cy="12" r="3" stroke-width="2"/>
-        </svg>
-      </button>
-
-      <!-- Nav 2: Home / Dashboard Orders List -->
-      <button id="nav-btn-dashboard" type="button" class="relative flex flex-col items-center justify-center text-[#C7FF2E] active:scale-95 transition" title="訂單中心">
-        <svg class="w-6 h-6 fill-current" viewBox="0 0 24 24">
+      <!-- Tab 1: Home (Dashboard) -->
+      <button id="nav-btn-dashboard" type="button" class="dock-tab-btn relative w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center bg-[#C7FF2E] text-black shadow-lg shadow-[#C7FF2E]/30 active:scale-90 transition-all cursor-pointer" title="訂單首頁">
+        <svg class="w-6 h-6 sm:w-7 sm:h-7 fill-current" viewBox="0 0 24 24">
           <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
         </svg>
-        <span id="nav-dashboard-badge" class="hidden absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-[#141416]"></span>
+        <span id="nav-dashboard-badge" class="hidden absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-[#141416]"></span>
       </button>
 
-      <!-- Nav 3: Profile & Orders Menu -->
-      <button id="nav-btn-menu" type="button" class="flex flex-col items-center justify-center text-neutral-400 hover:text-[#C7FF2E] active:scale-95 transition" title="司機選單">
-        <svg class="w-6 h-6 stroke-current fill-none" viewBox="0 0 24 24">
-          <rect x="3" y="3" width="7" height="7" rx="1.5" stroke-width="2"/>
-          <rect x="14" y="3" width="7" height="7" rx="1.5" stroke-width="2"/>
-          <rect x="14" y="14" width="7" height="7" rx="1.5" stroke-width="2"/>
-          <rect x="3" y="14" width="7" height="7" rx="1.5" stroke-width="2"/>
+      <!-- Tab 2: Map / Trip (Car) -->
+      <button id="nav-btn-map" type="button" class="dock-tab-btn w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center bg-[#1E1E24] text-neutral-300 hover:text-white active:scale-90 transition-all cursor-pointer" title="雷達地圖">
+        <svg class="w-6 h-6 sm:w-7 sm:h-7 fill-current" viewBox="0 0 24 24">
+          <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.85 7h10.29l1.04 3H5.81l1.04-3zM19 17H5v-4.66l.12-.34h13.77l.11.34V17z"/>
+          <circle cx="7.5" cy="14.5" r="1.5"/>
+          <circle cx="16.5" cy="14.5" r="1.5"/>
+        </svg>
+      </button>
+
+      <!-- Tab 3: History (Clock) -->
+      <button id="nav-btn-history" type="button" class="dock-tab-btn w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center bg-[#1E1E24] text-neutral-300 hover:text-white active:scale-90 transition-all cursor-pointer" title="歷史紀錄">
+        <svg class="w-6 h-6 sm:w-7 sm:h-7 fill-none stroke-current" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" stroke-width="2.2"/>
+          <path d="M12 7v5l3 3" stroke-width="2.2" stroke-linecap="round"/>
+        </svg>
+      </button>
+
+      <!-- Tab 4: Settings / Profile (Gear) -->
+      <button id="nav-btn-profile" type="button" class="dock-tab-btn w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center bg-[#1E1E24] text-neutral-300 hover:text-white active:scale-90 transition-all cursor-pointer" title="個人中心">
+        <svg class="w-6 h-6 sm:w-7 sm:h-7 fill-current" viewBox="0 0 24 24">
+          <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
         </svg>
       </button>
 
@@ -854,9 +1021,9 @@
         <div class="pt-2 border-t border-slate-200">
           <h5 class="font-extrabold text-xs text-slate-800 mb-2.5 flex items-center justify-between">
             <span>近期完成行程紀錄</span>
-            <span id="history-total-badge" class="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold">0 筆</span>
+            <span id="drawer-history-total-badge" class="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold">0 筆</span>
           </h5>
-          <div id="history-orders-list" class="space-y-2.5 text-xs">
+          <div id="drawer-history-orders-list" class="space-y-2.5 text-xs">
             <p class="text-slate-400 text-center py-8">載入歷史紀錄中...</p>
           </div>
         </div>
