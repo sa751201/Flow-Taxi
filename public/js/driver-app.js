@@ -1223,12 +1223,22 @@
           ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40'
           : 'bg-[#C7FF2E]/15 text-[#C7FF2E] border border-[#C7FF2E]/40';
 
-        // 司機到上車點距離 (Pilo Electric Green 螢光高對比字體，瞬間抓取司機視線)
+        // 司機到上車點距離 (距離我 X 公尺 / 距離我 X 公里)
         const rawDist = ord.distance_to_driver_km != null ? Number(ord.distance_to_driver_km) : (ord.distance_km != null ? Number(ord.distance_km) : 1.2);
-        const distFormatted = rawDist >= 10 ? Math.round(rawDist) : (rawDist % 1 === 0 ? rawDist : rawDist.toFixed(1));
+        let distNumText = '';
+        let distUnitText = '公里';
+        if (rawDist < 1) {
+          distNumText = Math.round(rawDist * 1000);
+          distUnitText = '公尺';
+        } else if (rawDist >= 10) {
+          distNumText = Math.round(rawDist);
+          distUnitText = '公里';
+        } else {
+          distNumText = rawDist % 1 === 0 ? rawDist : rawDist.toFixed(1);
+          distUnitText = '公里';
+        }
 
         const waitTime = formatWaitTime(ord.created_at);
-        const shortId = (ord.id || '').slice(0, 7);
 
         // 全程路線距離與預估車資
         const routeDistText = ord.distance_km ? `全程約 ${Math.round(Number(ord.distance_km))} 公里` : '';
@@ -1241,8 +1251,7 @@
           .replace(/\[MOCK_SIMULATION_20261112\]/g, '')
           .trim();
 
-        // 導航與接單連結 (包含 openExternalBrowser=1 避免 LINE 內置瀏覽器導航白畫面)
-        const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ord.pickup_address || '')}&travelmode=driving&openExternalBrowser=1`;
+        // 接單出價連結 (接單前無需導航按鈕，接到單後才需導航)
         const bidUrl = `/driver/bid?orderId=${encodeURIComponent(ord.id)}&source=web`;
 
         // 物理交錯進場延遲
@@ -1253,22 +1262,19 @@
             <!-- 左側主要資訊區 (~75%) -->
             <div class="min-w-0 flex-1 flex flex-col justify-between space-y-2.5">
               <div class="space-y-2">
-                <!-- 標籤列 (Pilo 膠囊標籤體系：Electric Green 即時 + Charcoal 車隊標籤) -->
+                <!-- 標籤列 (Pilo 膠囊標籤體系：Electric Green 即時 / Cyan 預約，已依要求移除車隊標籤) -->
                 <div class="flex items-center gap-1.5 flex-wrap">
                   <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full ${tagPillClass} text-xs font-black tracking-wide">
                     <span class="w-1.5 h-1.5 rounded-full ${isScheduled ? 'bg-cyan-400' : 'bg-[#C7FF2E] shadow-[0_0_6px_#C7FF2E]'}"></span>
                     <span>${tagText}</span>
                   </span>
-                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full bg-[#202024] border border-[#2f2f36] text-neutral-300 text-xs font-bold">
-                    合作 · Flow 車隊
-                  </span>
                 </div>
 
-                <!-- 醒目距離 (Pilo 核心視覺：Electric Green 螢光高對比字體，瞬間抓取司機視線) -->
+                <!-- 醒目距離 (已依要求統一改為「距離我 X 公尺 / 距離我 X 公里」) -->
                 <div class="flex items-baseline gap-1.5 pt-0.5">
-                  <span class="${activeSizeStyle.distUnitClass}">距離</span>
-                  <span class="${activeSizeStyle.distNumClass}">${distFormatted}</span>
-                  <span class="${activeSizeStyle.distUnitClass}">公里</span>
+                  <span class="${activeSizeStyle.distUnitClass}">距離我</span>
+                  <span class="${activeSizeStyle.distNumClass}">${distNumText}</span>
+                  <span class="${activeSizeStyle.distUnitClass}">${distUnitText}</span>
                 </div>
 
                 <!-- 上下車地點 (Pilo 圓角點陣視覺) -->
@@ -1314,29 +1320,18 @@
                 ` : ''}
               </div>
 
-              <!-- 底部時間與單號 (Pilo Mid Gray) -->
+              <!-- 底部時間 (已依要求移除 mock/短單號標籤) -->
               <div class="pt-2 flex items-center justify-between text-xs text-neutral-400 border-t border-[#222226]">
                 <span>待接單 ${waitTime}</span>
-                <span class="font-mono text-neutral-400 font-bold bg-[#1a1a1e] px-2 py-0.5 rounded-md border border-[#2b2b32]">#${shortId}</span>
               </div>
             </div>
 
-            <!-- 右側直列雙按鈕區 (Charcoal 導航 + Pilo 招牌 Electric Green 接單主按鈕) -->
-            <div class="w-20 sm:w-24 shrink-0 flex flex-col justify-between gap-2.5">
-              <!-- 導航按鈕 (次要按鈕：Charcoal 深炭色) -->
-              <a href="${navUrl}" target="_blank" rel="noopener noreferrer"
-                 class="w-full flex-1 min-h-[46px] rounded-2xl bg-[#222226] hover:bg-[#2c2c33] text-neutral-100 border border-[#33333b] flex flex-col items-center justify-center gap-0.5 ${activeSizeStyle.btnNavClass} btn-spring transition shadow-sm font-bold"
-                 onclick="window.__triggerHaptic && window.__triggerHaptic('light')"
-                 title="以 Google Maps 導航至上車地點">
-                <svg class="w-4 h-4 text-neutral-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
-                <span>導航</span>
-              </a>
-
-              <!-- 接單按鈕 (Pilo 核心「ONE GREEN BUTTON」：Electric Green #C7FF2E + 曜石黑特粗字) -->
+            <!-- 右側接單主操作按鈕 (依要求：接單清單先移除導航按鈕，僅保留直覺大型接單按鈕) -->
+            <div class="w-20 sm:w-24 shrink-0 flex items-stretch">
               <a href="${bidUrl}"
-                 class="w-full flex-1 min-h-[52px] rounded-2xl bg-[#C7FF2E] hover:bg-[#bbf022] text-[#0F0F0F] font-black flex flex-col items-center justify-center gap-0.5 ${activeSizeStyle.btnBidClass} btn-spring shadow-lg shadow-[#C7FF2E]/25 transition tracking-wider"
+                 class="w-full rounded-2xl bg-[#C7FF2E] hover:bg-[#bbf022] text-[#0F0F0F] font-black flex flex-col items-center justify-center gap-1 ${activeSizeStyle.btnBidClass} btn-spring shadow-lg shadow-[#C7FF2E]/25 transition tracking-wider"
                  onclick="window.__triggerHaptic && window.__triggerHaptic('medium')">
-                <span>接單</span>
+                <span class="text-base sm:text-lg">接單</span>
               </a>
             </div>
           </div>
@@ -2154,34 +2149,109 @@
     document.getElementById('btn-toggle-online-status')?.addEventListener('click', toggleDriverOnlineStatus);
     document.getElementById('btn-orders-go-online')?.addEventListener('click', toggleDriverOnlineStatus);
 
-    // 可接單類別篩選 (全部 / ⚡ 即時 / 📅 預約)
-    const filterTabs = document.querySelectorAll('.order-filter-tab');
-    filterTabs.forEach((tab) => {
-      tab.addEventListener('click', () => {
+    // -----------------------------------------------------------
+    // 訂單篩選 Modal 控制 (距離與單類型收成單一按鈕)
+    // -----------------------------------------------------------
+    let tempOrderFilter = currentOrderFilter;
+    let tempDistanceFilter = currentDistanceFilter;
+
+    function updateFilterSummaryUi() {
+      const summaryEl = document.getElementById('filter-btn-summary');
+      if (!summaryEl) return;
+      const typeMap = {
+        all: '全部',
+        instant: '⚡即時',
+        scheduled: '📅預約',
+      };
+      const distMap = {
+        all: '距離不限',
+        '5': '5km內',
+        '15': '15km內',
+        '30': '30km內',
+        '50': '50km內',
+      };
+      const typeTxt = typeMap[currentOrderFilter] || '全部';
+      const distTxt = distMap[currentDistanceFilter] || '距離不限';
+      summaryEl.textContent = `${typeTxt} · ${distTxt}`;
+    }
+
+    const filterModal = document.getElementById('order-filter-modal');
+    const btnOpenFilterModal = document.getElementById('btn-open-order-filter-modal');
+    const btnCloseFilterModal = document.getElementById('btn-close-filter-modal');
+    const btnResetFilters = document.getElementById('btn-reset-filters');
+    const btnApplyFilters = document.getElementById('btn-apply-filters');
+
+    function refreshModalFilterButtons() {
+      document.querySelectorAll('.modal-filter-type-opt').forEach((btn) => {
+        const t = btn.getAttribute('data-type');
+        if (t === tempOrderFilter) {
+          btn.className = 'modal-filter-type-opt py-2.5 px-2 rounded-2xl border border-[#C7FF2E] text-xs font-black transition btn-spring text-center bg-[#C7FF2E]/15 text-[#C7FF2E] shadow-sm';
+        } else {
+          btn.className = 'modal-filter-type-opt py-2.5 px-2 rounded-2xl border border-[#2B2B32] text-xs font-bold transition btn-spring text-center bg-[#1A1A1E] text-neutral-300 hover:text-white';
+        }
+      });
+
+      document.querySelectorAll('.modal-filter-dist-opt').forEach((btn) => {
+        const d = btn.getAttribute('data-dist');
+        const isColSpan = d === 'all' ? 'col-span-2 ' : '';
+        if (d === tempDistanceFilter) {
+          btn.className = `modal-filter-dist-opt ${isColSpan}py-2.5 px-3 rounded-2xl border border-[#C7FF2E] text-xs font-black transition btn-spring text-center bg-[#C7FF2E]/15 text-[#C7FF2E] shadow-sm`;
+        } else {
+          btn.className = `modal-filter-dist-opt ${isColSpan}py-2.5 px-3 rounded-2xl border border-[#2B2B32] text-xs font-bold transition btn-spring text-center bg-[#1A1A1E] text-neutral-300 hover:text-white`;
+        }
+      });
+    }
+
+    btnOpenFilterModal?.addEventListener('click', () => {
+      triggerHaptic('light');
+      tempOrderFilter = currentOrderFilter;
+      tempDistanceFilter = currentDistanceFilter;
+      refreshModalFilterButtons();
+      filterModal?.classList.remove('hidden');
+    });
+
+    btnCloseFilterModal?.addEventListener('click', () => {
+      filterModal?.classList.add('hidden');
+    });
+
+    filterModal?.addEventListener('click', (e) => {
+      if (e.target === filterModal) filterModal.classList.add('hidden');
+    });
+
+    document.querySelectorAll('.modal-filter-type-opt').forEach((btn) => {
+      btn.addEventListener('click', () => {
         triggerHaptic('light');
-        const filter = tab.getAttribute('data-filter') || 'all';
-        currentOrderFilter = filter;
-        filterTabs.forEach((t) => {
-          if (t === tab) {
-            t.className = 'order-filter-tab px-3 py-1.5 rounded-lg transition active bg-white text-slate-900 shadow-sm font-extrabold';
-          } else {
-            t.className = 'order-filter-tab px-3 py-1.5 rounded-lg transition text-slate-600 hover:text-slate-900 font-extrabold';
-          }
-        });
-        renderOrdersList(nearbyOrders);
+        tempOrderFilter = btn.getAttribute('data-type') || 'all';
+        refreshModalFilterButtons();
       });
     });
 
-    // 距離限制下拉選單 (全部 / 5km / 15km / 30km / 50km)
-    const distanceFilterSelect = document.getElementById('select-order-distance-filter');
-    if (distanceFilterSelect) {
-      distanceFilterSelect.value = currentDistanceFilter;
-      distanceFilterSelect.addEventListener('change', (e) => {
+    document.querySelectorAll('.modal-filter-dist-opt').forEach((btn) => {
+      btn.addEventListener('click', () => {
         triggerHaptic('light');
-        currentDistanceFilter = e.target.value;
-        renderOrdersList(nearbyOrders);
+        tempDistanceFilter = btn.getAttribute('data-dist') || 'all';
+        refreshModalFilterButtons();
       });
-    }
+    });
+
+    btnResetFilters?.addEventListener('click', () => {
+      triggerHaptic('light');
+      tempOrderFilter = 'all';
+      tempDistanceFilter = 'all';
+      refreshModalFilterButtons();
+    });
+
+    btnApplyFilters?.addEventListener('click', () => {
+      triggerHaptic('medium');
+      currentOrderFilter = tempOrderFilter;
+      currentDistanceFilter = tempDistanceFilter;
+      updateFilterSummaryUi();
+      filterModal?.classList.add('hidden');
+      renderOrdersList(nearbyOrders);
+    });
+
+    // 初始化篩選按鈕摘要
+    updateFilterSummaryUi();
 
     // 司機字體大小切換 (大 / 中 / 小) - 緩解長途駕駛視覺疲勞 (Pilo 配色規範)
     function updateFontSizeUi() {
