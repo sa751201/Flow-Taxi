@@ -40,39 +40,40 @@
   let tripStage = 'accepted';
   let pollTimer = null;
 
-  // 司機字體大小縮放樣式定義 (大 / 中 / 小) - 緩解長時間工作疲憊
+  // 司機字體大小縮放樣式與 Pilo 配色體系 (大 / 中 / 小) - 緩解長時間工作疲憊
+  // 配色規範：PILO BLACK (#0F0F0F), ELECTRIC GREEN (#C7FF2E), CHARCOAL (#222226 / #2E2E32), PURE WHITE (#FFFFFF), MID GRAY (#808080)
   const sizeStyles = {
     large: {
-      distNumClass: 'text-3xl font-black text-amber-400',
-      distUnitClass: 'text-sm font-extrabold text-slate-300',
-      pickupTextClass: 'font-black text-white text-lg leading-snug break-words',
-      dropoffTextClass: 'font-extrabold text-slate-200 text-base leading-snug break-words',
+      distNumClass: 'text-3xl font-black text-[#C7FF2E] tracking-tight',
+      distUnitClass: 'text-xs font-bold text-neutral-400 tracking-wider',
+      pickupTextClass: 'font-black text-white text-lg leading-snug break-words tracking-tight',
+      dropoffTextClass: 'font-extrabold text-neutral-300 text-base leading-snug break-words',
       noteTextClass: 'text-xs sm:text-sm font-bold',
-      btnNavClass: 'py-3.5 px-3 text-sm font-black',
-      btnBidClass: 'py-3.5 px-3 text-base font-black',
-      pillClass: 'w-7 h-7 text-xs font-black',
+      btnNavClass: 'py-2.5 px-1.5 text-xs font-bold',
+      btnBidClass: 'py-3 px-1 text-base font-black',
+      pillClass: 'w-6 h-6 text-xs font-black',
       cardPadding: 'p-4 sm:p-5',
     },
     medium: {
-      distNumClass: 'text-2xl font-black text-amber-400',
-      distUnitClass: 'text-xs font-bold text-slate-300',
-      pickupTextClass: 'font-extrabold text-white text-base leading-snug break-words',
-      dropoffTextClass: 'font-bold text-slate-200 text-sm leading-snug break-words',
+      distNumClass: 'text-2xl font-black text-[#C7FF2E] tracking-tight',
+      distUnitClass: 'text-[11px] font-bold text-neutral-400 tracking-wider',
+      pickupTextClass: 'font-extrabold text-white text-base leading-snug break-words tracking-tight',
+      dropoffTextClass: 'font-bold text-neutral-300 text-sm leading-snug break-words',
       noteTextClass: 'text-xs font-semibold',
-      btnNavClass: 'py-3 px-2.5 text-xs font-bold',
-      btnBidClass: 'py-3 px-2.5 text-sm font-black',
-      pillClass: 'w-6 h-6 text-xs font-bold',
+      btnNavClass: 'py-2 px-1 text-[11px] font-bold',
+      btnBidClass: 'py-2.5 px-1 text-sm font-black',
+      pillClass: 'w-5 h-5 text-[11px] font-bold',
       cardPadding: 'p-3.5 sm:p-4',
     },
     small: {
-      distNumClass: 'text-xl font-black text-amber-400',
-      distUnitClass: 'text-xs font-medium text-slate-400',
+      distNumClass: 'text-xl font-black text-[#C7FF2E] tracking-tight',
+      distUnitClass: 'text-[10px] font-medium text-neutral-500 tracking-wider',
       pickupTextClass: 'font-bold text-white text-sm leading-snug break-words',
-      dropoffTextClass: 'font-semibold text-slate-300 text-xs leading-snug break-words',
+      dropoffTextClass: 'font-semibold text-neutral-400 text-xs leading-snug break-words',
       noteTextClass: 'text-[11px] font-medium',
-      btnNavClass: 'py-2 px-2 text-xs font-bold',
-      btnBidClass: 'py-2 px-2 text-xs font-black',
-      pillClass: 'w-5 h-5 text-[11px] font-bold',
+      btnNavClass: 'py-1.5 px-1 text-[10px] font-semibold',
+      btnBidClass: 'py-2 px-1 text-xs font-black',
+      pillClass: 'w-4 h-4 text-[10px] font-bold',
       cardPadding: 'p-3 sm:p-3.5',
     },
   };
@@ -343,13 +344,13 @@
     } else if (currentDriver.isVerified) {
       if (statusOnline) statusOnline.textContent = '在線上';
       if (statusBadgeWrap) {
-        statusBadgeWrap.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-xs font-black shadow-sm group-hover:bg-emerald-500/30 status-pulse-active';
+        statusBadgeWrap.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#C7FF2E]/15 border border-[#C7FF2E]/50 text-[#C7FF2E] text-xs font-black shadow-sm group-hover:bg-[#C7FF2E]/25 status-pulse-active';
       }
       if (statusDot) {
-        statusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-ping';
+        statusDot.className = 'w-2 h-2 rounded-full bg-[#C7FF2E] animate-ping';
       }
       if (avatarDot) {
-        avatarDot.className = 'absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-slate-950';
+        avatarDot.className = 'absolute bottom-0 right-0 w-3 h-3 rounded-full bg-[#C7FF2E] ring-2 ring-[#0F0F0F]';
       }
     } else {
       if (statusOnline) statusOnline.textContent = '在線上';
@@ -1219,10 +1220,10 @@
         const isScheduled = Boolean(ord.note && ord.note.includes('預約'));
         const tagText = isScheduled ? '預約' : '即時';
         const tagPillClass = isScheduled
-          ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-          : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40';
+          ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40'
+          : 'bg-[#C7FF2E]/15 text-[#C7FF2E] border border-[#C7FF2E]/40';
 
-        // 司機到上車點距離 (參照附圖：大字體距離，例如「距離 12 公里」)
+        // 司機到上車點距離 (Pilo Electric Green 螢光高對比字體，瞬間抓取司機視線)
         const rawDist = ord.distance_to_driver_km != null ? Number(ord.distance_to_driver_km) : (ord.distance_km != null ? Number(ord.distance_km) : 1.2);
         const distFormatted = rawDist >= 10 ? Math.round(rawDist) : (rawDist % 1 === 0 ? rawDist : rawDist.toFixed(1));
 
@@ -1248,33 +1249,33 @@
         const springDelayMs = Math.min(idx, 8) * 45;
 
         return `
-          <div class="rounded-2xl bg-[#14151f] sm:bg-[#0f172a] text-white ${activeSizeStyle.cardPadding} shadow-xl border border-slate-800/90 hover:border-slate-700 order-card-spring flex gap-3 items-stretch transition" style="animation-delay: ${springDelayMs}ms;">
+          <div class="rounded-3xl bg-[#141416] text-white ${activeSizeStyle.cardPadding} shadow-2xl border border-[#26262b] hover:border-[#383842] order-card-spring flex gap-3 items-stretch transition" style="animation-delay: ${springDelayMs}ms;">
             <!-- 左側主要資訊區 (~75%) -->
             <div class="min-w-0 flex-1 flex flex-col justify-between space-y-2.5">
               <div class="space-y-2">
-                <!-- 標籤列 (即時/預約 + 車隊標籤) -->
+                <!-- 標籤列 (Pilo 膠囊標籤體系：Electric Green 即時 + Charcoal 車隊標籤) -->
                 <div class="flex items-center gap-1.5 flex-wrap">
-                  <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full ${tagPillClass} text-xs font-black">
-                    <span class="w-1.5 h-1.5 rounded-full ${isScheduled ? 'bg-sky-400' : 'bg-indigo-400'}"></span>
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full ${tagPillClass} text-xs font-black tracking-wide">
+                    <span class="w-1.5 h-1.5 rounded-full ${isScheduled ? 'bg-cyan-400' : 'bg-[#C7FF2E] shadow-[0_0_6px_#C7FF2E]'}"></span>
                     <span>${tagText}</span>
                   </span>
-                  <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-fuchsia-950/70 border border-fuchsia-700/60 text-fuchsia-300 text-xs font-bold">
+                  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full bg-[#202024] border border-[#2f2f36] text-neutral-300 text-xs font-bold">
                     合作 · Flow 車隊
                   </span>
                 </div>
 
-                <!-- 醒目距離 (抗司機視覺疲勞：超大字體呈現) -->
+                <!-- 醒目距離 (Pilo 核心視覺：Electric Green 螢光高對比字體，瞬間抓取司機視線) -->
                 <div class="flex items-baseline gap-1.5 pt-0.5">
                   <span class="${activeSizeStyle.distUnitClass}">距離</span>
                   <span class="${activeSizeStyle.distNumClass}">${distFormatted}</span>
                   <span class="${activeSizeStyle.distUnitClass}">公里</span>
                 </div>
 
-                <!-- 上下車地點 (參照附圖藍/白膠囊圓點標記) -->
+                <!-- 上下車地點 (Pilo 圓角點陣視覺) -->
                 <div class="space-y-2">
                   <!-- 上車點 -->
                   <div class="flex items-start gap-2.5">
-                    <span class="${activeSizeStyle.pillClass} rounded-full bg-indigo-600/30 text-indigo-300 border border-indigo-500/50 flex items-center justify-center shrink-0 mt-0.5">上</span>
+                    <span class="${activeSizeStyle.pillClass} rounded-full bg-[#C7FF2E]/15 text-[#C7FF2E] border border-[#C7FF2E]/40 flex items-center justify-center shrink-0 mt-0.5 font-black">上</span>
                     <div class="min-w-0 flex-1">
                       <p class="${activeSizeStyle.pickupTextClass}">${escapeHtml(ord.pickup_address || '未填寫上車地點')}</p>
                     </div>
@@ -1283,57 +1284,57 @@
                   <!-- 下車點 -->
                   <div class="flex items-start gap-2.5">
                     ${ord.dropoff_address ? `
-                      <span class="${activeSizeStyle.pillClass} rounded-full bg-slate-700/60 text-slate-300 border border-slate-500/60 flex items-center justify-center shrink-0 mt-0.5">下</span>
+                      <span class="${activeSizeStyle.pillClass} rounded-full bg-[#222226] text-neutral-300 border border-[#32323a] flex items-center justify-center shrink-0 mt-0.5 font-bold">下</span>
                       <div class="min-w-0 flex-1">
                         <p class="${activeSizeStyle.dropoffTextClass}">${escapeHtml(ord.dropoff_address)}</p>
                       </div>
                     ` : `
-                      <span class="${activeSizeStyle.pillClass} rounded-full border border-dashed border-slate-600 text-slate-400 flex items-center justify-center shrink-0 mt-0.5">下</span>
+                      <span class="${activeSizeStyle.pillClass} rounded-full border border-dashed border-neutral-600 text-neutral-500 flex items-center justify-center shrink-0 mt-0.5 font-bold">下</span>
                       <div class="min-w-0 flex-1">
-                        <p class="${activeSizeStyle.dropoffTextClass} text-slate-400">未填 <span class="text-xs text-slate-500 font-normal">(乘客上車後說明)</span></p>
+                        <p class="${activeSizeStyle.dropoffTextClass} text-neutral-400">未填 <span class="text-xs text-neutral-500 font-normal">(乘客上車後說明)</span></p>
                       </div>
                     `}
                   </div>
                 </div>
 
-                <!-- 全程里程與車資 (如附圖：全程約 11 公里) -->
-                <div class="flex items-center gap-2 text-xs font-semibold text-slate-300 pt-0.5 flex-wrap">
-                  ${routeDistText ? `<span>${routeDistText}</span>` : ''}
-                  ${routeDistText && fareText ? `<span>·</span>` : ''}
-                  ${fareText ? `<span class="font-extrabold text-amber-400">${fareText}</span>` : ''}
-                  ${ord.passengers ? `<span class="text-slate-400">· 乘客 ${ord.passengers} 人</span>` : ''}
+                <!-- 全程里程與車資 (Pilo 簡練網格風格) -->
+                <div class="flex items-center gap-2 text-xs font-semibold text-neutral-300 pt-0.5 flex-wrap">
+                  ${routeDistText ? `<span class="text-neutral-400">${routeDistText}</span>` : ''}
+                  ${routeDistText && fareText ? `<span class="text-neutral-600">·</span>` : ''}
+                  ${fareText ? `<span class="font-extrabold text-[#C7FF2E]">${fareText}</span>` : ''}
+                  ${ord.passengers ? `<span class="text-neutral-500">· 乘客 ${ord.passengers} 人</span>` : ''}
                 </div>
 
-                <!-- 醒目備註 (如果有備註，橘紅色高亮框，如附圖：備註：17:00 ⬆️) -->
+                <!-- 醒目備註 (Amber Accent 高對比警示框) -->
                 ${noteText ? `
-                  <div class="rounded-lg bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 text-amber-300 ${activeSizeStyle.noteTextClass} flex items-center gap-1.5">
+                  <div class="rounded-xl bg-[#231e13] border border-amber-500/40 px-2.5 py-1 text-amber-300 ${activeSizeStyle.noteTextClass} flex items-center gap-1.5">
                     <span class="text-amber-400 font-black shrink-0">備註：</span>
                     <span class="font-bold truncate">${escapeHtml(noteText)}</span>
                   </div>
                 ` : ''}
               </div>
 
-              <!-- 底部時間與單號 -->
-              <div class="pt-2 flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/60">
+              <!-- 底部時間與單號 (Pilo Mid Gray) -->
+              <div class="pt-2 flex items-center justify-between text-xs text-neutral-400 border-t border-[#222226]">
                 <span>待接單 ${waitTime}</span>
-                <span class="font-mono text-slate-500 font-bold">#${shortId}</span>
+                <span class="font-mono text-neutral-400 font-bold bg-[#1a1a1e] px-2 py-0.5 rounded-md border border-[#2b2b32]">#${shortId}</span>
               </div>
             </div>
 
-            <!-- 右側直列雙按鈕區 (固定寬度，司機大拇指最佳觸控區，如附圖) -->
+            <!-- 右側直列雙按鈕區 (Charcoal 導航 + Pilo 招牌 Electric Green 接單主按鈕) -->
             <div class="w-20 sm:w-24 shrink-0 flex flex-col justify-between gap-2.5">
-              <!-- 導航按鈕 (上方) -->
+              <!-- 導航按鈕 (次要按鈕：Charcoal 深炭色) -->
               <a href="${navUrl}" target="_blank" rel="noopener noreferrer"
-                 class="w-full flex-1 min-h-[46px] rounded-2xl bg-indigo-950/70 hover:bg-indigo-900/80 text-indigo-200 border border-indigo-700/50 flex flex-col items-center justify-center gap-0.5 ${activeSizeStyle.btnNavClass} btn-spring transition shadow-sm"
+                 class="w-full flex-1 min-h-[46px] rounded-2xl bg-[#222226] hover:bg-[#2c2c33] text-neutral-100 border border-[#33333b] flex flex-col items-center justify-center gap-0.5 ${activeSizeStyle.btnNavClass} btn-spring transition shadow-sm font-bold"
                  onclick="window.__triggerHaptic && window.__triggerHaptic('light')"
                  title="以 Google Maps 導航至上車地點">
-                <svg class="w-4 h-4 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+                <svg class="w-4 h-4 text-neutral-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
                 <span>導航</span>
               </a>
 
-              <!-- 接單按鈕 (下方，主操作，醒目紫/靛色按鈕，如附圖) -->
+              <!-- 接單按鈕 (Pilo 核心「ONE GREEN BUTTON」：Electric Green #C7FF2E + 曜石黑特粗字) -->
               <a href="${bidUrl}"
-                 class="w-full flex-1 min-h-[52px] rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black flex flex-col items-center justify-center gap-0.5 ${activeSizeStyle.btnBidClass} btn-spring btn-shimmer-cta shadow-lg shadow-indigo-600/30 transition"
+                 class="w-full flex-1 min-h-[52px] rounded-2xl bg-[#C7FF2E] hover:bg-[#bbf022] text-[#0F0F0F] font-black flex flex-col items-center justify-center gap-0.5 ${activeSizeStyle.btnBidClass} btn-spring shadow-lg shadow-[#C7FF2E]/25 transition tracking-wider"
                  onclick="window.__triggerHaptic && window.__triggerHaptic('medium')">
                 <span>接單</span>
               </a>
@@ -2182,14 +2183,14 @@
       });
     }
 
-    // 司機字體大小切換 (大 / 中 / 小) - 緩解長途駕駛視覺疲勞
+    // 司機字體大小切換 (大 / 中 / 小) - 緩解長途駕駛視覺疲勞 (Pilo 配色規範)
     function updateFontSizeUi() {
       document.querySelectorAll('.btn-font-size-opt').forEach((btn) => {
         const size = btn.getAttribute('data-size');
         if (size === currentFontSize) {
-          btn.className = 'btn-font-size-opt px-3 py-1 rounded-full transition text-white bg-indigo-600 shadow-xs btn-spring font-black';
+          btn.className = 'btn-font-size-opt px-3 py-1 rounded-full transition text-[#0F0F0F] bg-[#C7FF2E] shadow-sm btn-spring font-black';
         } else {
-          btn.className = 'btn-font-size-opt px-3 py-1 rounded-full transition text-slate-400 hover:text-white btn-spring font-bold';
+          btn.className = 'btn-font-size-opt px-3 py-1 rounded-full transition text-neutral-400 hover:text-white btn-spring font-bold';
         }
       });
     }
